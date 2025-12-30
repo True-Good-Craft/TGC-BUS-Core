@@ -11,9 +11,12 @@ BUS-Core
 
 BUS Core
 A free, local-first inventory and manufacturing tracker for small, single-person workshops.
+
 No cloud. No accounts. No subscriptions.
+
 If this is enough for you, that’s the point.
 
+##
 At its core, BUS-Core helps you track everything that moves through your shop:
 
 Materials & Consumables: Record stock by unit (grams, millimeters, milliliters, or each), with batch numbers, purchase price, and date added.
