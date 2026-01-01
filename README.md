@@ -1,4 +1,4 @@
-# TGC BUS Core (Beta)
+# TGC (Buisness Utility System) - BUS Core (Beta)
 
 ![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)
@@ -9,8 +9,7 @@
 
 BUS-Core
 
-BUS Core
-A free, local-first inventory and manufacturing tracker for small, single-person workshops.
+A free, local-first inventory and manufacturing tracker for small Buisness and single-person workshops.
 
 No cloud. No accounts. No subscriptions.
 
