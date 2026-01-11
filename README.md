@@ -42,30 +42,25 @@ BUS-Core exists to replace spreadsheet chaos and overpriced SaaS platforms that 
 ## Getting Started
 
 ### Prerequisites
-* Python 3.10+
-* Windows (Primary support), Linux, or macOS
+* Windows (Primary support), Linux, or macOS soon tm
 
 ### Installation
 
-1.  Download the .zip File and Extract it.
-2.  Double click Run Core.bat
+1.  Download the File.
+2.  Double click to run the exe.
+3.  No install, no extras, I am waiting for Code signing cert so Virus protection may prompt on download.
     
 
 **Note for Windows Users:** The application runs in the **System Tray**. If the browser does not open automatically, or if you close the window, double-click the tray icon to access the dashboard.
 
-*(If Windows blocks the script, run: `PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\launch.ps1"` in a Powershell window to sidestep it)*
-
 ## Dev Mode
 
-For developers contributing to the core:
-
-```bash
-python launcher.py --dev
-````
+you must set env var to dev. 
 
   * **Console Access:** Keeps the terminal window open (hidden by default in production).
   * **Debug Endpoints:** Enables access to protected `/dev` API routes.
   * **Smoke Tests:** Validate system integrity using `scripts/smoke.ps1`.
+  * scripts avalable with source code
 
 ## Architecture
 
