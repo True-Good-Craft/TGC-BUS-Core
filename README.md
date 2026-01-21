@@ -112,3 +112,60 @@ docker compose down
 # or:
 docker rm -f bus-core
 ```
+
+## Run with Docker (quick start)
+
+### Using Docker Compose (recommended)
+```bash
+docker compose build
+docker compose up -d
+# UI: http://localhost:8765/ui/shell.html#/home
+```
+
+### Auto-open the browser
+
+#### Windows
+
+```powershell
+scripts\up.ps1
+```
+
+#### macOS / Linux
+
+```bash
+./scripts/up.sh
+```
+
+### Without Compose (one-liner)
+
+```bash
+docker build -t bus-core .
+docker run -d --name bus-core -p 8765:8765 -e BUS_DB=/data/app.db -v bus_data:/data bus-core
+```
+
+### Health & UI
+
+* Health: `http://localhost:8765/health`
+* UI: `http://localhost:8765/ui/shell.html#/home`
+
+### Stop
+
+```bash
+docker compose down
+```
+
+## Run natively (Windows)
+
+> This original path still works; Docker is optional.
+
+```powershell
+pip install -r requirements.txt
+python -m uvicorn core.api.http:create_app --factory --host 0.0.0.0 --port 8765
+# UI: http://localhost:8765/ui/shell.html#/home
+```
+
+## Notes & Troubleshooting
+
+* If Docker warns that the compose `version:` key is obsolete, it’s safe to ignore; we removed it.
+* Ensure Docker Desktop shows **Engine running** and is using **Linux containers** with **WSL2** enabled.
+* Data is persisted to the Docker volume mounted at `/data` (SQLite path: `BUS_DB=/data/app.db`).
