@@ -43,17 +43,37 @@ from core.backup.crypto import (
     decrypt_bytes,
     encrypt_bytes,
 )
-from core.config.paths import DB_PATH
+# --- canonical paths (no writes to /exports on Linux) ---
+from core.config.paths import (
+    DB_PATH as APP_DB,
+    APP_DIR,
+    APP_ROOT as BUS_ROOT,
+    DATA_DIR,
+    JOURNAL_DIR,
+    EXPORTS_DIR,
+)
 from core.platform.winfile import robust_replace, wait_for_exclusive
 
-APP_DB = DB_PATH
-APP_DIR = DB_PATH.parent
-BUS_ROOT = APP_DIR.parent
-DATA_DIR = APP_DIR / "data"
-JOURNAL_DIR = DATA_DIR / "journals"
-EXPORTS_DIR = BUS_ROOT / "exports"
-for _p in (JOURNAL_DIR, EXPORTS_DIR):
+# Ensure required dirs exist (idempotent)
+for _p in (APP_DIR, DATA_DIR, JOURNAL_DIR, EXPORTS_DIR, BUS_ROOT):
     _p.mkdir(parents=True, exist_ok=True)
+
+# Safety guard: if BUS_ROOT ever resolves to filesystem root, fallback to APP_DIR
+try:
+    if str(BUS_ROOT.resolve()) == "/":
+        # Avoid writing to /
+        BUS_ROOT = APP_DIR
+except Exception:
+    BUS_ROOT = APP_DIR
+
+# Optional: trace once at import (helps Docker users debug)
+try:
+    print(
+        f"[export-paths] APP_DIR={APP_DIR} BUS_ROOT={BUS_ROOT} "
+        f"DATA_DIR={DATA_DIR} EXPORTS_DIR={EXPORTS_DIR}"
+    )
+except Exception:
+    pass
 
 
 def _connect_readonly(db_path: Path):
