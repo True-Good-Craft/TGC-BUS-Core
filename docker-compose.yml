@@ -1,0 +1,15 @@
+version: "3.9"
+services:
+  bus-core:
+    build: .
+    container_name: bus-core
+    ports:
+      - "8765:8765"
+    environment:
+      - BUS_DEV=0
+      - BUS_DB=/data/app.db
+    volumes:
+      - bus_data:/data
+    restart: unless-stopped
+volumes:
+  bus_data:

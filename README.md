@@ -83,3 +83,32 @@ Interface Gallery
 | <img src="screenshots/Logs.jpg" width="100%"> | <img src="screenshots/Settings.jpg" width="100%"> |
 
 ```
+
+## Run with Docker
+
+### Quick start (Docker Compose)
+```bash
+docker compose build
+docker compose up -d
+# open http://localhost:8765
+```
+
+One-liner without Compose
+```bash
+docker build -t bus-core .
+docker run -d --name bus-core -p 8765:8765 -e BUS_DB=/data/app.db -v bus_data:/data bus-core
+```
+
+Health & UI
+```bash
+curl http://localhost:8765/health
+# UI:
+# http://localhost:8765/ui/shell.html#/home
+```
+
+Stop / Remove
+```bash
+docker compose down
+# or:
+docker rm -f bus-core
+```
