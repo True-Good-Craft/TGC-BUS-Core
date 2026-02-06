@@ -253,3 +253,7 @@ You are free to use, modify, and self-host it.
 If you offer it as a network service, you must provide source access.
 
 See `LICENSE` for details.
+
+https://buscore.ca
+
+Maintained by True Good Craft (Canada)
