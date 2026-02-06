@@ -1,4 +1,4 @@
-# TGC (Buisness Utility System) - BUS Core (Beta)
+# TGC Business Utility System — BUS Core (Beta)
 
 ![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)
