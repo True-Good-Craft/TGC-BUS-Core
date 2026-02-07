@@ -27,5 +27,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/true-good-craft/tgc-bus-core:latest
+            ghcr.io/true-good-craft/tgc-bus-core:${{ github.sha }}
