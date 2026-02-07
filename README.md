@@ -1,9 +1,13 @@
 # TGC Business Utility System — BUS Core (Beta)
 
 ![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)
+![Docker](https://img.shields.io/badge/Docker-GHCR-blue?logo=docker)
 ![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da.svg)](https://discord.gg/qp3rc5CxdM)
+
+
+
 
 A local-first inventory and manufacturing system for small shops and solo makers.
 
