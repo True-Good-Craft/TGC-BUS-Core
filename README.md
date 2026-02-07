@@ -140,7 +140,13 @@ See [`docs/SOT.md`](docs/SOT.md) for the canonical Source of Truth and system ar
 
 ## Run with Docker
 
-Docker is optional. Native Windows builds are supported.
+## Package
+
+docker pull ghcr.io/true-good-craft/tgc-bus-core:latest
+
+docker run --rm -p 8765:8765 ghcr.io/true-good-craft/tgc-bus-core:latest
+
+(Docker is optional. Native Windows builds are supported.)
 
 ### Quick Start (Compose)
 
