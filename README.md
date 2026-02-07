@@ -140,33 +140,15 @@ See [`docs/SOT.md`](docs/SOT.md) for the canonical Source of Truth and system ar
 
 ## Run with Docker
 
-## Package
-
+```bash
 docker pull ghcr.io/true-good-craft/tgc-bus-core:latest
 
-docker run --rm -p 8765:8765 ghcr.io/true-good-craft/tgc-bus-core:latest
+docker run -p 8765:8765 ghcr.io/true-good-craft/tgc-bus-core:latest
+```
 
 (Docker is optional. Native Windows builds are supported.)
 
-### Quick Start (Compose)
 
-```bash
-docker compose build
-docker compose up -d
-# UI: http://localhost:8765
-```
-
-### Without Compose
-
-```bash
-docker build -t bus-core .
-docker run -d \
-  --name bus-core \
-  -p 8765:8765 \
-  -e BUS_DB=/data/app.db \
-  -v bus_data:/data \
-  bus-core
-```
 
 ### Auto-Open Scripts
 
