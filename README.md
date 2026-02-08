@@ -1,91 +1,251 @@
-# TGC BUS Core (Beta)
+# TGC Business Utility System — BUS Core (Beta)
 
 ![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)
+![Docker](https://img.shields.io/badge/Docker-GHCR-blue?logo=docker)
 ![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da.svg)](https://discord.gg/qp3rc5CxdM)
 
 
 
-BUS-Core
 
-BUS Core
-A free, local-first inventory and manufacturing tracker for small, single-person workshops.
+A local-first inventory and manufacturing system for small shops and solo makers.
 
-No cloud. No accounts. No subscriptions.
+No cloud. No accounts. No subscriptions.  
+Your data stays on your machine.
 
-If this is enough for you, that’s the point.
+---
 
-##
-At its core, BUS-Core helps you track everything that moves through your shop:
+## What Is BUS Core?
 
-Materials & Consumables: Record stock by unit (grams, millimeters, milliliters, or each), with batch numbers, purchase price, and date added.
+BUS Core is designed for workshops that build real things in small batches.
 
-Blueprints(Recipe): Define the recipes that turn raw materials into assemblies or finished goods. BUS-Core automatically calculates cost of goods based on the FIFO (First-In, First-Out) batches you’ve actually purchased.
+It replaces:
 
-Assemblies & Products: Produce items using your blueprints and set a final selling price—then compare the real cost of input materials against sales to measure margin and waste.
+- Spreadsheets
+- Paper logs
+- Ad-hoc tracking systems
+- Expensive SaaS platforms
 
-Vendors: Link materials and consumables to vendors and track their pricing history over time.
+With:
 
-It’s not an accounting program, and it’s not trying to be.
-BUS-Core exists to replace spreadsheet chaos and overpriced SaaS platforms that bleed your margins. It’s your own local workshop system—clean, transparent, and yours.
+- One local database
+- Real production costing
+- Full audit history
+- Complete data ownership
+
+It is built for operators who want control, not dashboards.
+
+---
+
+## Who BUS Core Is For
+
+- Small manufacturing shops (1–20 people)
+- Makerspaces
+- Custom fabricators
+- Repair and prototyping shops
+- Solo operators
+
+If you build physical products in low to medium volume, BUS Core is for you.
+
+---
+
+## What It Tracks
+
+- **Materials & Consumables**  
+  Track stock by unit (grams, millimeters, milliliters, each), with batch numbers, cost, and purchase dates.
+
+- **Blueprints (Recipes)**  
+  Define how materials become products. Costs are calculated using FIFO from real purchase batches.
+
+- **Assemblies & Products**  
+  Build items from blueprints, set prices, and compare real costs to sales.
+
+- **Vendors**  
+  Track supplier pricing and purchasing history over time.
+
+BUS Core focuses on operations and production costing.  
+It is not a full accounting system—and is not trying to be.
+
+---
 
 ## Key Features
 
-- Zero-License: 100% free and open-source (AGPLv3). No “Pro” tiers, no locked features, no tracking.
-- Precision Inventory: Integer-based metric tracking with FIFO batch valuation and accurate stock costing.
-- Manufacturing Engine: Recipe-based builds with automatic cost rollups, shortage detection, and atomic commits.
-- Ledger & Audit Trail: Full movement history—purchases, production, sales, loss, and adjustments.
-- Local & Private: Runs on a local SQLite database with optional AES-GCM encrypted backups.
-- Cross-Platform: Works on Windows (primary), Linux, and macOS.
+- **Open Source** — 100% free (AGPLv3)
+- **Precision Inventory** — FIFO batch valuation with metric units
+- **Manufacturing Engine** — Recipe-based builds with atomic commits
+- **Ledger & Audit Trail** — Complete movement history
+- **Local & Private** — SQLite database with encrypted backups
+- **Cross-Platform** — Windows, Linux, and macOS
 
+---
 
 ## Getting Started
 
 ### Prerequisites
-* Python 3.10+
-* Windows (Primary support), Linux, or macOS
 
-### Installation
+- Windows (primary support)
+- Linux / macOS (supported via Docker)
 
-1.  Download the .zip File and Extract it.
-2.  Double click Run Core.bat
-    
+---
 
-**Note for Windows Users:** The application runs in the **System Tray**. If the browser does not open automatically, or if you close the window, double-click the tray icon to access the dashboard.
+## Installation (Windows)
 
-*(If Windows blocks the script, run: `PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\launch.ps1"` in a Powershell window to sidestep it)*
+1. Download the latest release.
+2. Run the `.exe` file.
+3. No installer required.
 
-## Dev Mode
+> Note: Until code signing is complete, Windows Defender may warn on first run.
 
-For developers contributing to the core:
+The application runs in the **system tray**.  
+Double-click the tray icon to open the dashboard.
+
+---
+
+## Development Mode
+
+Enable development features by setting:
 
 ```bash
-python launcher.py --dev
+BUS_ENV=dev
 ````
 
-  * **Console Access:** Keeps the terminal window open (hidden by default in production).
-  * **Debug Endpoints:** Enables access to protected `/dev` API routes.
-  * **Smoke Tests:** Validate system integrity using `scripts/smoke.ps1`.
+This enables:
+
+* Console output
+* Debug endpoints
+* Smoke tests (`scripts/smoke.ps1`)
+
+Development scripts are included in the source tree.
+
+---
 
 ## Architecture
 
-See [docs/SOT.md](docs/SOT.md) for the Source of Truth and architecture details.
+See [`docs/SOT.md`](docs/SOT.md) for the canonical Source of Truth and system architecture.
 
+---
 
+## Interface Gallery
 
-Interface Gallery
+|                   Dashboard                   |                      Inventory                     |
+| :-------------------------------------------: | :------------------------------------------------: |
+| <img src="screenshots/Home.jpg" width="100%"> | <img src="screenshots/Inventory.jpg" width="100%"> |
 
-| Dashboard | Inventory Management |
-| :---: | :---: |
-| <img src="screenshots/Home.jpg" width="100%"> | <img src="screenshots/Invintory.jpg" width="100%"> |
-
-| Manufacturing | Recipe Engine |
-| :---: | :---: |
+|                      Manufacturing                     |                     Recipes                     |
+| :----------------------------------------------------: | :---------------------------------------------: |
 | <img src="screenshots/Manufacturing.jpg" width="100%"> | <img src="screenshots/Recipe.jpg" width="100%"> |
 
-| System Logs | Application Settings |
-| :---: | :---: |
+|                      Logs                     |                      Settings                     |
+| :-------------------------------------------: | :-----------------------------------------------: |
 | <img src="screenshots/Logs.jpg" width="100%"> | <img src="screenshots/Settings.jpg" width="100%"> |
 
+---
+
+## Run with Docker
+
+```bash
+docker pull ghcr.io/true-good-craft/tgc-bus-core:latest
+
+docker run -p 8765:8765 ghcr.io/true-good-craft/tgc-bus-core:latest
 ```
+
+(Docker is optional. Native Windows builds are supported.)
+
+
+
+### Auto-Open Scripts
+
+#### Windows
+
+```powershell
+scripts\up.ps1
+```
+
+#### macOS / Linux
+
+```bash
+./scripts/up.sh
+```
+
+### Health Check
+
+```bash
+curl http://localhost:8765/health
+```
+
+UI:
+
+```
+http://localhost:8765/ui/shell.html#/home
+```
+
+### Stop
+
+```bash
+docker compose down
+# or
+docker rm -f bus-core
+```
+
+---
+
+## Run Natively (Windows)
+
+Docker is optional.
+
+```powershell
+pip install -r requirements.txt
+
+python -m uvicorn core.api.http:create_app \
+  --factory \
+  --host 0.0.0.0 \
+  --port 8765
+```
+
+UI:
+
+```
+http://localhost:8765/ui/shell.html#/home
+```
+
+---
+
+## Data & Persistence
+
+* All data is stored locally in SQLite.
+* Docker deployments persist data in `/data`.
+* Default database path:
+
+```bash
+BUS_DB=/data/app.db
+```
+
+Backups can be encrypted using AES-GCM.
+
+---
+
+## Philosophy
+
+BUS Core is built on three principles:
+
+1. Local-first by default
+2. No artificial limits
+3. User owns their data
+
+Software should serve small operators, not extract from them.
+
+---
+
+## License
+
+BUS Core is licensed under the GNU AGPLv3.
+
+You are free to use, modify, and self-host it.
+If you offer it as a network service, you must provide source access.
+
+See `LICENSE` for details.
+
+https://buscore.ca
+
+Maintained by True Good Craft (Canada)
