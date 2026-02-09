@@ -168,6 +168,27 @@ function renderHome() {
             <p class="sub" style="margin:10px 0 0;"><a href="#/settings">Where is my data stored?</a></p>
           </div>
         </div>
+
+        <div class="card" aria-label="Finance v1">
+          <h2>Finance (v1)</h2>
+          <p class="muted" style="margin-top:-6px;">Profit report from cash events + linked COGS.</p>
+
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin-top:10px;">
+            <label style="display:flex; flex-direction:column; gap:6px;">
+              <span style="font-size:12px; color:var(--muted);">From</span>
+              <input id="finance-from" type="date" />
+            </label>
+            <label style="display:flex; flex-direction:column; gap:6px;">
+              <span style="font-size:12px; color:var(--muted);">To</span>
+              <input id="finance-to" type="date" />
+            </label>
+            <button id="finance-run" class="btn" type="button">Run</button>
+          </div>
+
+          <div id="finance-out" style="margin-top:12px; padding:12px; border:1px solid rgba(36,48,65,.85); border-radius:12px; background:rgba(0,0,0,.15);">
+            <div class="muted" style="font-size:13px;">No report yet.</div>
+          </div>
+        </div>
       </section>
 
       <footer>
@@ -184,4 +205,36 @@ function renderHome() {
   </div>`;
   const ver = root.querySelector("#bus-version");
   if (ver) setVersionInto(ver);
+
+  const financeFrom = document.getElementById("finance-from");
+  const financeTo = document.getElementById("finance-to");
+  const financeRun = document.getElementById("finance-run");
+  const financeOut = document.getElementById("finance-out");
+
+  async function runFinanceReport() {
+    const f = financeFrom?.value;
+    const t = financeTo?.value;
+    if (!f || !t) {
+      financeOut.innerHTML = `<div style="color:var(--bad);">Select both dates.</div>`;
+      return;
+    }
+    try {
+      const res = await fetch(`/app/finance/profit?from=${encodeURIComponent(f)}&to=${encodeURIComponent(t)}`, { credentials: "include" });
+      const j = await res.json();
+      if (!res.ok) throw j;
+      financeOut.innerHTML = `
+        <div style="display:grid; gap:6px;">
+          <div>Gross Sales: <strong>${(j.gross_sales_cents/100).toFixed(2)}</strong></div>
+          <div>Returns: <strong>${(j.returns_cents/100).toFixed(2)}</strong></div>
+          <div>Net Sales: <strong>${(j.net_sales_cents/100).toFixed(2)}</strong></div>
+          <div>COGS: <strong>${(j.cogs_cents/100).toFixed(2)}</strong></div>
+          <div>Gross Profit: <strong>${(j.gross_profit_cents/100).toFixed(2)}</strong></div>
+        </div>
+      `;
+    } catch (e) {
+      financeOut.innerHTML = `<div style="color:var(--bad);">Report failed.</div>`;
+    }
+  }
+
+  financeRun?.addEventListener("click", runFinanceReport);
 }
