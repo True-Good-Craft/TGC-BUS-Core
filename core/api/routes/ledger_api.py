@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import json
+import uuid
 import logging
 import os
 import sqlite3
@@ -21,7 +22,7 @@ from core.appdb.ledger import (
     add_batch,
     fifo_consume as sa_fifo_consume,
 )
-from core.appdb.models import Item, ItemBatch, ItemMovement
+from core.appdb.models import Item, ItemBatch, ItemMovement, CashEvent
 from core.appdb.paths import resolve_db_path
 from core.api.schemas_ledger import QtyDisplay, StockInReq, StockInResp
 from core.metrics.metric import (
@@ -125,6 +126,8 @@ class StockOutIn(BaseModel):
     qty: int = Field(gt=0)
     reason: Literal["sold", "loss", "theft", "other"] = "sold"
     note: Optional[str] = None
+    record_cash_event: bool = True
+    sell_unit_price_cents: Optional[int] = None
 
 
 @router.post("/consume")
@@ -211,19 +214,61 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
 @public_router.post("/stock/out")
 def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
     try:
-        moves = sa_fifo_consume(
-            db,
-            int(body.item_id),
-            int(body.qty),
-            body.reason,
-            body.note,
-        )
-        db.commit()
+        item_id = int(body.item_id)
+        qty_base = int(body.qty)
+
+        # Atomicity (SALE): fifo movements + cash_events insert must share a single transaction.
+        if body.reason == "sold" and bool(body.record_cash_event) is True:
+            it = db.query(Item).get(item_id)
+            if not it:
+                raise HTTPException(status_code=404, detail="item_not_found")
+            if (getattr(it, "dimension", None) or "").lower() != "count":
+                raise HTTPException(status_code=400, detail="sold_cash_event_count_only")
+
+            # Determine unit price snapshot (cents)
+            if body.sell_unit_price_cents is not None:
+                unit_price_cents = int(body.sell_unit_price_cents)
+            else:
+                unit_price_cents = int(
+                    (Decimal(str(getattr(it, "price", 0) or 0)) * Decimal("100")).quantize(
+                        Decimal("1"), rounding=ROUND_HALF_UP
+                    )
+                )
+
+            # Finance v1: count-only conversion: 1 ea = 1000 base units
+            qty_each = Decimal(qty_base) / Decimal(1000)
+            amount_cents = int(
+                (Decimal(unit_price_cents) * qty_each).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            )
+
+            source_id = uuid.uuid4().hex
+            with db.begin():
+                moves = sa_fifo_consume(db, item_id, qty_base, body.reason, source_id)
+                db.add(
+                    CashEvent(
+                        kind="sale",
+                        category=None,
+                        amount_cents=amount_cents,
+                        item_id=item_id,
+                        qty_base=qty_base,
+                        unit_price_cents=unit_price_cents,
+                        source_kind="sold",
+                        source_id=source_id,
+                        related_source_id=None,
+                        notes=body.note,
+                    )
+                )
+        else:
+            # Preserve prior behavior for non-sale or when record_cash_event is false.
+            moves = sa_fifo_consume(db, item_id, qty_base, body.reason, body.note)
+            db.commit()
         lines = [
             {
                 "batch_id": int(m.batch_id),
-                "qty": -int(m.qty_change),
-                "unit_cost_cents": int(m.unit_cost_cents or 0),
+                "qty_change": int(m.qty_change),
+                "unit_cost_cents": int(m.unit_cost_cents),
+                "source_kind": m.source_kind,
+                "source_id": m.source_id,
             }
             for m in moves
         ]

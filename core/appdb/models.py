@@ -100,11 +100,32 @@ class ItemMovement(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
+class CashEvent(Base):
+    __tablename__ = "cash_events"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String, nullable=False, index=True)
+    category = Column(String, nullable=True, index=True)
+    amount_cents = Column(Integer, nullable=False)
+
+    item_id = Column(Integer, ForeignKey("items.id"), nullable=True, index=True)
+    qty_base = Column(Integer, nullable=True)
+    unit_price_cents = Column(Integer, nullable=True)
+
+    source_kind = Column(String, nullable=True, index=True)
+    source_id = Column(String, nullable=True, index=True)
+    related_source_id = Column(String, nullable=True, index=True)
+
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
 __all__ = [
     "Base",
     "Item",
     "ItemBatch",
     "ItemMovement",
+    "CashEvent",
     "Vendor",
 ]
 
