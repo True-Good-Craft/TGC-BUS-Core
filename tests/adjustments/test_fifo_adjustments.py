@@ -2,59 +2,22 @@
 from __future__ import annotations
 
 import importlib
-import sys
 
 import pytest
 from fastapi import HTTPException
-from fastapi.testclient import TestClient
-from core.api.routes.ledger_api import AdjustmentInput, adjust_stock
+
+pytestmark = pytest.mark.api
 
 
 @pytest.fixture()
-def ledger_setup(tmp_path, monkeypatch):
-    db_path = tmp_path / "app.db"
-    monkeypatch.setenv("BUS_DB", str(db_path))
+def ledger_setup(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest):
     monkeypatch.setenv("BUS_DEV", "1")
-
-    for module_name in [
-        "core.api.http",
-        "core.api.routes.ledger_api",
-        "core.appdb.engine",
-        "core.appdb.ledger",
-        "core.appdb.models",
-        "core.services.models",
-    ]:
-        sys.modules.pop(module_name, None)
-
-    import core.appdb.engine as engine_module
-    import core.appdb.ledger as ledger_module
-    import core.appdb.models as models_module
-    import core.api.http as api_http
-    import core.services.models as services_models
-
-    engine_module = importlib.reload(engine_module)
-    ledger_module = importlib.reload(ledger_module)
-    models_module = importlib.reload(models_module)
-    api_http = importlib.reload(api_http)
-    services_models = importlib.reload(services_models)
-
-    from tgc.settings import Settings
-    from tgc.state import init_state
-
-    api_http.app.state.app_state = init_state(Settings())
-    api_http.app.state.allow_writes = True
-
-    engine = engine_module.get_engine()
-    models_module.Base.metadata.create_all(bind=engine)
-
-    from core.config.writes import set_writes_enabled
-
-    set_writes_enabled(True)
-
-    client = TestClient(api_http.APP)
-    session_token = api_http._load_or_create_token()
-    api_http.app.state.app_state.tokens._rec.token = session_token
-    client.headers.update({"Cookie": f"bus_session={session_token}"})
+    env = request.getfixturevalue("bus_client")
+    engine_module = env["engine"]
+    models_module = env["models"]
+    ledger_module = env["ledger"]
+    ledger_api = importlib.import_module("core.api.routes.ledger_api")
+    ledger_api = importlib.reload(ledger_api)
 
     with engine_module.SessionLocal() as db:
         item = models_module.Item(name="Adjusted", uom="ea", qty_stored=0)
@@ -62,12 +25,10 @@ def ledger_setup(tmp_path, monkeypatch):
         db.commit()
         item_id = item.id
 
-    yield {
-        "client": client,
-        "engine": engine_module,
-        "models": models_module,
-        "ledger": ledger_module,
+    return {
+        **env,
         "item_id": item_id,
+        "ledger_api": ledger_api,
     }
 
 
@@ -113,11 +74,12 @@ def test_negative_adjustment_fifo_consume_and_400_on_insufficient(ledger_setup):
 
     engine = ledger_setup["engine"]
     ledger = ledger_setup["ledger"]
+    ledger_api = ledger_setup["ledger_api"]
     with engine.SessionLocal() as db:
         ledger.add_batch(db, item_id, 3, unit_cost_cents=100, source_kind="purchase", source_id=None)
         ledger.add_batch(db, item_id, 2, unit_cost_cents=50, source_kind="purchase", source_id=None)
         db.commit()
-        resp = adjust_stock(AdjustmentInput(item_id=item_id, qty_change=-4, note="shrink"), db)
+        resp = ledger_api.adjust_stock(ledger_api.AdjustmentInput(item_id=item_id, qty_change=-4, note="shrink"), db)
 
     assert resp == {"ok": True}
 
@@ -142,7 +104,7 @@ def test_negative_adjustment_fifo_consume_and_400_on_insufficient(ledger_setup):
 
     with engine.SessionLocal() as db:
         with pytest.raises(HTTPException) as excinfo:
-            adjust_stock(AdjustmentInput(item_id=item_id, qty_change=-3), db)
+            ledger_api.adjust_stock(ledger_api.AdjustmentInput(item_id=item_id, qty_change=-3), db)
     assert excinfo.value.status_code == 400
     assert excinfo.value.detail == {
         "shortages": [

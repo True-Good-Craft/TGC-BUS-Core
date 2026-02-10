@@ -4,10 +4,14 @@ import importlib
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+pytestmark = pytest.mark.unit
 
 
 def test_app_db_path_creates_directory(tmp_path, monkeypatch):
@@ -15,6 +19,8 @@ def test_app_db_path_creates_directory(tmp_path, monkeypatch):
 
     local_app_data = tmp_path / "LocalAppData"
     monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+
+    importlib.reload(appdb_paths)
 
     db_path = appdb_paths.app_db_path()
 

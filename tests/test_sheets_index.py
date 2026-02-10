@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import pytest
 
+pytestmark = pytest.mark.unit
+
 pytest.importorskip("tgc.actions.sheets_index", reason="optional tgc.actions not present in this repo")
 from tgc.actions.sheets_index import build_sheets_index, write_sheets_index_markdown
 

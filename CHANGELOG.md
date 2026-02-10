@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+## [0.10.1] — 2026-02-10
+### Added
+- Registered pytest markers in `pytest.ini` for `unit`, `api`, `integration`, `smoke`, and `slow`.
+- Added `tests/TEST_PLAN.md` and `tests/RUNNING_TESTS.md` to document coverage and test execution.
+- Added a high-signal finance invariant test for refund cash-only behavior.
+
+### Changed
+- Hardened plugin import-guard tests to use tmp-path plugin roots and avoid repository pollution.
+- Reduced duplicated smoke assertions in manufacturing flow tests while preserving core invariants.
+- Strengthened inventory journal purchase assertions by validating `qty_stored` updates.
+- Marked index/path tests as `unit` and removed brittle path bootstrap setup.
+
 ## [0.8.8] — 2025-12-08
 ### Changed
 - Windows restore: reliable on SQLite/Windows via lazy SQLAlchemy engine (NullPool), indexer worker-only, explicit stop around restore, WAL checkpoint + handle disposal, bounded exclusive check, atomic replace (MoveFileEx), and journal archive/recreate. Returns `{ "restart_required": true }` on success.
