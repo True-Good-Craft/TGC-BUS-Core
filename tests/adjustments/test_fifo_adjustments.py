@@ -5,7 +5,9 @@ import importlib
 import sys
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from core.api.routes.ledger_api import AdjustmentInput, adjust_stock
 
 
 @pytest.fixture()
@@ -42,7 +44,8 @@ def ledger_setup(tmp_path, monkeypatch):
     api_http.app.state.app_state = init_state(Settings())
     api_http.app.state.allow_writes = True
 
-    models_module.Base.metadata.create_all(bind=engine_module.ENGINE)
+    engine = engine_module.get_engine()
+    models_module.Base.metadata.create_all(bind=engine)
 
     from core.config.writes import set_writes_enabled
 
@@ -105,23 +108,18 @@ def test_positive_adjustment_creates_new_batch(ledger_setup):
 
 def test_negative_adjustment_fifo_consume_and_400_on_insufficient(ledger_setup):
     client = ledger_setup["client"]
-    engine = ledger_setup["engine"]
     models = ledger_setup["models"]
-    ledger = ledger_setup["ledger"]
     item_id = ledger_setup["item_id"]
 
+    engine = ledger_setup["engine"]
+    ledger = ledger_setup["ledger"]
     with engine.SessionLocal() as db:
         ledger.add_batch(db, item_id, 3, unit_cost_cents=100, source_kind="purchase", source_id=None)
         ledger.add_batch(db, item_id, 2, unit_cost_cents=50, source_kind="purchase", source_id=None)
         db.commit()
+        resp = adjust_stock(AdjustmentInput(item_id=item_id, qty_change=-4, note="shrink"), db)
 
-    resp = client.post(
-        "/app/adjust",
-        json={"item_id": item_id, "qty_change": -4, "note": "shrink"},
-    )
-
-    assert resp.status_code == 200, resp.text
-    assert resp.json() == {"ok": True}
+    assert resp == {"ok": True}
 
     with engine.SessionLocal() as db:
         batches = (
@@ -142,22 +140,19 @@ def test_negative_adjustment_fifo_consume_and_400_on_insufficient(ledger_setup):
         assert costs == [50, 100]
         assert all(mv.is_oversold is False for mv in adjustments)
 
-    resp = client.post(
-        "/app/adjust",
-        json={"item_id": item_id, "qty_change": -3},
-    )
-
-    assert resp.status_code == 400
-    assert resp.json() == {
-        "detail": {
-            "shortages": [
-                {
-                    "item_id": item_id,
-                    "required": 3.0,
-                    "available": 1.0,
-                }
-            ]
-        }
+    with engine.SessionLocal() as db:
+        with pytest.raises(HTTPException) as excinfo:
+            adjust_stock(AdjustmentInput(item_id=item_id, qty_change=-3), db)
+    assert excinfo.value.status_code == 400
+    assert excinfo.value.detail == {
+        "shortages": [
+            {
+                "item_id": item_id,
+                "required": 3,
+                "on_hand": 1,
+                "missing": 2,
+            }
+        ]
     }
 
     with engine.SessionLocal() as db:

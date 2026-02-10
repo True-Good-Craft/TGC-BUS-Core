@@ -163,12 +163,16 @@ def from_base(*args, **kwargs) -> Decimal:
         if not isinstance(qty_base, int):
             qty_base = int(qty_base)
         return from_base_qty(qty_base, dimension=dimension, unit=unit)
-    if (
-        len(args) == 0
-        and "price_per_base" in kwargs
-        and "dimension" in kwargs
-        and "unit" in kwargs
-    ):
+    if len(args) == 1 and set(kwargs.keys()) == {"dimension", "unit"}:
+        price_per_base = args[0]
+        if not isinstance(price_per_base, Decimal):
+            price_per_base = Decimal(str(price_per_base))
+        return _price_from_base(
+            price_per_base=price_per_base,
+            dimension=kwargs["dimension"],
+            unit=kwargs["unit"],
+        )
+    if len(args) == 0 and set(kwargs.keys()) == {"price_per_base", "dimension", "unit"}:
         return _price_from_base(**kwargs)
     raise TypeError("from_base() unsupported call signature")
 

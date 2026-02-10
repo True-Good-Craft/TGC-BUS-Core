@@ -106,6 +106,7 @@ export function unmountInventory() {
 
 async function fetchItems(state) {
   state.items = await apiGetJson('/app/items');
+  window.__inventory_items = state.items;
   return state.items;
 }
 
@@ -119,6 +120,26 @@ function formatItemPrice(item) {
     return item?.price != null ? formatMoney(item.price) : '—';
   }
   return item?.fifo_unit_cost_display || (item?.price != null ? formatMoney(item.price) : '—');
+}
+
+function toast(message, tone = 'ok') {
+  const el = document.createElement('div');
+  el.textContent = message;
+  el.style.position = 'fixed';
+  el.style.bottom = '20px';
+  el.style.right = '20px';
+  el.style.padding = '12px 14px';
+  el.style.borderRadius = '10px';
+  el.style.background = tone === 'error' ? '#5b1f1f' : '#1f3b2f';
+  el.style.color = 'var(--fg)';
+  el.style.boxShadow = '0 8px 20px rgba(0,0,0,0.4)';
+  el.style.zIndex = '9999';
+  document.body.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => el.remove(), 300);
+  }, 2000);
 }
 
 // Compute list quantity from base every time to avoid legacy server scaling (ea=0.001).
@@ -153,6 +174,10 @@ function renderTable(state) {
     );
     tbody.append(row);
   });
+}
+
+function renderInventory(root, state) {
+  renderTable(state);
 }
 
 async function adjustQuantity(itemId) {
@@ -240,6 +265,19 @@ export async function _mountInventory(container) {
     reasonWrap.appendChild(reasonSelect);
     reasonRow.append(reasonLabel, reasonWrap);
 
+    // Sale price (sold only)
+    const priceRow = document.createElement('div');
+    priceRow.className = 'field-row';
+    const priceLabel = document.createElement('label');
+    priceLabel.textContent = 'Sale unit price ($)';
+    const priceInput = document.createElement('input');
+    priceInput.type = 'number';
+    priceInput.step = '0.01';
+    priceInput.min = '0';
+    priceInput.placeholder = '0.00';
+    priceInput.value = '';
+    priceRow.append(priceLabel, priceInput);
+
     const noteRow = document.createElement('div');
     noteRow.className = 'field-row';
     const noteLabel = document.createElement('label');
@@ -265,7 +303,7 @@ export async function _mountInventory(container) {
     submitBtn.textContent = 'Confirm Stock Out';
     actions.append(submitBtn, cancelBtn);
 
-    body.append(itemRow, qtyRow, reasonRow, noteRow, actions);
+    body.append(itemRow, qtyRow, reasonRow, priceRow, noteRow, actions);
     card.appendChild(body);
     overlay.appendChild(card);
     overlay._inventoryCleanup = () => overlay.remove();
@@ -277,6 +315,23 @@ export async function _mountInventory(container) {
     });
     card.addEventListener('click', (ev) => ev.stopPropagation());
     cancelBtn.addEventListener('click', (ev) => { ev.preventDefault(); close(); });
+
+    function updatePriceVisibility() {
+      const reason = String(reasonSelect.value || 'sold');
+      priceRow.style.display = (reason === 'sold') ? '' : 'none';
+      if (reason === 'sold') {
+        const itemId = Number(itemSelect.value || 0);
+        const item = (window.__inventory_items || []).find((x) => Number(x.id) === itemId);
+        if (item && priceInput.value === '') {
+          const p = Number(item.price ?? 0);
+          priceInput.value = Number.isFinite(p) ? String(p) : '';
+        }
+      }
+    }
+
+    itemSelect.addEventListener('change', updatePriceVisibility);
+    reasonSelect.addEventListener('change', updatePriceVisibility);
+    updatePriceVisibility();
 
     submitBtn.addEventListener('click', async (ev) => {
       ev.preventDefault();
@@ -296,7 +351,13 @@ export async function _mountInventory(container) {
 
       try {
         await ensureToken();
-        await apiPost('/app/stock/out', { item_id: itemId, qty: qtyVal, reason, note });
+        const payload = { item_id: itemId, qty: qtyVal, reason, note };
+        if (reason === 'sold') {
+          payload.record_cash_event = true;
+          const dollars = Number(priceInput.value ?? 0);
+          payload.sell_unit_price_cents = Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
+        }
+        await apiPost('/app/stock/out', payload);
         close();
         await reloadInventory?.();
         alert('Stock out recorded.');
@@ -310,14 +371,216 @@ export async function _mountInventory(container) {
     });
   }
 
+  function openRefundModal(state, onDone) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const card = document.createElement('div');
+    card.className = 'modal-card';
+    card.style.maxWidth = '460px';
+    card.style.background = 'var(--surface)';
+    card.style.border = '1px solid var(--border)';
+    card.style.borderRadius = '10px';
+
+    const title = document.createElement('div');
+    title.className = 'modal-title';
+    title.textContent = 'Refund';
+    card.appendChild(title);
+
+    const errorBanner = document.createElement('div');
+    errorBanner.className = 'error-banner';
+    errorBanner.hidden = true;
+    card.appendChild(errorBanner);
+
+    const body = document.createElement('div');
+    body.className = 'modal-body';
+
+    const itemRow = document.createElement('div');
+    itemRow.className = 'field-row';
+    const itemLabel = document.createElement('label');
+    itemLabel.textContent = 'Item';
+    const itemWrap = document.createElement('div');
+    itemWrap.className = 'field-input';
+    const itemSelect = document.createElement('select');
+    itemSelect.required = true;
+    (state.items || []).forEach((it) => {
+      const opt = document.createElement('option');
+      opt.value = it.id;
+      opt.textContent = it.name || `Item #${it.id}`;
+      itemSelect.appendChild(opt);
+    });
+    itemWrap.appendChild(itemSelect);
+    itemRow.append(itemLabel, itemWrap);
+
+    const qtyRow = document.createElement('div');
+    qtyRow.className = 'field-row';
+    const qtyLabel = document.createElement('label');
+    qtyLabel.textContent = 'Quantity (base units)';
+    const qtyWrap = document.createElement('div');
+    qtyWrap.className = 'field-input';
+    const qtyInput = document.createElement('input');
+    qtyInput.type = 'number';
+    qtyInput.min = '1';
+    qtyInput.step = '1';
+    qtyInput.value = '1000';
+    qtyWrap.appendChild(qtyInput);
+    qtyRow.append(qtyLabel, qtyWrap);
+
+    const amountRow = document.createElement('div');
+    amountRow.className = 'field-row';
+    const amountLabel = document.createElement('label');
+    amountLabel.textContent = 'Refund amount ($)';
+    const amountWrap = document.createElement('div');
+    amountWrap.className = 'field-input';
+    const amountInput = document.createElement('input');
+    amountInput.type = 'number';
+    amountInput.step = '0.01';
+    amountInput.min = '0';
+    amountInput.placeholder = '0.00';
+    amountWrap.appendChild(amountInput);
+    amountRow.append(amountLabel, amountWrap);
+
+    const restockRow = document.createElement('div');
+    restockRow.className = 'field-row';
+    const restockLabel = document.createElement('label');
+    restockLabel.textContent = 'Return to stock';
+    const restockWrap = document.createElement('div');
+    restockWrap.className = 'field-input';
+    const restockInput = document.createElement('input');
+    restockInput.type = 'checkbox';
+    restockWrap.appendChild(restockInput);
+    restockRow.append(restockLabel, restockWrap);
+
+    const relatedRow = document.createElement('div');
+    relatedRow.className = 'field-row';
+    const relatedLabel = document.createElement('label');
+    relatedLabel.textContent = 'Related source ID (optional)';
+    const relatedWrap = document.createElement('div');
+    relatedWrap.className = 'field-input';
+    const relatedInput = document.createElement('input');
+    relatedInput.type = 'text';
+    relatedInput.placeholder = 'source_id from sale';
+    relatedWrap.appendChild(relatedInput);
+    relatedRow.append(relatedLabel, relatedWrap);
+
+    const restockCostRow = document.createElement('div');
+    restockCostRow.className = 'field-row';
+    const restockCostLabel = document.createElement('label');
+    restockCostLabel.textContent = 'Restock cost basis ($)';
+    const restockCostWrap = document.createElement('div');
+    restockCostWrap.className = 'field-input';
+    const restockCostInput = document.createElement('input');
+    restockCostInput.type = 'number';
+    restockCostInput.step = '0.01';
+    restockCostInput.min = '0';
+    restockCostInput.placeholder = '0.00';
+    restockCostWrap.appendChild(restockCostInput);
+    restockCostRow.append(restockCostLabel, restockCostWrap);
+
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn';
+    cancelBtn.textContent = 'Cancel';
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'button';
+    submitBtn.className = 'btn primary';
+    submitBtn.textContent = 'Submit Refund';
+    actions.append(submitBtn, cancelBtn);
+
+    body.append(itemRow, qtyRow, amountRow, restockRow, relatedRow, restockCostRow, actions);
+    card.appendChild(body);
+    overlay.appendChild(card);
+    overlay._inventoryCleanup = () => overlay.remove();
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) close();
+    });
+    card.addEventListener('click', (ev) => ev.stopPropagation());
+    cancelBtn.addEventListener('click', (ev) => { ev.preventDefault(); close(); });
+
+    function updateRestockVisibility() {
+      const restock = restockInput.checked;
+      const related = relatedInput.value.trim();
+      restockCostRow.style.display = (restock && !related) ? '' : 'none';
+    }
+
+    restockInput.addEventListener('change', updateRestockVisibility);
+    relatedInput.addEventListener('input', updateRestockVisibility);
+    updateRestockVisibility();
+
+    submitBtn.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      errorBanner.hidden = true;
+      errorBanner.textContent = '';
+
+      const itemId = Number(itemSelect.value);
+      const qtyBase = Math.trunc(Number(qtyInput.value));
+      const refundDollars = Number(amountInput.value);
+      const restockInventory = Boolean(restockInput.checked);
+      const relatedSourceId = relatedInput.value.trim();
+
+      if (!Number.isInteger(itemId) || !Number.isInteger(qtyBase) || qtyBase <= 0) {
+        errorBanner.textContent = 'Select an item and enter a positive integer quantity.';
+        errorBanner.hidden = false;
+        return;
+      }
+      if (!Number.isFinite(refundDollars) || refundDollars <= 0) {
+        errorBanner.textContent = 'Enter a positive refund amount.';
+        errorBanner.hidden = false;
+        return;
+      }
+
+      if (restockInventory && !relatedSourceId) {
+        const restockDollars = Number(restockCostInput.value);
+        if (!Number.isFinite(restockDollars) || restockDollars <= 0) {
+          toast('Restock cost basis is required when returning to stock.', 'error');
+          return;
+        }
+      }
+
+      try {
+        await ensureToken();
+        const payload = {
+          item_id: itemId,
+          qty_base: qtyBase,
+          refund_amount_cents: Math.round(refundDollars * 100),
+          restock_inventory: restockInventory,
+          related_source_id: relatedSourceId || null,
+        };
+        if (restockInventory && !relatedSourceId) {
+          const restockDollars = Number(restockCostInput.value);
+          payload.restock_unit_cost_cents = Math.round(restockDollars * 100);
+        }
+        await apiPost('/app/finance/refund', payload);
+        toast('Refund recorded.');
+        close();
+        if (typeof onDone === 'function') await onDone();
+      } catch (e) {
+        const detail = e?.payload?.detail;
+        errorBanner.textContent = detail || e?.message || 'Refund failed';
+        errorBanner.hidden = false;
+      }
+    });
+  }
+
   container.innerHTML = '';
+  const root = container;
   const addBtn = el('button', { id: 'add-item-btn', class: 'btn', 'data-role': 'btn-add-item' }, '+ Add Item');
   const stockOutBtn = el('button', { class: 'btn secondary', type: 'button' }, '− Stock Out');
+  const refundBtn = el('button', { class: 'btn' }, 'Refund');
   const controls = el('div', { class: 'inventory-controls toolbar' }, [
     addBtn,
     stockOutBtn,
+    refundBtn,
   ]);
   stockOutBtn.addEventListener('click', () => openStockOutModal());
+  refundBtn.addEventListener('click', () => openRefundModal(state, async () => {
+    await fetchItems(state);
+    renderInventory(root, state);
+  }));
   const table = el('table', { id: 'inventory-table', class: 'table-clickable inventory-table' });
   const colgroup = el('colgroup');
   ['20%', '20%', '20%', '20%', '20%'].forEach((width) => {
@@ -1361,4 +1624,3 @@ export function openItemModal(item = null) {
     }
   });
 }
-

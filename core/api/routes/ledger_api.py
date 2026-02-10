@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import json
+import uuid
 import logging
 import os
 import sqlite3
@@ -10,7 +11,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import asc, func
 from sqlalchemy.orm import Session
 
@@ -21,7 +22,7 @@ from core.appdb.ledger import (
     add_batch,
     fifo_consume as sa_fifo_consume,
 )
-from core.appdb.models import Item, ItemBatch, ItemMovement
+from core.appdb.models import Item, ItemBatch, ItemMovement, CashEvent
 from core.appdb.paths import resolve_db_path
 from core.api.schemas_ledger import QtyDisplay, StockInReq, StockInResp
 from core.metrics.metric import (
@@ -31,6 +32,7 @@ from core.metrics.metric import (
     from_base,
     to_base_qty,
 )
+from core.journal.inventory import append_inventory
 
 # NOTE: Primary router uses legacy "/ledger" prefix; public_router exposes routes without it
 # (e.g., /app/adjust) to match current app paths.
@@ -54,9 +56,11 @@ def _append_inventory_journal(entry: dict) -> None:
     try:
         entry = dict(entry)
         entry.setdefault("timestamp", datetime.utcnow().isoformat() + "Z")
-        p = _journals_dir() / "inventory.jsonl"
-        with open(p, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+        if "op" not in entry and "type" in entry:
+            entry["op"] = entry["type"]
+        if "qty" not in entry and "qty_change" in entry:
+            entry["qty"] = entry["qty_change"]
+        append_inventory(entry)
     except Exception:
         # Journaling must never block core ops.
         pass
@@ -125,6 +129,8 @@ class StockOutIn(BaseModel):
     qty: int = Field(gt=0)
     reason: Literal["sold", "loss", "theft", "other"] = "sold"
     note: Optional[str] = None
+    record_cash_event: bool = True
+    sell_unit_price_cents: Optional[int] = None
 
 
 @router.post("/consume")
@@ -160,8 +166,15 @@ def consume(body: ConsumeIn, db: Session = Depends(get_session)):
 # -------------------------
 class AdjustmentInput(BaseModel):
     item_id: int
-    qty_change: int = Field(..., ne=0)
+    qty_change: int = Field(...)
     note: str | None = None
+
+    @field_validator("qty_change")
+    @classmethod
+    def qty_change_non_zero(cls, value: int) -> int:
+        if value == 0:
+            raise ValueError("qty_change must not be 0")
+        return value
 
 
 @router.post("/adjust")
@@ -211,19 +224,64 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
 @public_router.post("/stock/out")
 def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
     try:
-        moves = sa_fifo_consume(
-            db,
-            int(body.item_id),
-            int(body.qty),
-            body.reason,
-            body.note,
-        )
-        db.commit()
+        item_id = int(body.item_id)
+        qty_base = int(body.qty)
+
+        # Atomicity (SALE): fifo movements + cash_events insert must share a single transaction.
+        if body.reason == "sold" and bool(body.record_cash_event) is True:
+            it = db.get(Item, item_id)
+            if not it:
+                raise HTTPException(status_code=404, detail="item_not_found")
+            if (getattr(it, "dimension", None) or "").lower() != "count":
+                raise HTTPException(status_code=400, detail="sold_cash_event_count_only")
+
+            # Determine unit price snapshot (cents)
+            if body.sell_unit_price_cents is not None:
+                unit_price_cents = int(body.sell_unit_price_cents)
+            else:
+                unit_price_cents = int(
+                    (Decimal(str(getattr(it, "price", 0) or 0)) * Decimal("100")).quantize(
+                        Decimal("1"), rounding=ROUND_HALF_UP
+                    )
+                )
+
+            # Finance v1: count-only conversion: 1 ea = 1000 base units
+            qty_each = Decimal(qty_base) / Decimal(1000)
+            amount_cents = int(
+                (Decimal(unit_price_cents) * qty_each).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            )
+
+            source_id = uuid.uuid4().hex
+            # SQLAlchemy Session has autobegin; in request contexts we may already be inside a transaction.
+            # Use a nested transaction (SAVEPOINT) when a transaction is active, otherwise start a new one.
+            tx = db.begin_nested() if db.in_transaction() else db.begin()
+            with tx:
+                moves = sa_fifo_consume(db, item_id, qty_base, body.reason, source_id)
+                db.add(
+                    CashEvent(
+                        kind="sale",
+                        category=None,
+                        amount_cents=amount_cents,
+                        item_id=item_id,
+                        qty_base=qty_base,
+                        unit_price_cents=unit_price_cents,
+                        source_kind="sold",
+                        source_id=source_id,
+                        related_source_id=None,
+                        notes=body.note,
+                    )
+                )
+        else:
+            # Preserve prior behavior for non-sale or when record_cash_event is false.
+            moves = sa_fifo_consume(db, item_id, qty_base, body.reason, body.note)
+            db.commit()
         lines = [
             {
                 "batch_id": int(m.batch_id),
-                "qty": -int(m.qty_change),
-                "unit_cost_cents": int(m.unit_cost_cents or 0),
+                "qty_change": int(m.qty_change),
+                "unit_cost_cents": int(m.unit_cost_cents),
+                "source_kind": m.source_kind,
+                "source_id": m.source_id,
             }
             for m in moves
         ]

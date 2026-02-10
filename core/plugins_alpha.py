@@ -118,7 +118,7 @@ def _resolve_plugin_dirs() -> List[Path]:
     return paths
 
 
-def _iter_plugin_prefixes() -> Iterator[str]:
+def _iter_plugin_prefixes() -> Iterator[tuple[str, Path]]:
     if str(ROOT_DIR) not in sys.path:
         sys.path.append(str(ROOT_DIR))
     seen: Set[str] = set()
@@ -143,16 +143,30 @@ def _iter_plugin_prefixes() -> Iterator[str]:
             if prefix in seen:
                 continue
             seen.add(prefix)
-            yield prefix
+            yield prefix, plugin_file
+
+
+def _has_internal_imports(py_text: str) -> bool:
+    for needle in ("import core", "from core", "import core.", "from core."):
+        if needle in py_text:
+            return True
+    return False
 
 
 def discover_alpha_plugins() -> List[PluginV2]:
     plugins: List[PluginV2] = []
-    for prefix in _iter_plugin_prefixes():
+    for prefix, plugin_file in _iter_plugin_prefixes():
         mod = None
         snap_before = set(sys.modules.keys())
         captured_names: Set[str] = set()
         try:
+            try:
+                source_text = plugin_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            if _has_internal_imports(source_text):
+                print(f"[plugins] skipped {prefix}: internal import")
+                continue
             for candidate in (f"{prefix}.plugin", prefix):
                 with _capture_plugin_imports(prefix) as captured:
                     try:
