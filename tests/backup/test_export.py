@@ -4,27 +4,31 @@
 import importlib
 import re
 import sqlite3
-import sys
 from pathlib import Path
 
 import pytest
 
+from tests.conftest import reset_bus_modules
+
+pytestmark = pytest.mark.integration
 
 @pytest.fixture()
 def modules(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "lad"))
     monkeypatch.setenv("BUS_DB", str(tmp_path / "lad" / "app" / "app.db"))
 
-    for module_name in [
-        "core.utils.export",
-        "core.config.paths",
-        "core.backup.crypto",
-    ]:
-        sys.modules.pop(module_name, None)
+    reset_bus_modules(
+        [
+            "core.utils.export",
+            "core.config.paths",
+            "core.backup.crypto",
+        ]
+    )
 
     crypto = importlib.import_module("core.backup.crypto")
-    crypto = importlib.reload(crypto)
     export = importlib.import_module("core.utils.export")
+
+    crypto = importlib.reload(crypto)
     export = importlib.reload(export)
     return export, crypto
 
