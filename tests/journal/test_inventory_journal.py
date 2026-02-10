@@ -1,64 +1,20 @@
 # Copyright (C) 2025 BUS Core Authors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-import importlib
 import json
-import sys
 
 import pytest
-from fastapi.testclient import TestClient
+
+pytestmark = pytest.mark.api
 
 
 @pytest.fixture()
-def inventory_journal_setup(tmp_path, monkeypatch):
-    db_path = tmp_path / "app.db"
+def inventory_journal_setup(tmp_path, monkeypatch, request: pytest.FixtureRequest):
     journal_path = tmp_path / "journals" / "inventory.jsonl"
-    monkeypatch.setenv("BUS_DB", str(db_path))
     monkeypatch.setenv("BUS_INVENTORY_JOURNAL", str(journal_path))
-
-    for module_name in [
-        "core.api.http",
-        "core.api.routes.ledger_api",
-        "core.appdb.engine",
-        "core.appdb.ledger",
-        "core.appdb.models",
-        "core.journal.inventory",
-        "core.services.models",
-    ]:
-        sys.modules.pop(module_name, None)
-
-    import core.appdb.engine as engine_module
-    import core.appdb.ledger as ledger_module
-    import core.appdb.models as models_module
-    import core.api.http as api_http
-    import core.api.routes.ledger_api as ledger_api
-    import core.journal.inventory as inventory_journal
-    import core.services.models as services_models
-
-    engine_module = importlib.reload(engine_module)
-    ledger_module = importlib.reload(ledger_module)
-    models_module = importlib.reload(models_module)
-    api_http = importlib.reload(api_http)
-    ledger_api = importlib.reload(ledger_api)
-    inventory_journal = importlib.reload(inventory_journal)
-    services_models = importlib.reload(services_models)
-
-    from tgc.settings import Settings
-    from tgc.state import init_state
-
-    api_http.app.state.app_state = init_state(Settings())
-    api_http.app.state.allow_writes = True
-
-    models_module.Base.metadata.create_all(bind=engine_module.ENGINE)
-
-    from core.config.writes import set_writes_enabled
-
-    set_writes_enabled(True)
-
-    client = TestClient(api_http.APP)
-    session_token = api_http._load_or_create_token()
-    api_http.app.state.app_state.tokens._rec.token = session_token
-    client.headers.update({"Cookie": f"bus_session={session_token}"})
+    env = request.getfixturevalue("bus_client")
+    engine_module = env["engine"]
+    models_module = env["models"]
 
     with engine_module.SessionLocal() as db:
         item = models_module.Item(name="Widget", uom="ea", qty_stored=0)
@@ -66,11 +22,8 @@ def inventory_journal_setup(tmp_path, monkeypatch):
         db.commit()
         item_id = item.id
 
-    yield {
-        "client": client,
-        "engine": engine_module,
-        "models": models_module,
-        "ledger_api": ledger_api,
+    return {
+        **env,
         "journal_path": journal_path,
         "item_id": item_id,
     }
@@ -100,6 +53,9 @@ def test_purchase_appends_journal(inventory_journal_setup):
         batches = db.query(models.ItemBatch).all()
         assert len(batches) == 1
         assert batches[0].qty_initial == pytest.approx(3)
+        item = db.get(models.Item, inventory_journal_setup["item_id"])
+        assert item is not None
+        assert item.qty_stored == pytest.approx(3)
 
     assert journal_path.exists()
     lines = journal_path.read_text(encoding="utf-8").splitlines()
@@ -139,3 +95,4 @@ def test_journal_failure_does_not_block_adjustment(inventory_journal_setup, monk
 
     # Journal write failed but DB state is still committed
     assert not journal_path.exists()
+

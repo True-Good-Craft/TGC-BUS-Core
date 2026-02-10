@@ -180,10 +180,7 @@ def execute_run_txn(
     session.flush()
 
     allocations: List[dict] = []
-    cost_inputs_cents = 0
     consumed_per_item: dict[int, float] = {}
-    # cache item -> (dimension, uom, multiplier) to avoid repeated lookups
-    item_uom_cache: dict[int, tuple[str, str, int]] = {}
     for r in required:
         if r["qty"] <= 0:
             continue
@@ -196,40 +193,22 @@ def execute_run_txn(
             consumed_per_item[alloc["item_id"]] = consumed_per_item.get(alloc["item_id"], 0) + alloc[
                 "qty"
             ]
-            # Convert alloc qty from base units back to the item's UOM before multiplying by UOM-priced cents
-            if alloc["unit_cost_cents"] is not None:
-                cached = item_uom_cache.get(alloc["item_id"])
-                if cached is None:
-                    item_obj = session.get(Item, alloc["item_id"])
-                    dim = getattr(item_obj, "dimension", "count") or "count"
-                    uom = getattr(item_obj, "uom", "ea") or "ea"
-                    mult = uom_multiplier(dim, uom)
-                    cached = (dim, uom, mult)
-                    item_uom_cache[alloc["item_id"]] = cached
-                _, _, mult = cached
-                qty_in_uom = alloc["qty"] / float(mult)
-                cost_inputs_cents += int(round(alloc["unit_cost_cents"] * qty_in_uom))
-
+    cost_inputs_cents = 0
     for alloc in allocations:
-        session.add(
-            ItemMovement(
-                item_id=alloc["item_id"],
-                batch_id=alloc["batch_id"],
-                qty_change=-alloc["qty"],
-                unit_cost_cents=alloc["unit_cost_cents"],
-                source_kind="manufacturing",
-                source_id=mfg_run.id,
-                is_oversold=False,
-            )
+        mv = ItemMovement(
+            item_id=alloc["item_id"],
+            batch_id=alloc["batch_id"],
+            qty_change=-alloc["qty"],
+            unit_cost_cents=alloc["unit_cost_cents"],
+            source_kind="manufacturing",
+            source_id=mfg_run.id,
+            is_oversold=False,
         )
+        session.add(mv)
+        unit_cost = int(alloc["unit_cost_cents"] or 0)
+        cost_inputs_cents += int(round(float(alloc["qty"]) * unit_cost))
 
-    # Price per OUTPUT UOM (not per base). Convert output base qty back to its UOM.
-    out_item = session.get(Item, output_item_id)
-    out_dim = getattr(out_item, "dimension", "count") or "count"
-    out_uom = getattr(out_item, "uom", "ea") or "ea"
-    out_mult = uom_multiplier(out_dim, out_uom)
-    output_qty_uom = (body.output_qty or 0) / float(out_mult)
-    per_output_cents = round_half_up_cents(cost_inputs_cents / max(output_qty_uom, 1e-9))
+    per_output_cents = round_half_up_cents(cost_inputs_cents / max(float(body.output_qty or 0), 1e-9))
     output_batch = ItemBatch(
         item_id=output_item_id,
         qty_initial=body.output_qty,
@@ -242,7 +221,6 @@ def execute_run_txn(
     session.add(output_batch)
     session.flush()
 
-    # Debug trace to verify unit math end-to-end
     try:
         from core.logging import log
 
@@ -250,11 +228,7 @@ def execute_run_txn(
             "mfg:cost",
             extra={
                 "inputs_cents": cost_inputs_cents,
-                "out_dim": out_dim,
-                "out_uom": out_uom,
                 "out_qty_base": body.output_qty,
-                "out_mult": out_mult,
-                "out_qty_uom": output_qty_uom,
                 "per_out_cents": per_output_cents,
             },
         )

@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import importlib
-import sys
 
 import pytest
 from fastapi.testclient import TestClient
+
+from tests.conftest import reset_bus_modules
+
+pytestmark = pytest.mark.api
 
 
 @pytest.fixture()
@@ -16,18 +19,19 @@ def contacts_client(tmp_path, monkeypatch):
     home.mkdir(parents=True, exist_ok=True)
     (home / "app").mkdir(parents=True, exist_ok=True)
 
-    for module_name in [
-        "core.api.http",
-        "core.appdb.models",
-        "core.appdb.engine",
-        "core.services.models",
-        "core.api.routes.vendors",
-        "core.api.routes.items",
-        "core.appdb.session",
-        "tgc.state",
-        "tgc.settings",
-    ]:
-        sys.modules.pop(module_name, None)
+    reset_bus_modules(
+        [
+            "core.api.http",
+            "core.appdb.models",
+            "core.appdb.engine",
+            "core.services.models",
+            "core.api.routes.vendors",
+            "core.api.routes.items",
+            "core.appdb.session",
+            "tgc.state",
+            "tgc.settings",
+        ]
+    )
 
     import core.appdb.engine as engine_module
     import core.appdb.models as models_module

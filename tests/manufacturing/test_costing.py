@@ -1,60 +1,22 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
-import importlib
 import json
-import sys
 
 import pytest
-from fastapi.testclient import TestClient
 
 from core.money import round_half_up_cents
 
+pytestmark = pytest.mark.api
+
 
 @pytest.fixture()
-def costing_setup(tmp_path, monkeypatch):
-    db_path = tmp_path / "app.db"
-    monkeypatch.setenv("BUS_DB", str(db_path))
-
-    for module_name in [
-        "core.api.http",
-        "core.api.routes.manufacturing",
-        "core.appdb.engine",
-        "core.appdb.models",
-        "core.appdb.models_recipes",
-        "core.manufacturing.service",
-        "core.services.models",
-    ]:
-        sys.modules.pop(module_name, None)
-
-    import core.appdb.engine as engine_module
-    import core.appdb.models as models_module
-    import core.appdb.models_recipes as recipes_module
-    import core.services.models as services_models
-    import core.api.http as api_http
-
-    engine_module = importlib.reload(engine_module)
-    models_module = importlib.reload(models_module)
-    recipes_module = importlib.reload(recipes_module)
-    services_models = importlib.reload(services_models)
-    api_http = importlib.reload(api_http)
-
-    from tgc.settings import Settings
-    from tgc.state import init_state
-
-    api_http.app.state.app_state = init_state(Settings())
-    api_http.app.state.allow_writes = True
-
-    models_module.Base.metadata.create_all(bind=engine_module.ENGINE)
-
-    from core.config.writes import set_writes_enabled
-
-    set_writes_enabled(True)
-
-    client = TestClient(api_http.APP)
-    session_token = api_http._load_or_create_token()
-    api_http.app.state.app_state.tokens._rec.token = session_token
-    client.headers.update({"Cookie": f"bus_session={session_token}"})
+def costing_setup(request: pytest.FixtureRequest):
+    env = request.getfixturevalue("bus_client")
+    engine_module = env["engine"]
+    models_module = env["models"]
+    recipes_module = env["recipes"]
+    client = env["client"]
 
     with engine_module.SessionLocal() as db:
         output_item = models_module.Item(name="Output", uom="ea", qty_stored=0)
@@ -112,11 +74,8 @@ def costing_setup(tmp_path, monkeypatch):
         input_item_id = input_item.id
         output_item_id = output_item.id
 
-    yield {
-        "client": client,
-        "engine": engine_module,
-        "models": models_module,
-        "recipes": recipes_module,
+    return {
+        **env,
         "recipe_id": recipe_id,
         "input_item_id": input_item_id,
         "output_item_id": output_item_id,

@@ -95,9 +95,19 @@ def main():
     if force_dev:
         print("--- DEV MODE: Console Visible ---")
         os.environ["BUS_DEV"] = "1" # Enforce strict SOT rule
-        # Blocking Run with Reload
+
+        # IMPORTANT: Never enable uvicorn reload inside a frozen (PyInstaller) exe.
+        # It will fork/loop endlessly.
+        is_frozen = getattr(sys, "frozen", False)
+
+        # Blocking Run with Reload (only from source, never from EXE)
         # NOTE: core.api.http initializes CORE on startup due to our fix
-        uvicorn.run("core.api.http:APP", host="127.0.0.1", port=args.port, reload=True)
+        uvicorn.run(
+            "core.api.http:APP",
+            host="127.0.0.1",
+            port=args.port,
+            reload=(not is_frozen),
+        )
         return
 
     # C. PROD MODE: Stealth Default

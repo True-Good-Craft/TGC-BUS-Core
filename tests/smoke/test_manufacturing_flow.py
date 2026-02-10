@@ -1,68 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
-import importlib
 import json
-import sys
 
 import pytest
-from fastapi.testclient import TestClient
+
+pytestmark = pytest.mark.integration
 
 
-MODULES_TO_RESET = [
-    "core.api.http",
-    "core.api.routes.manufacturing",
-    "core.appdb.engine",
-    "core.appdb.models",
-    "core.appdb.models_recipes",
-    "core.manufacturing.service",
-    "core.services.models",
-]
-
-
-def bootstrap_app(tmp_path, monkeypatch):
-    db_path = tmp_path / "app.db"
-    monkeypatch.setenv("BUS_DB", str(db_path))
+def bootstrap_app(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest):
     monkeypatch.setenv("BUS_DEV", "1")
-
-    for module_name in MODULES_TO_RESET:
-        sys.modules.pop(module_name, None)
-
-    import core.appdb.engine as engine_module
-    import core.appdb.models as models_module
-    import core.appdb.models_recipes as recipes_module
-    import core.services.models as services_models
-    import core.api.http as api_http
-
-    engine_module = importlib.reload(engine_module)
-    models_module = importlib.reload(models_module)
-    recipes_module = importlib.reload(recipes_module)
-    services_models = importlib.reload(services_models)
-    api_http = importlib.reload(api_http)
-
-    from tgc.settings import Settings
-    from tgc.state import init_state
-
-    api_http.app.state.app_state = init_state(Settings())
-    api_http.app.state.allow_writes = True
-
-    models_module.Base.metadata.create_all(bind=engine_module.ENGINE)
-
-    from core.config.writes import set_writes_enabled
-
-    set_writes_enabled(True)
-
-    client = TestClient(api_http.APP)
-    session_token = api_http._load_or_create_token()
-    api_http.app.state.app_state.tokens._rec.token = session_token
-    client.headers.update({"Cookie": f"bus_session={session_token}"})
-
-    return {
-        "client": client,
-        "engine": engine_module,
-        "models": models_module,
-        "recipes": recipes_module,
-    }
+    return request.getfixturevalue("bus_client")
 
 
 def snapshot_counts(db, models, recipes):
@@ -80,8 +28,8 @@ def assert_counts_delta(before, after, *, runs=0, movements=0, batches=0):
 
 
 @pytest.fixture()
-def manufacturing_failfast_env(tmp_path, monkeypatch):
-    env = bootstrap_app(tmp_path, monkeypatch)
+def manufacturing_failfast_env(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest):
+    env = bootstrap_app(monkeypatch, request)
 
     with env["engine"].SessionLocal() as db:
         output_item = env["models"].Item(name="Output", uom="ea", qty_stored=0)
@@ -110,8 +58,8 @@ def manufacturing_failfast_env(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
-def manufacturing_success_env(tmp_path, monkeypatch):
-    env = bootstrap_app(tmp_path, monkeypatch)
+def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest):
+    env = bootstrap_app(monkeypatch, request)
 
     with env["engine"].SessionLocal() as db:
         output_item = env["models"].Item(name="Output", uom="ea", qty_stored=0)
@@ -241,51 +189,6 @@ def test_success_has_expected_negative_moves_and_one_output_positive(manufacturi
         assert len(positives) == 1
         assert positives[0].qty_change == pytest.approx(2.0)
         assert positives[0].batch_id == meta["output_batch_id"]
-
-
-def test_output_cost_equals_sum_inputs_over_qty(manufacturing_success_env):
-    client = manufacturing_success_env["client"]
-    engine = manufacturing_success_env["engine"]
-    models = manufacturing_success_env["models"]
-    recipes = manufacturing_success_env["recipes"]
-
-    resp = client.post(
-        "/app/manufacturing/run",
-        json={"recipe_id": manufacturing_success_env["recipe_id"], "output_qty": 2},
-    )
-
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["output_unit_cost_cents"] == 40
-
-    with engine.SessionLocal() as db:
-        run = db.get(recipes.ManufacturingRun, data["run_id"])
-        meta = json.loads(run.meta)
+        assert all(not movement.is_oversold for movement in movements)
         assert meta["cost_inputs_cents"] == 80
         assert meta["per_output_cents"] == 40
-
-        output_batch = (
-            db.query(models.ItemBatch)
-            .filter(models.ItemBatch.source_kind == "manufacturing", models.ItemBatch.source_id == run.id)
-            .one()
-        )
-        assert output_batch.unit_cost_cents == 40
-        assert output_batch.qty_remaining == pytest.approx(2.0)
-
-
-def test_all_manufacturing_movements_is_oversold_zero(manufacturing_success_env):
-    client = manufacturing_success_env["client"]
-    engine = manufacturing_success_env["engine"]
-    models = manufacturing_success_env["models"]
-
-    resp = client.post(
-        "/app/manufacturing/run",
-        json={"recipe_id": manufacturing_success_env["recipe_id"], "output_qty": 2},
-    )
-
-    assert resp.status_code == 200
-
-    with engine.SessionLocal() as db:
-        manufacturing_movements = db.query(models.ItemMovement).filter(models.ItemMovement.source_kind == "manufacturing").all()
-
-    assert all(not movement.is_oversold for movement in manufacturing_movements)
