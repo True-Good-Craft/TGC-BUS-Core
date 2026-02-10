@@ -169,15 +169,18 @@ async def run_manufacturing(
             raise HTTPException(status_code=400, detail=_shortage_detail(shortages, run.id))
         result = execute_run_txn(db, body, output_item_id, required, k)
         recipe_name = _resolve_recipe_name(db, getattr(body, "recipe_id", None))
-        _append_manufacturing_journal(
-            {
-                "type": "manufacturing.run",
-                "recipe_id": int(body.recipe_id) if getattr(body, "recipe_id", None) is not None else None,
-                "recipe_name": recipe_name,
-                "output_item_id": int(output_item_id) if output_item_id is not None else None,
-                "output_qty": int(body.output_qty),
-            }
-        )
+        try:
+            append_mfg_journal(
+                {
+                    "type": "manufacturing.run",
+                    "recipe_id": int(body.recipe_id) if getattr(body, "recipe_id", None) is not None else None,
+                    "recipe_name": recipe_name,
+                    "output_item_id": int(output_item_id) if output_item_id is not None else None,
+                    "output_qty": int(body.output_qty),
+                }
+            )
+        except Exception:
+            pass
         return {
             "ok": True,
             "status": "completed",
@@ -218,6 +221,10 @@ def _append_manufacturing_journal(entry: dict) -> None:
             f.write(json.dumps(entry, separators=(",", ":")) + "\n")
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to append manufacturing journal entry")
+
+
+def append_mfg_journal(entry: dict) -> None:
+    _append_manufacturing_journal(entry)
 
 
 @router.get("/runs")

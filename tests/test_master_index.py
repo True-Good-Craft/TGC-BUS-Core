@@ -3,8 +3,11 @@ from pathlib import Path
 from typing import Any, Dict, List
 import sys
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+pytest.importorskip("tgc.actions.master_index", reason="optional tgc.actions not present in this repo")
 from tgc.actions.master_index import MasterIndexAction
 from tgc.config import AppConfig, NotionConfig
 from tgc.controller import Controller

@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class QuantityDisplay(BaseModel):
@@ -41,8 +41,7 @@ class ItemOut(BaseModel):
     fifo_unit_cost_cents: Optional[int] = None
     fifo_unit_cost_display: Optional[str] = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ItemDetailOut(ItemOut):

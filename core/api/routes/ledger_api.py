@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import asc, func
 from sqlalchemy.orm import Session
 
@@ -32,6 +32,7 @@ from core.metrics.metric import (
     from_base,
     to_base_qty,
 )
+from core.journal.inventory import append_inventory
 
 # NOTE: Primary router uses legacy "/ledger" prefix; public_router exposes routes without it
 # (e.g., /app/adjust) to match current app paths.
@@ -55,9 +56,11 @@ def _append_inventory_journal(entry: dict) -> None:
     try:
         entry = dict(entry)
         entry.setdefault("timestamp", datetime.utcnow().isoformat() + "Z")
-        p = _journals_dir() / "inventory.jsonl"
-        with open(p, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+        if "op" not in entry and "type" in entry:
+            entry["op"] = entry["type"]
+        if "qty" not in entry and "qty_change" in entry:
+            entry["qty"] = entry["qty_change"]
+        append_inventory(entry)
     except Exception:
         # Journaling must never block core ops.
         pass
@@ -163,8 +166,15 @@ def consume(body: ConsumeIn, db: Session = Depends(get_session)):
 # -------------------------
 class AdjustmentInput(BaseModel):
     item_id: int
-    qty_change: int = Field(..., ne=0)
+    qty_change: int = Field(...)
     note: str | None = None
+
+    @field_validator("qty_change")
+    @classmethod
+    def qty_change_non_zero(cls, value: int) -> int:
+        if value == 0:
+            raise ValueError("qty_change must not be 0")
+        return value
 
 
 @router.post("/adjust")
@@ -219,7 +229,7 @@ def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
 
         # Atomicity (SALE): fifo movements + cash_events insert must share a single transaction.
         if body.reason == "sold" and bool(body.record_cash_event) is True:
-            it = db.query(Item).get(item_id)
+            it = db.get(Item, item_id)
             if not it:
                 raise HTTPException(status_code=404, detail="item_not_found")
             if (getattr(it, "dimension", None) or "").lower() != "count":
@@ -242,7 +252,10 @@ def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
             )
 
             source_id = uuid.uuid4().hex
-            with db.begin():
+            # SQLAlchemy Session has autobegin; in request contexts we may already be inside a transaction.
+            # Use a nested transaction (SAVEPOINT) when a transaction is active, otherwise start a new one.
+            tx = db.begin_nested() if db.in_transaction() else db.begin()
+            with tx:
                 moves = sa_fifo_consume(db, item_id, qty_base, body.reason, source_id)
                 db.add(
                     CashEvent(

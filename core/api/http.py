@@ -34,6 +34,7 @@ import sys
 import threading
 import time
 import uuid
+from contextlib import asynccontextmanager
 from ctypes import wintypes
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional
@@ -164,7 +165,28 @@ def _check_state(state_b64: str) -> bool:
         return False
 
 
-app = FastAPI(title="BUS Core Alpha", version=VERSION)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    startup_migrations()
+    _buscore_writeflag_startup()
+    ensure_core_initialized()
+    await _auto_index_if_stale()
+    await _start_indexer_event()
+    try:
+        yield
+    finally:
+        await _stop_indexer_event()
+
+
+INDEX_LOGGER = logging.getLogger(__name__)
+
+
+def _index_disabled() -> bool:
+    flag = os.environ.get("BUS_DISABLE_INDEX", "").strip().lower()
+    return flag in {"1", "true", "yes"}
+
+
+app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
 
 # --- Maintenance / Restore Interlock ---------------------------------------
 app.state.maintenance = False
@@ -309,7 +331,6 @@ def _ensure_schema_upgrades(db: Session) -> None:
     db.commit()
 
 
-@app.on_event("startup")
 def startup_migrations():
     engine = get_engine()
     # Ensure all declared tables exist before running additive patches.
@@ -361,12 +382,10 @@ PUBLIC_PREFIXES = (
 )
 
 
-@app.on_event("startup")
 def _buscore_writeflag_startup() -> None:
     app.state.allow_writes = _calc_default_allow_writes()
 
 
-@app.on_event("startup")
 def ensure_core_initialized():
     if CORE is None:
         build_app()
@@ -558,6 +577,9 @@ def stop_indexer(timeout: float = 10.0) -> bool:
 def start_indexer(initial_status: Optional[Dict[str, Any]] | None = None) -> None:
     """Start the background indexer task if not already running."""
     global BACKGROUND_INDEX_TASK, INDEX_LOOP
+    if _index_disabled():
+        INDEX_LOGGER.debug("[index] start skipped (BUS_DISABLE_INDEX)")
+        return
     INDEX_STOP_EVENT.clear()
     INDEX_PAUSE_EVENT.clear()
     if BACKGROUND_INDEX_TASK and BACKGROUND_INDEX_TASK.done():
@@ -1118,19 +1140,40 @@ def _index_status_payload(broker=None) -> Dict[str, Any]:
     drive_state = state.get("drive") if isinstance(state.get("drive"), dict) else {}
     local_state = state.get("local") if isinstance(state.get("local"), dict) else {}
 
-    drive_token_result = _drive_start_page_token(broker)
-    current_drive_token = drive_token_result.get("token")
-    last_drive_token = drive_state.get("token") if isinstance(drive_state, dict) else None
-    drive_up_to_date = bool(
-        drive_token_result.get("ok")
-        and current_drive_token
-        and last_drive_token
-        and current_drive_token == last_drive_token
-    )
+    drive_provider = None
+    local_provider = None
+    if hasattr(broker, "get_provider"):
+        try:
+            drive_provider = broker.get_provider("google_drive")
+        except Exception:
+            drive_provider = None
+        try:
+            local_provider = broker.get_provider("local_fs")
+        except Exception:
+            local_provider = None
+    if drive_provider is None:
+        current_drive_token = drive_state.get("token") if isinstance(drive_state, dict) else None
+        last_drive_token = current_drive_token
+        drive_up_to_date = True
+    else:
+        drive_token_result = _drive_start_page_token(broker)
+        current_drive_token = drive_token_result.get("token")
+        last_drive_token = drive_state.get("token") if isinstance(drive_state, dict) else None
+        drive_up_to_date = bool(
+            drive_token_result.get("ok")
+            and current_drive_token
+            and last_drive_token
+            and current_drive_token == last_drive_token
+        )
 
-    current_sig = compute_local_roots_signature(broker)
-    last_sig = local_state.get("roots_sig") if isinstance(local_state, dict) else None
-    local_up_to_date = bool(current_sig and last_sig and current_sig == last_sig)
+    if local_provider is None:
+        current_sig = local_state.get("roots_sig") if isinstance(local_state, dict) else None
+        last_sig = current_sig
+        local_up_to_date = True
+    else:
+        current_sig = compute_local_roots_signature(broker)
+        last_sig = local_state.get("roots_sig") if isinstance(local_state, dict) else None
+        local_up_to_date = bool(current_sig and last_sig and current_sig == last_sig)
 
     return {
         "drive": {
@@ -1149,6 +1192,16 @@ def _index_status_payload(broker=None) -> Dict[str, Any]:
 
 def _catalog_background_scan(broker, source: str, scope: str, label: str) -> bool:
     stream_id = None
+    missing = [
+        name
+        for name in ("catalog_open", "catalog_next", "catalog_close")
+        if not hasattr(broker, name)
+    ]
+    if missing:
+        INDEX_LOGGER.debug(
+            f"[index] {label}: missing catalog methods; skipping scan"
+        )
+        return False
     try:
         opened = broker.catalog_open(
             source,
@@ -1188,6 +1241,9 @@ def _catalog_background_scan(broker, source: str, scope: str, label: str) -> boo
 def _background_index_worker(initial_status: Optional[Dict[str, Any]] = None) -> None:
     INDEX_IDLE_EVENT.clear()
     try:
+        if _index_disabled():
+            INDEX_LOGGER.debug("[index] background: disabled via BUS_DISABLE_INDEX")
+            return
         if INDEX_PAUSE_EVENT.is_set() or INDEX_STOP_EVENT.is_set():
             log("[index] background: pause requested (pre-start)")
             _dispose_index_handles()
@@ -1554,9 +1610,11 @@ def index_status():
     return _index_status_payload(broker)
 
 
-@app.on_event("startup")
 async def _auto_index_if_stale() -> None:
     global BACKGROUND_INDEX_TASK, INDEX_LOOP
+    if _index_disabled():
+        INDEX_LOGGER.debug("[index] background: startup skip (BUS_DISABLE_INDEX)")
+        return
     INDEX_LOOP = asyncio.get_running_loop()
     try:
         status = _index_status_payload(_broker())
@@ -2049,29 +2107,29 @@ app.include_router(
 app.include_router(oauth)
 app.include_router(protected)
 
+async def _start_indexer_event() -> None:
+    try:
+        app.state.start_indexer()
+        if is_dev():
+            log("[index] control: started in worker")
+    except Exception:
+        if is_dev():
+            log("[index] control: start failed (ignored)")
+
+
+async def _stop_indexer_event() -> None:
+    try:
+        app.state.stop_indexer()
+    except Exception:
+        pass
+
+
 def create_app():
     init_app_state(app)
     app.state.pause_indexer = pause_indexer
     app.state.resume_indexer = resume_indexer
     app.state.stop_indexer = stop_indexer
     app.state.start_indexer = start_indexer
-
-    @app.on_event("startup")
-    async def _start_indexer_event():
-        try:
-            app.state.start_indexer()
-            if is_dev():
-                log("[index] control: started in worker")
-        except Exception:
-            if is_dev():
-                log("[index] control: start failed (ignored)")
-
-    @app.on_event("shutdown")
-    async def _stop_indexer_event():
-        try:
-            app.state.stop_indexer()
-        except Exception:
-            pass
     if not getattr(app.state, "_domain_routes_registered", False):
         app.include_router(items_router, prefix="/app")
         app.include_router(vendors_router, prefix="/app")

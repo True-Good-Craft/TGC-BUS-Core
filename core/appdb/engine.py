@@ -67,6 +67,16 @@ def get_engine() -> Engine:
     """Create the global engine lazily so the reloader does not open the DB."""
 
     global ENGINE
+    global DB_PATH
+    global DB_URL
+    current_path = Path(resolve_db_path())
+    if current_path != DB_PATH:
+        DB_PATH = current_path
+        DB_URL = _sqlite_url(DB_PATH)
+        if ENGINE is not None:
+            ENGINE.dispose()
+            ENGINE = None
+        SessionLocal.configure(bind=None)
     if ENGINE is None:
         ENGINE = create_engine(
             DB_URL,
@@ -74,6 +84,9 @@ def get_engine() -> Engine:
             connect_args={"check_same_thread": False},
             poolclass=NullPool,
         )
+        SessionLocal.configure(bind=ENGINE)
+    else:
+        SessionLocal.configure(bind=ENGINE)
     return ENGINE
 
 
@@ -86,6 +99,7 @@ def dispose_engine() -> None:
             ENGINE.dispose()
         finally:
             ENGINE = None
+            SessionLocal.configure(bind=None)
 
 
 def get_session() -> Generator:

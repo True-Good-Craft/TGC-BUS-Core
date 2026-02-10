@@ -27,26 +27,34 @@ def client_prod(tmp_path, monkeypatch):
     # Copied from tests/api/test_error_shapes.py (manufacturing_client_prod) pattern.
     db_path = tmp_path / "test.db"
     monkeypatch.setenv("BUS_DB", str(db_path))
+    monkeypatch.setenv("BUS_DEV", "0")
 
     for module_name in MODULES_TO_RESET:
         sys.modules.pop(module_name, None)
 
     import core.appdb.engine as engine_module
     import core.appdb.models as models_module
+    import core.appdb.models_recipes as recipes_module
+    import core.services.models as services_models
     import core.api.http as api_http
 
     engine_module = importlib.reload(engine_module)
     models_module = importlib.reload(models_module)
+    recipes_module = importlib.reload(recipes_module)
+    services_models = importlib.reload(services_models)
     api_http = importlib.reload(api_http)
+
+    from tgc.settings import Settings
+    from tgc.state import init_state
+
+    api_http.app.state.app_state = init_state(Settings())
+    api_http.app.state.allow_writes = True
 
     models_module.Base.metadata.create_all(bind=engine_module.ENGINE)
 
     set_writes_enabled(True)
-    api_http.app.state.allow_writes = True
 
     client = TestClient(api_http.APP)
-
-    # Auth cookie (copied pattern)
     session_token = api_http._load_or_create_token()
     api_http.app.state.app_state.tokens._rec.token = session_token
     client.headers.update({"Cookie": f"bus_session={session_token}"})
@@ -60,16 +68,25 @@ def _create_count_item(client: TestClient, name: str, price: float = 2.50) -> in
         json={"name": name, "dimension": "count", "uom": "ea", "price": price},
     )
     assert r.status_code == 200, r.text
-    return int(r.json()["item"]["id"])
+    payload = r.json()
+    # Support both shapes:
+    # - {"item": {...}}
+    # - direct item object {...}
+    item_obj = payload.get("item") if isinstance(payload, dict) else None
+    if item_obj is None and isinstance(payload, dict) and "id" in payload:
+        item_obj = payload
+    assert item_obj is not None, f"Unexpected item create response: {payload}"
+    return int(item_obj["id"])
 
 
 def _purchase_count_stock(client: TestClient, item_id: int, qty_each: str, unit_cost_cents: int):
+    # Count items use base units (1 ea == 1000 base units). Buying N ea == N*1000 base.
+    qty_base = int(qty_each) * 1000
     r = client.post(
         "/app/purchase",
         json={
             "item_id": int(item_id),
-            "uom": "ea",
-            "qty_uom": qty_each,
+            "qty": qty_base,
             "unit_cost_cents": int(unit_cost_cents),
             "meta": {},
             "note": "seed",
