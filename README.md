@@ -237,6 +237,19 @@ Software should serve small operators, not extract from them.
 
 ---
 
+## Security & Code Signing
+
+BUS Core Windows releases are digitally signed with a trusted code-signing certificate
+issued to **True Good Craft**.
+
+- Publisher verification: True Good Craft
+- Timestamped signatures (DigiCert)
+- Builds are reproducible from source
+- No network calls required to run locally
+
+Note: Windows SmartScreen warnings may appear for new releases until reputation is established.
+
+
 ## License
 
 BUS Core is licensed under the GNU AGPLv3.
