@@ -3,8 +3,8 @@ requires = ["setuptools>=65", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tgc-alpha-core"
-version = "0.10.6"
-description = "Packaging stub for TGC Alpha Core."
+name = "tgc-bus-core"
+version = "0.11.0"
+description = "Packaging stub for TGC BUS Core."
 readme = "README.md"
 requires-python = ">=3.11"

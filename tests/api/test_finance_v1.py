@@ -260,4 +260,4 @@ def test_profit_window_exclusive_upper_bound(bus_client):
     pr = bus_client["client"].get(f"/app/finance/profit?from={s}&to={s}")
     assert pr.status_code == 200, pr.text
     j = pr.json()
-    assert int(j["gross_sales_cents"]) == 111
+    assert int(j["gross_revenue_cents"]) == 111

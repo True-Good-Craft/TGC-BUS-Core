@@ -186,7 +186,7 @@ def _index_disabled() -> bool:
     return flag in {"1", "true", "yes"}
 
 
-app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
+app = FastAPI(title="BUS Core", version=VERSION, lifespan=lifespan)
 
 # --- Maintenance / Restore Interlock ---------------------------------------
 app.state.maintenance = False
@@ -772,6 +772,7 @@ from core.api.routes.recipes import router as recipes_router
 from core.api.routes.manufacturing import router as manufacturing_router
 from core.api.routes import logs_api
 from core.api.routes.finance_api import router as finance_router
+from core.api.routes.dashboard_api import router as dashboard_router
 from core.api.routes.ledger_api import public_router as ledger_public_router, router as ledger_router
 
 oauth = APIRouter()
@@ -2141,6 +2142,7 @@ def create_app():
         app.include_router(ledger_router, prefix="/app")
         # Finance v1: MUST be /app/finance/...
         app.include_router(finance_router, prefix="/app")
+        app.include_router(dashboard_router, prefix="/app")
         app.include_router(transactions_routes.router, prefix="/app")
         app.include_router(config_routes.router, prefix="/app")
         app.state._domain_routes_registered = True

@@ -4,6 +4,7 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -181,11 +182,35 @@ async def run_manufacturing(
             )
         except Exception:
             pass
+        produced_quantity = int(getattr(body, "output_qty", 0) or 0)
+        total_batch_cost_cents = int(result.get("journal_entry", {}).get("cost_inputs_cents", 0) or 0)
+        if produced_quantity == 0:
+            cost_per_unit_cents = 0.0
+        else:
+            cost_per_unit_cents = float(
+                (Decimal(total_batch_cost_cents) / Decimal(produced_quantity)).quantize(
+                    Decimal("0.0001"), rounding=ROUND_HALF_UP
+                )
+            )
+
+        movements_payload = [
+            {
+                "movement_id": str(m.id) if getattr(m, "id", None) is not None else "",
+                "item_id": str(m.item_id) if getattr(m, "item_id", None) is not None else "",
+                "qty_change": int(m.qty_change),
+            }
+            for m in result.get("movement_rows", [])
+        ]
+
         return {
             "ok": True,
             "status": "completed",
-            "run_id": result["run"].id,
+            "run_id": str(result["run"].id),
             "output_unit_cost_cents": result["output_unit_cost_cents"],
+            "produced_quantity": produced_quantity,
+            "total_batch_cost_cents": total_batch_cost_cents,
+            "cost_per_unit_cents": cost_per_unit_cents,
+            "movements": movements_payload,
         }
     except InsufficientStock as exc:
         db.rollback()
