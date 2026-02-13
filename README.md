@@ -1,4 +1,4 @@
-# TGC Business Utility System — BUS Core (Beta)
+# TGC BUS Core (Beta)
 
 ![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)
 ![Docker](https://img.shields.io/badge/Docker-GHCR-blue?logo=docker)
@@ -10,6 +10,8 @@
 
 
 A local-first inventory and manufacturing system for small shops and solo makers.
+
+Current Version: **0.11.0**
 
 No cloud. No accounts. No subscriptions.  
 Your data stays on your machine.
@@ -77,6 +79,7 @@ It is not a full accounting system—and is not trying to be.
 - **Ledger & Audit Trail** — Complete movement history
 - **Local & Private** — SQLite database with encrypted backups
 - **Cross-Platform** — Windows, Linux, and macOS
+- **Phase 3A Integrity & Traceability Hardening**
 
 ---
 

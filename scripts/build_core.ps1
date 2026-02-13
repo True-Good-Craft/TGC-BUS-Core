@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.10.6",
+  [string]$Version = "0.11.0",
   [string]$Name    = "BUS-Core",
   [string]$Company = "True Good Craft",
   [string]$Product = "TGC BUS Core",

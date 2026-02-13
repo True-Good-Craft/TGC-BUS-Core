@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # core/api/routes/items.py
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
@@ -7,9 +8,10 @@ from sqlalchemy import asc, func
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
+from core.api.read_models import get_item_inventory_value
 from core.config.writes import require_writes
 from core.policy.guard import require_owner_commit
-from core.appdb.models import Item, ItemBatch, Vendor
+from core.appdb.models import Item, ItemBatch, ItemMovement, Vendor
 from core.metrics.metric import UNIT_MULTIPLIER, default_unit_for, from_base
 from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
@@ -18,6 +20,10 @@ router = APIRouter(tags=["items"])
 
 UOMS = {"ea", "g", "kg", "mg", "mm", "cm", "m", "mm2", "cm2", "m2", "mm3", "cm3", "m3", "ml"}
 MAX_INT64 = 2**63 - 1
+
+
+def _to_utc_z(dt: datetime) -> str:
+    return dt.replace(microsecond=0, tzinfo=timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _derive_qty_and_unit(uom: str, qty_stored: int) -> tuple[float, str]:
@@ -248,6 +254,48 @@ def get_item(
 
     base_row["batches_summary"] = summary
     return base_row
+
+@router.get("/items/{item_id}/summary")
+def get_item_summary(
+    item_id: int,
+    db: Session = Depends(get_session),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
+) -> Dict[str, Any]:
+    item = db.query(Item).filter(Item.id == item_id).first()
+    if item is None:
+        raise HTTPException(status_code=404, detail="item not found")
+
+    on_hand_quantity = (
+        db.query(func.coalesce(func.sum(ItemBatch.qty_remaining), 0))
+        .filter(ItemBatch.item_id == item_id)
+        .filter(ItemBatch.qty_remaining > 0)
+        .scalar()
+    )
+
+    movements = (
+        db.query(ItemMovement)
+        .filter(ItemMovement.item_id == item_id)
+        .order_by(ItemMovement.created_at.desc())
+        .limit(20)
+        .all()
+    )
+
+    return {
+        "item_id": str(item_id),
+        "on_hand_quantity": int(on_hand_quantity or 0),
+        "inventory_value_cents": get_item_inventory_value(db, item_id=item_id),
+        "last_20_movements": [
+            {
+                "created_at": _to_utc_z(m.created_at),
+                "qty_change": int(m.qty_change),
+                "unit_cost_cents": int(m.unit_cost_cents or 0),
+                "source_id": str(m.source_id) if m.source_id is not None else "",
+            }
+            for m in movements
+        ],
+    }
+
 
 @router.post("/items")
 def create_item(

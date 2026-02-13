@@ -181,6 +181,7 @@ def execute_run_txn(
 
     allocations: List[dict] = []
     consumed_per_item: dict[int, float] = {}
+    movement_rows: List[ItemMovement] = []
     for r in required:
         if r["qty"] <= 0:
             continue
@@ -205,6 +206,7 @@ def execute_run_txn(
             is_oversold=False,
         )
         session.add(mv)
+        movement_rows.append(mv)
         unit_cost = int(alloc["unit_cost_cents"] or 0)
         cost_inputs_cents += int(round(float(alloc["qty"]) * unit_cost))
 
@@ -235,17 +237,17 @@ def execute_run_txn(
     except Exception:
         pass
 
-    session.add(
-        ItemMovement(
-            item_id=output_item_id,
-            batch_id=output_batch.id,
-            qty_change=body.output_qty,
-            unit_cost_cents=per_output_cents,
-            source_kind="manufacturing",
-            source_id=mfg_run.id,
-            is_oversold=False,
-        )
+    output_mv = ItemMovement(
+        item_id=output_item_id,
+        batch_id=output_batch.id,
+        qty_change=body.output_qty,
+        unit_cost_cents=per_output_cents,
+        source_kind="manufacturing",
+        source_id=mfg_run.id,
+        is_oversold=False,
     )
+    session.add(output_mv)
+    movement_rows.append(output_mv)
 
     for item_id, qty in consumed_per_item.items():
         item = session.get(Item, item_id)
@@ -279,10 +281,13 @@ def execute_run_txn(
         "cost_inputs_cents": cost_inputs_cents,
     }
 
+    session.flush()
+
     return {
         "run": mfg_run,
         "journal_entry": journal_entry,
         "output_unit_cost_cents": per_output_cents,
+        "movement_rows": movement_rows,
     }
 
 
