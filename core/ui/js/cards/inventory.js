@@ -339,19 +339,21 @@ export async function _mountInventory(container) {
       errorBanner.textContent = '';
 
       const itemId = Number(itemSelect.value);
-      const qtyVal = Math.trunc(Number(qtyInput.value));
+      const qtyVal = decimalString(qtyInput.value);
       const reason = String(reasonSelect.value || 'sold');
       const note = noteInput.value ? noteInput.value : null;
+      const item = (window.__inventory_items || []).find((x) => Number(x.id) === itemId);
+      const uom = String(item?.uom || 'ea');
 
-      if (!Number.isInteger(itemId) || !Number.isInteger(qtyVal) || qtyVal <= 0) {
-        errorBanner.textContent = 'Select an item and enter a positive integer quantity.';
+      if (!Number.isInteger(itemId) || Number(qtyVal) <= 0) {
+        errorBanner.textContent = 'Select an item and enter a positive quantity.';
         errorBanner.hidden = false;
         return;
       }
 
       try {
         await ensureToken();
-        const payload = { item_id: itemId, qty: qtyVal, reason, note };
+        const payload = { item_id: itemId, quantity_decimal: qtyVal, uom, reason, note };
         if (reason === 'sold') {
           payload.record_cash_event = true;
           const dollars = Number(priceInput.value ?? 0);
@@ -517,13 +519,15 @@ export async function _mountInventory(container) {
       errorBanner.textContent = '';
 
       const itemId = Number(itemSelect.value);
-      const qtyBase = Math.trunc(Number(qtyInput.value));
+      const qtyVal = decimalString(qtyInput.value);
       const refundDollars = Number(amountInput.value);
       const restockInventory = Boolean(restockInput.checked);
       const relatedSourceId = relatedInput.value.trim();
+      const item = (state.items || []).find((x) => Number(x.id) === itemId);
+      const uom = String(item?.uom || 'ea');
 
-      if (!Number.isInteger(itemId) || !Number.isInteger(qtyBase) || qtyBase <= 0) {
-        errorBanner.textContent = 'Select an item and enter a positive integer quantity.';
+      if (!Number.isInteger(itemId) || Number(qtyVal) <= 0) {
+        errorBanner.textContent = 'Select an item and enter a positive quantity.';
         errorBanner.hidden = false;
         return;
       }
@@ -545,7 +549,8 @@ export async function _mountInventory(container) {
         await ensureToken();
         const payload = {
           item_id: itemId,
-          qty_base: qtyBase,
+          quantity_decimal: qtyVal,
+          uom,
           refund_amount_cents: Math.round(refundDollars * 100),
           restock_inventory: restockInventory,
           related_source_id: relatedSourceId || null,
@@ -1479,9 +1484,9 @@ export function openItemModal(item = null) {
 
       try {
         await ensureToken();
-        console.debug('POST /ledger/stock_in payload', payload);
+        console.debug('POST /app/stock_in payload', payload);
         delete payload.unit;
-        await apiPost('/ledger/stock_in', payload, { headers: { 'Content-Type': 'application/json' } });
+        await apiPost('/app/stock_in', payload, { headers: { 'Content-Type': 'application/json' } });
         closeStockInModal();
         await reloadInventory?.();
       } catch (err) {
@@ -1598,9 +1603,9 @@ export function openItemModal(item = null) {
 
         try {
           await ensureToken();
-          console.debug('POST /ledger/stock_in payload', stockPayload);
+          console.debug('POST /app/stock_in payload', stockPayload);
           delete stockPayload.unit;
-          await apiPost('/ledger/stock_in', stockPayload, { headers: { 'Content-Type': 'application/json' } });
+          await apiPost('/app/stock_in', stockPayload, { headers: { 'Content-Type': 'application/json' } });
         } catch (err) {
           const msg = serverErrorMessage(err);
           if (errorBanner) {

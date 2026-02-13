@@ -39,7 +39,8 @@ def test_purchase_appends_journal(inventory_journal_setup):
         "/app/purchase",
         json={
             "item_id": inventory_journal_setup["item_id"],
-            "qty": 3,
+            "quantity_decimal": "3",
+            "uom": "mc",
             "unit_cost_cents": 125,
             "source_kind": "purchase",
             "source_id": "po-1",
@@ -81,7 +82,7 @@ def test_journal_failure_does_not_block_adjustment(inventory_journal_setup, monk
 
     resp = client.post(
         "/app/adjust",
-        json={"item_id": inventory_journal_setup["item_id"], "qty_change": 2},
+        json={"item_id": inventory_journal_setup["item_id"], "quantity_decimal": "2", "uom": "mc", "direction": "in"},
     )
 
     assert resp.status_code == 200, resp.text
@@ -95,4 +96,3 @@ def test_journal_failure_does_not_block_adjustment(inventory_journal_setup, monk
 
     # Journal write failed but DB state is still committed
     assert not journal_path.exists()
-

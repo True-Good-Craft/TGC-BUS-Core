@@ -7,12 +7,13 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
 from core.appdb.ledger import add_batch
 from core.appdb.models import CashEvent, ItemMovement
+from core.api.quantity_contract import normalize_quantity_to_base_int
 
 
 router = APIRouter(prefix="/finance", tags=["finance"])
@@ -48,7 +49,8 @@ def finance_expense(body: ExpenseIn, db: Session = Depends(get_session)):
 class RefundIn(BaseModel):
     item_id: int
     refund_amount_cents: int = Field(gt=0)
-    qty_base: int = Field(gt=0)
+    quantity_decimal: str = Field(min_length=1)
+    uom: str = Field(min_length=1)
     restock_inventory: bool
     related_source_id: Optional[str] = None
     restock_unit_cost_cents: Optional[int] = None
@@ -56,11 +58,23 @@ class RefundIn(BaseModel):
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_qty_base(cls, data):
+        if isinstance(data, dict) and "qty_base" in data:
+            raise ValueError("legacy_qty_field_not_allowed")
+        return data
+
 
 @router.post("/refund")
 def finance_refund(body: RefundIn, db: Session = Depends(get_session)):
     item_id = int(body.item_id)
-    qty_base = int(body.qty_base)
+    from core.appdb.models import Item
+
+    item = db.get(Item, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="item_not_found")
+    qty_base = normalize_quantity_to_base_int(item.dimension, body.uom, body.quantity_decimal)
     refund_amount_cents = int(body.refund_amount_cents)
 
     if body.restock_inventory is True and (not body.related_source_id) and body.restock_unit_cost_cents is None:
@@ -69,7 +83,8 @@ def finance_refund(body: RefundIn, db: Session = Depends(get_session)):
     source_id = uuid.uuid4().hex
 
     # Atomicity (REFUND): cash_events insert + optional stock-in movement must be a single transaction.
-    with db.begin():
+    tx = db.begin_nested() if db.in_transaction() else db.begin()
+    with tx:
         db.add(
             CashEvent(
                 kind="refund",
