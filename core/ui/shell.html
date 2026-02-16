@@ -126,167 +126,24 @@
       </a>
     </div>
     <ul class="sidebar-nav">
-      <li><div class="nav-section nav-section--tools" role="heading" aria-level="2">Tools</div></li>
-      <li><a class="nav-link" href="#/manufacturing" data-role="nav-link" data-route="manufacturing">Manufacturing</a></li>
-      <li><a class="nav-link" href="#/inventory" data-role="nav-link" data-route="inventory">Inventory</a></li>
-      <li><a class="nav-link" href="#/contacts" data-role="nav-link" data-route="contacts">Contacts</a></li>
+      <li><a class="nav-link" href="#/home" data-role="nav-link" data-route="home">Dashboard</a></li>
+      <li><a class="nav-link" href="#/inventory" data-role="nav-link" data-route="inventory">Items</a></li>
+      <li><a class="nav-link" href="#/contacts" data-role="nav-link" data-route="contacts">Vendors</a></li>
       <li><a class="nav-link" href="#/recipes" data-role="nav-link" data-route="recipes">Recipes</a></li>
-
-      <li><div class="nav-section nav-section--system" role="heading" aria-level="2">System</div></li>
-      <li><a class="nav-link" href="#/settings" id="nav-settings" data-role="nav-link" data-route="settings">Settings</a></li>
+      <li><a class="nav-link" href="#/manufacturing" data-role="nav-link" data-route="manufacturing">Runs</a></li>
       <li><a class="nav-link" href="#/logs" id="nav-logs" data-role="nav-link" data-route="logs">Logs</a></li>
+      <li><a class="nav-link" href="#/settings" id="nav-settings" data-role="nav-link" data-route="settings">Settings</a></li>
     </ul>
   </nav>
   <main id="main">
     <div id="app">
-
-      <!-- Home screen container -->
-      <div data-role="home-screen" class="card">
-        <!-- 1) Primary actions -->
-        <div class="home-actions">
-          <button data-action="open-expense-modal" class="btn btn-red btn-large">Add Expense</button>
-          <button data-action="open-revenue-modal" class="btn btn-green btn-large">Add Revenue</button>
-        </div>
-
-        <!-- 2) Net 30 (bold, one line) + 3) In/Out (smaller) -->
-        <div class="snapshot">
-          <div data-role="net-30" class="net-line">Net (Last 30 Days): $0.00</div>
-          <div class="io-lines">
-            <div class="donuts">
-              <div data-role="donut-in"  class="donut donut-in"></div>
-              <div data-role="donut-out" class="donut donut-out"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 4) Last transactions (10) -->
-        <div class="recent-table">
-          <h3 class="table-title">Last transactions (10)</h3>
-          <table data-role="recent-transactions">
-            <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Notes</th></tr></thead>
-            <tbody></tbody>
-          </table>
-          <!-- View All link intentionally removed until full table + donut shipped -->
-        </div>
-      </div>
-
-      <!-- Contacts screen (hidden by default) -->
-      <div data-role="contacts-screen" class="hidden">
-        <div class="card" data-view="contacts">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
-            <h2 style="margin:0;">Contacts</h2>
-            <button type="button" data-action="open-contacts-modal">Add Contact</button>
-          </div>
-          <table data-role="contacts-table" class="table" style="width:100%;border-collapse:separate;border-spacing:0;background:#111318;border-radius:10px;overflow:hidden">
-            <thead>
-              <tr>
-                <th style="text-align:left;padding:10px;background:#1a1f2b">Type</th>
-                <th style="text-align:left;padding:10px;background:#1a1f2b">Contact</th>
-                <th style="text-align:left;padding:10px;background:#1a1f2b">Actions</th>
-              </tr>
-            </thead>
-            <tbody><!-- rows rendered by vendors.js --></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div data-role="inventory-screen" class="hidden">
-        <div data-role="inventory-root" class="card"></div>
-      </div>
-
-      <div data-role="manufacturing-screen" class="hidden">
-        <div class="screen-body">
-          <div data-tab-panel="manufacturing"></div>
-        </div>
-      </div>
-
-      <div data-role="recipes-screen" class="hidden">
-        <div class="screen-header">
-          <h1 style="margin:0;">Recipes</h1>
-        </div>
-        <div class="screen-body">
-          <div data-tab-panel="recipes"></div>
-        </div>
-      </div>
-
-      <div data-role="settings-screen" class="hidden">
-        <div data-role="settings-root"></div>
-      </div>
-
-      <div data-role="logs-screen" class="hidden">
-        <div data-role="logs-root"></div>
-      </div>
-
-<!-- Expense modal — locked MVP fields -->
-<div data-role="expense-modal" class="modal hidden" aria-hidden="true">
-  <div class="modal-backdrop" data-action="close-expense-modal"></div>
-  <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="expense-title">
-    <form data-role="expense-form">
-      <h2 id="expense-title">Add Expense</h2>
-      <div class="field">
-        <label>Amount <span class="required">*</span></label>
-        <input type="number" step="0.01" name="amount" required inputmode="decimal" placeholder="0.00">
-      </div>
-      <div class="field">
-        <label>Category</label>
-        <input type="text" name="category" placeholder="e.g. filament">
-      </div>
-      <div class="field">
-        <label>Date</label>
-        <input type="date" name="date">
-      </div>
-      <div class="field">
-        <label>Notes</label>
-        <textarea name="notes" rows="2" placeholder="(optional)"></textarea>
-      </div>
-      <div class="modal-footer">
-        <button type="button" data-action="close-expense-modal">Cancel</button>
-        <button type="submit">Save</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Revenue modal placeholder (unchanged) -->
-<div data-role="revenue-modal" class="modal hidden">…</div>
-
-      <!-- Tools screen (hidden by default) -->
-      <div data-role="tools-screen" class="hidden">
-        <!-- Simple list-only view for Tools -->
-        <div data-role="tools-list">
-          <h2 class="text-xl">Tools</h2>
-          <ul>
-            <li><a href="#/inventory">Inventory</a></li>
-            <li><a href="#/contacts">Contacts</a></li>
-          </ul>
-        </div>
-
-        <!-- Keep legacy Tools section but force hidden so its tabs/Contacts never show -->
-        <section data-route="tools" class="hidden">
-          <!-- Tools page header tabs (scoped to Tools page only) -->
-          <div data-role="tools-tabs-root" class="hidden">
-            <!-- Tabs header -->
-            <div data-role="main-tabs" class="tabs">
-              <button type="button" data-tab="manufacturing">Manufacturing</button>
-              <button type="button" data-tab="tasks">Tasks</button>
-              <button type="button" data-tab="backup">Backup</button>
-            </div>
-
-            <!-- Tabs panels (kept empty here; JS shows/hides) -->
-            <section data-tab-panel="manufacturing" class="tab-panel hidden">
-              <!-- Manufacturing stub form lives in JS or existing markup -->
-            </section>
-            <section data-tab-panel="tasks" class="tab-panel hidden">
-              <!-- Local tasks table lives in JS or existing markup -->
-            </section>
-            <section data-tab-panel="backup" class="tab-panel hidden">
-              <!-- Backup export button already present elsewhere; JS will wire -->
-              <button data-action="export-backup" class="btn btn-primary btn-block">Export</button>
-              <p>Downloads current app.db (or fallback endpoint).</p>
-            </section>
-          </div>
-        </section>
-      </div>
+      <section data-role="home-screen" class="hidden"></section>
+      <section data-role="inventory-screen" class="hidden"></section>
+      <section data-role="contacts-screen" class="hidden"></section>
+      <section data-role="recipes-screen" class="hidden"></section>
+      <section data-role="manufacturing-screen" class="hidden"></section>
+      <section data-role="logs-screen" class="hidden"></section>
+      <section data-role="settings-screen" class="hidden"></section>
     </div>
   </main>
 

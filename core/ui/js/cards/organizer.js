@@ -1,21 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // TGC BUS Core (Business Utility System Core)
-// Copyright (C) 2025 True Good Craft
-//
-// This file is part of TGC BUS Core.
-//
-// TGC BUS Core is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// TGC BUS Core is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
 const LS_KEY = 'tasks.v1';
 
@@ -34,10 +18,11 @@ const save = (arr) => {
   localStorage.setItem(LS_KEY, JSON.stringify(arr || []));
 };
 
-let tasksBound = false;
+let scopeRef = null;
 let tableBodyRef = null;
 let titleInputRef = null;
 let statusInputRef = null;
+let addBtnRef = null;
 
 function buildRow(task, idx) {
   const tr = document.createElement('tr');
@@ -112,8 +97,27 @@ function deleteTask(idx) {
   refreshTable();
 }
 
+function onScopeInput(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const { idx, field } = target.dataset || {};
+  if (idx == null || field == null) return;
+  updateTask(idx, field, target.value);
+}
+
+function onScopeClick(event) {
+  const el = event.target instanceof HTMLElement ? event.target : null;
+  if (!el) return;
+  const delBtn = el.closest('[data-action="task-del"]');
+  if (delBtn) {
+    const { idx } = delBtn.dataset || {};
+    if (idx != null) deleteTask(idx);
+  }
+}
+
 export function mountOrganizer(container) {
   const scope = container instanceof HTMLElement ? container : document;
+  scopeRef = scope;
 
   if (container instanceof HTMLElement && !container.querySelector('[data-role="tasks-table"]')) {
     container.innerHTML = `
@@ -138,46 +142,29 @@ export function mountOrganizer(container) {
   tableBodyRef = scope.querySelector('[data-role="tasks-table"] tbody');
   titleInputRef = scope.querySelector('[data-role="task-title-input"]');
   statusInputRef = scope.querySelector('[data-role="task-status-input"]');
+  addBtnRef = scope.querySelector('[data-action="task-add"]');
   if (!tableBodyRef) return;
 
   refreshTable();
 
-  const addBtn = scope.querySelector('[data-action="task-add"]');
-  if (addBtn && !addBtn.dataset.taskAddBound) {
-    addBtn.addEventListener('click', addTask);
-    addBtn.dataset.taskAddBound = '1';
+  if (addBtnRef) addBtnRef.addEventListener('click', addTask);
+  scope.addEventListener('input', onScopeInput);
+  scope.addEventListener('change', onScopeInput);
+  scope.addEventListener('click', onScopeClick);
+}
+
+export function unmountOrganizer() {
+  if (addBtnRef) addBtnRef.removeEventListener('click', addTask);
+  if (scopeRef) {
+    scopeRef.removeEventListener('input', onScopeInput);
+    scopeRef.removeEventListener('change', onScopeInput);
+    scopeRef.removeEventListener('click', onScopeClick);
   }
-
-  if (!tasksBound) {
-    document.addEventListener('input', (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
-      const { idx, field } = target.dataset || {};
-      if (idx == null || field == null) return;
-      updateTask(idx, field, target.value);
-    });
-
-    document.addEventListener('change', (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
-      const { idx, field } = target.dataset || {};
-      if (idx == null || field == null) return;
-      updateTask(idx, field, target.value);
-    });
-
-    document.addEventListener('click', (event) => {
-      const el = event.target instanceof HTMLElement ? event.target : null;
-      if (!el) return;
-      const delBtn = el.closest('[data-action="task-del"]');
-      if (delBtn) {
-        const { idx } = delBtn.dataset || {};
-        if (idx != null) deleteTask(idx);
-        return;
-      }
-    });
-
-    tasksBound = true;
-  }
+  scopeRef = null;
+  tableBodyRef = null;
+  titleInputRef = null;
+  statusInputRef = null;
+  addBtnRef = null;
 }
 
 export default mountOrganizer;

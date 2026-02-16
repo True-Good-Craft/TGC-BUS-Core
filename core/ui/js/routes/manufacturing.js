@@ -1,33 +1,14 @@
 // Copyright (C) 2025 BUS Core Authors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// core/ui/js/routes/manufacturing.js
+// Legacy route shim kept for compatibility. Canonical routing is in /ui/app.js.
 import { registerRoute } from '../router.js';
 import { mountManufacturing, unmountManufacturing } from '../cards/manufacturing.js';
 
 registerRoute('/manufacturing', mount);
 
-let watcherBound = false;
-
-function bindUnmountWatcher() {
-  if (watcherBound) return;
-  watcherBound = true;
-  window.addEventListener('hashchange', () => {
-    if (!location.hash.includes('/manufacturing')) {
-      unmountManufacturing();
-    }
-  });
-}
-
 async function mount(root) {
   unmountManufacturing();
-  root.innerHTML = '';
-  let host = root.querySelector('[data-tab-panel="manufacturing"]');
-  if (!host) {
-    host = document.createElement('div');
-    host.setAttribute('data-tab-panel', 'manufacturing');
-    root.append(host);
-  }
-  bindUnmountWatcher();
+  if (root) root.innerHTML = '<div data-tab-panel="manufacturing"></div>';
   await mountManufacturing();
 }

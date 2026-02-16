@@ -1,115 +1,76 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // TGC BUS Core (Business Utility System Core)
-// Copyright (C) 2025 True Good Craft
-//
-// This file is part of TGC BUS Core.
-//
-// TGC BUS Core is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// TGC BUS Core is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
 import { ensureToken } from "./js/token.js";
-import { mountBackupExport } from "./js/cards/backup.js";
-import mountVendors from "./js/cards/vendors.js";
-import { mountHome } from "./js/cards/home.js";
-import "./js/cards/home_donuts.js";
-import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
-import { mountManufacturing, unmountManufacturing } from "./js/cards/manufacturing.js";
-import { mountRecipes, unmountRecipes } from "./js/cards/recipes.js";
-import { settingsCard } from "./js/cards/settings.js";
-import { mountLogsPage } from "./js/logs.js";
 import { toMetricBase, DIM_DEFAULTS_IMPERIAL } from "./js/lib/units.js";
 
+import * as homeModule from "./js/screens/home.js";
+import * as inventoryModule from "./js/screens/inventory.js";
+import * as contactsModule from "./js/screens/contacts.js";
+import * as recipesModule from "./js/screens/recipes.js";
+import * as manufacturingModule from "./js/screens/manufacturing.js";
+import * as logsModule from "./js/screens/logs.js";
+import * as settingsModule from "./js/screens/settings.js";
+
 const ROUTES = {
-  '#/inventory': showInventory,
-  '#/manufacturing': showManufacturing,
-  '#/recipes': showRecipes,
-  '#/contacts': showContacts,
-  '#/settings': showSettings,
-  '#/logs': showLogs,
-  '#/home': showHome,
-  '#/': showInventory,
-  '': showInventory,
+  home: { container: '[data-role="home-screen"]', module: homeModule },
+  inventory: { container: '[data-role="inventory-screen"]', module: inventoryModule },
+  contacts: { container: '[data-role="contacts-screen"]', module: contactsModule },
+  recipes: { container: '[data-role="recipes-screen"]', module: recipesModule },
+  manufacturing: { container: '[data-role="manufacturing-screen"]', module: manufacturingModule },
+  logs: { container: '[data-role="logs-screen"]', module: logsModule },
+  settings: { container: '[data-role="settings-screen"]', module: settingsModule },
 };
 
-function getHash() {
-  return (window.location.hash || '#/home').replace(/\/+$/, '');
-}
+let currentScreen = null;
 
-function normalizeRoute(hash) {
-  return (hash.replace('#/', '') || 'inventory').split(/[\/?]/)[0];
-}
-
-const setActiveNav = (route) => {
-  document.querySelectorAll('[data-role="nav-link"]').forEach(a => {
-    const is = a.getAttribute('data-route') === route;
-    a.classList.toggle('active', !!is);
-  });
-};
-
-function showScreen(name) {
-  const home = document.querySelector('[data-role="home-screen"]');
-  const tools = document.querySelector('[data-role="tools-screen"]');
-  if (home)  home.classList.toggle('hidden',  name !== 'home');
-  if (tools) tools.classList.toggle('hidden', name !== 'tools');
-}
-
-let settingsMounted = false;
-
-const ensureContactsMounted = async () => {
-  const host = document.querySelector('[data-view="contacts"]');
-  if (!host) return;
-  await mountVendors(host);
-};
-
-function clearCardHost() {
-  const root = document.getElementById('card-root')
-    || document.getElementById('tools-root')
-    || document.getElementById('main-root');
-  const inventoryHost = document.querySelector('[data-role="inventory-root"]');
-  const contactsHost = document.querySelector('[data-view="contacts"]');
-  const settingsHost = document.querySelector('[data-role="settings-root"]');
-  const manufacturingHost = document.querySelector('[data-tab-panel="manufacturing"]');
-  const recipesHost = document.querySelector('[data-tab-panel="recipes"]');
-  const logsHost = document.querySelector('[data-role="logs-root"]');
-  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, logsHost].forEach((node) => {
-    if (node) node.innerHTML = '';
+function hideAllScreens() {
+  Object.values(ROUTES).forEach((r) => {
+    document.querySelector(r.container)?.classList.add('hidden');
   });
 }
 
-async function onRouteChange() {
+function updateSidebarActive(route) {
+  document.querySelectorAll('[data-role="nav-link"]').forEach((link) => {
+    link.classList.toggle(
+      'active',
+      link.dataset.route === route
+    );
+  });
+}
+
+function routeFromHash() {
+  const route = (location.hash.replace('#/', '') || 'home').split(/[/?]/)[0];
+  if (route === 'admin') return 'settings';
+  return route;
+}
+
+async function handleRouteChange() {
   await ensureToken();
-  const hash = getHash();
 
-  if (hash === '#/admin') {
-    location.hash = '#/settings';
-    return;
-  }
+  const requestedRoute = routeFromHash();
+  const spec = ROUTES[requestedRoute] || ROUTES.home;
+  const activeRoute = ROUTES[requestedRoute] ? requestedRoute : 'home';
 
-  const route = normalizeRoute(hash);
-  setActiveNav(route);
+  if (currentScreen?.unmount) await currentScreen.unmount();
+  hideAllScreens();
 
-  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
-  clearCardHost();
+  const container = document.querySelector(spec.container);
+  if (!container) return;
 
-  const fn = ROUTES[hash] || ROUTES['#/home'];
-  await fn();
+  await spec.module.mount(container);
+  container.classList.remove('hidden');
+
+  currentScreen = spec.module;
+  updateSidebarActive(activeRoute);
 }
 
 window.addEventListener('hashchange', () => {
-  onRouteChange().catch(err => console.error('route change failed', err));
+  handleRouteChange().catch((err) => console.error('route change failed', err));
 });
+
 window.addEventListener('load', () => {
-  onRouteChange().catch(err => console.error('route change failed', err));
+  handleRouteChange().catch((err) => console.error('route change failed', err));
 });
 
 if (!location.hash) location.hash = '#/home';
@@ -121,7 +82,6 @@ window.BUS_UNITS = {
   },
   set american(v) {
     try { localStorage.setItem('bus.american_mode', v ? '1' : '0'); } catch {}
-    // fire a lightweight event so forms can re-render their unit pickers
     document.dispatchEvent(new CustomEvent('bus:units-mode', { detail: { american: !!v } }));
   }
 };
@@ -133,13 +93,11 @@ window.BUS_UNITS = {
     try {
       if (!window.BUS_UNITS.american) return $fetch(input, init);
       const url = (typeof input === 'string') ? input : input.url;
-      // Only touch known mutate endpoints
       const targets = ['/app/purchase', '/app/adjust', '/app/consume', '/app/stock/out'];
       if (!targets.some(t => url && url.includes(t))) return $fetch(input, init);
       if (!init || !init.body || typeof init.body !== 'string') return $fetch(input, init);
       let payload = JSON.parse(init.body);
-      // Heuristics: determine dimension
-      const dim = payload.dimension || payload.item_dimension || payload.dim || 'area'; // default harmlessly
+      const dim = payload.dimension || payload.item_dimension || payload.dim || 'area';
       const unit = payload.qty_unit || payload.unit || payload.unit_price_unit || DIM_DEFAULTS_IMPERIAL[dim];
       const converted = toMetricBase({
         dimension: dim,
@@ -149,16 +107,17 @@ window.BUS_UNITS = {
         priceUnit: payload.price_unit ?? unit
       });
       if (!converted.sendUnits) {
-        if (payload.qty != null)       payload.qty = converted.qtyBase;
-        if (payload.quantity != null)  payload.quantity = converted.qtyBase;
-        if (payload.amount != null)    payload.amount = converted.qtyBase;
+        if (payload.qty != null) payload.qty = converted.qtyBase;
+        if (payload.quantity != null) payload.quantity = converted.qtyBase;
+        if (payload.amount != null) payload.amount = converted.qtyBase;
         if (payload.unit_price != null) payload.unit_price = converted.pricePerBase;
-        // remove *_unit to indicate base units
-        delete payload.qty_unit; delete payload.price_unit; delete payload.unit;
+        delete payload.qty_unit;
+        delete payload.price_unit;
+        delete payload.unit;
       }
       init = { ...init, body: JSON.stringify(payload) };
-    } catch (e) {
-      // fail open: do not block request
+    } catch (_) {
+      // fail open
     }
     return $fetch(input, init);
   };
@@ -167,196 +126,13 @@ window.BUS_UNITS = {
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await ensureToken();
-    // UI version stamp (from FastAPI OpenAPI info.version)
     try {
       const res = await fetch('/openapi.json', { credentials: 'include' });
       const j = await res.json();
       const el = document.querySelector('[data-role="ui-version"]');
       if (el && j?.info?.version) el.textContent = j.info.version;
-    } catch (_) { /* non-fatal */ }
-    console.log('BOOT OK');
+    } catch (_) {}
   } catch (e) {
     console.error('BOOT FAIL', e);
   }
 });
-
-async function showContacts() {
-  // Close Tools drawer if open
-  unmountInventory();
-  unmountManufacturing();
-  unmountRecipes();
-  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
-  const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
-  contactsScreen?.classList.remove('hidden');
-  await ensureContactsMounted();
-}
-
-async function showInventory() {
-  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
-  unmountManufacturing();
-  unmountRecipes();
-  document.querySelector('[data-role="inventory-screen"]')?.classList.remove('hidden');
-  mountInventory();
-}
-
-async function showManufacturing() {
-  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
-  const screen = document.querySelector('[data-role="manufacturing-screen"]');
-  screen?.classList.remove('hidden');
-  unmountInventory();
-  unmountRecipes();
-  await mountManufacturing();
-}
-
-async function showSettings() {
-  unmountInventory();
-  unmountManufacturing();
-  unmountRecipes();
-  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
-  showScreen(null);
-  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
-  const settingsScreen = document.querySelector('[data-role="settings-screen"]');
-  settingsScreen?.classList.remove('hidden');
-  const host = document.querySelector('[data-role="settings-root"]');
-  if (host && (!settingsMounted || !host.hasChildNodes())) {
-    settingsCard(host);
-    settingsMounted = true;
-  }
-}
-
-async function showLogs() {
-  unmountInventory();
-  unmountManufacturing();
-  unmountRecipes();
-  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
-  const logsScreen = document.querySelector('[data-role="logs-screen"]');
-  logsScreen?.classList.remove('hidden');
-  const host = document.querySelector('[data-role="logs-root"]');
-  if (host) {
-    host.innerHTML = '';
-    mountLogsPage(host);
-  }
-}
-
-async function showHome() {
-  showScreen('home');   // show only Home
-  mountHome();          // keep existing Home logic
-  unmountInventory();   // ensure Inventory hides when returning Home
-  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
-  unmountManufacturing();
-  unmountRecipes();
-  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
-}
-
-async function showRecipes() {
-  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
-  const recipesScreen = document.querySelector('[data-role="recipes-screen"]');
-  recipesScreen?.classList.remove('hidden');
-  unmountInventory();
-  unmountManufacturing();
-  await mountRecipes();
-}
-
-function initManufacturing() {
-  const form = document.querySelector('[data-role="mfg-run-form"]');
-  const btn = document.querySelector('[data-role="mfg-run-btn"]');
-  const notes = form?.querySelector('#mfg-notes');
-  const hint = document.querySelector('[data-role="mfg-hint"]');
-  if (!form || !btn) return;
-  if (form.dataset.mfgBound) return;
-  form.dataset.mfgBound = '1';
-
-  const originalText = btn.textContent || 'Run Manufacturing';
-  let locked = false;
-
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    if (locked) return;
-
-    btn.disabled = true;
-    btn.textContent = 'Running…';
-
-    try {
-      const body = {};
-      const note = notes?.value?.trim();
-      if (note) body.notes = note;
-      const token = await ensureToken();
-      const res = await fetch('/app/inventory/run', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Session-Token': token,
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (res.status === 501) {
-        alert('Manufacturing is unavailable.');
-        locked = true;
-        btn.disabled = true;
-        btn.textContent = 'Unavailable';
-        if (hint) {
-          hint.textContent = 'Manufacturing is unavailable.';
-          hint.classList.remove('hidden');
-        }
-        return;
-      }
-
-      if (res.status === 404) {
-        locked = true;
-        btn.textContent = 'Unavailable';
-        if (hint) {
-          hint.textContent = 'Manufacturing is unavailable.';
-          hint.classList.remove('hidden');
-        }
-        return;
-      }
-
-      if (!res.ok) throw new Error(String(res.status));
-      alert('Manufacturing run submitted.');
-      if (notes) notes.value = '';
-    } catch (err) {
-      console.error('mfg run failed', err);
-      alert('Could not run manufacturing.');
-    } finally {
-      if (locked) {
-        btn.disabled = true;
-      } else {
-        btn.disabled = false;
-        btn.textContent = originalText;
-      }
-      if (!locked && btn.textContent !== originalText) {
-        btn.textContent = originalText;
-      }
-    }
-  });
-}
-
