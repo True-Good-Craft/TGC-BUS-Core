@@ -113,7 +113,7 @@ $response = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8765/app/items"
 1. **Fully Reconciled:** All documented core endpoints match actual FastAPI routes
 2. **Sales Endpoint:** No standalone `POST /app/finance/sale`. Sales created via `POST /app/ledger/stock/out?reason=sold&record_cash_event=true` (atomic inventory + cash event)
 3. **Quantity Contract:** All inventory endpoints enforce `quantity_decimal` (string) + `uom` input; legacy `qty` field rejected
-4. **Monetary Fields:** All costs stored as integers (cents): `unit_cost_cents`, `amount_cents`, `unit_price_cents`
+4. **Monetary Fields:** API accepts human-unit decimal cost inputs (`unit_cost_decimal` + `cost_uom`) and normalizes to base-unit cents; cash amounts remain integer cents (`amount_cents`, `unit_price_cents`)
 5. **Transaction Stubs:** `/app/transactions/summary` and `/app/transactions` currently return placeholder `{"stub": true}` responses; flagged for future implementation or removal
 
 ---
@@ -157,17 +157,19 @@ $response = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8765/app/items"
 
 ### Monetary Contract
 
-**All Financial Fields in Cents (Integer):**
-- **Fields:** `unit_cost_cents`, `amount_cents`, `unit_price_cents`, `refund_amount_cents`, `restock_unit_cost_cents`
-- **Type:** Integer (uint64)
-- **Range:** 0 to 9,223,372,036,854,775,807 (max int64)
-- **No Decimals:** All values quantized to nearest cent; no sub-cent precision
-- **Storage:** Direct integer; no float representation in DB
+**Cash Fields (Integer Cents):**
+- **Fields:** `amount_cents`, `unit_price_cents`, `refund_amount_cents`
+- **Type:** Integer
 - **Display:** Divide by 100 for USD: `amount_cents / 100 = $X.XX`
 
-**Example:**
-- Input: `unit_price_cents = 1999` → stored as integer 1999 (cents)
-- Display: `1999 / 100 = 19.99` → formatted `"$19.99"`
+**Cost Input Contract (API Boundary):**
+- **Purchase/Stock-in:** `unit_cost_decimal` + `cost_uom`
+- **Refund restock (no related_source_id):** `restock_unit_cost_decimal` + `restock_cost_uom`
+- **Legacy fields rejected:** `unit_cost_cents`, `restock_unit_cost_cents`
+
+**Normalization Rule:**
+- All costs are normalized to **base-unit cents** at API boundary.
+- Persistence stores `ItemBatch.unit_cost_cents` / `ItemMovement.unit_cost_cents` as **cents per base unit**.
 
 **Exception — Items.price Field (Legacy):**
 - **Type:** Float (NOT cents)
@@ -559,12 +561,16 @@ Alias for `/app/manufacturing/runs`.
 
 ## Ledger & Inventory Endpoints
 
+**Alias Note:** Ledger routes are available under `/app/ledger/*` and public aliases.
+
+Public aliases include: `/app/purchase`, `/app/consume`, `/app/adjust`, `/app/stock/out`, `/app/stock_in`, `/app/movements`, `/app/valuation`.
+
 ### POST `/app/ledger/purchase`
 
 **Auth Required:** Yes  
 **Status:** Implemented
 
-Record purchase (stock-in with cost). Creates ItemBatch.
+Record purchase (stock-in with cost). Creates ItemBatch. Public alias: `POST /app/purchase`.
 
 **Request Body:**
 
@@ -573,9 +579,9 @@ Record purchase (stock-in with cost). Creates ItemBatch.
 | `item_id` | integer | Yes | Must exist |
 | `quantity_decimal` | string | Yes | Parses to Decimal > 0 |
 | `uom` | string | Yes | Valid for item's dimension |
-| `unit_cost_cents` | integer | Yes | ≥ 0 |
+| `unit_cost_decimal` | string | Yes | Decimal string ≥ 0 |
 
-**Validation:** Rejects legacy `qty` field (422).
+**Validation:** Rejects legacy `qty` and `unit_cost_cents` request fields (422).
 
 **Errors:**
 - **404:** `item_not_found`
@@ -627,7 +633,7 @@ Adjust stock in or out.
 **Auth Required:** Yes  
 **Status:** Implemented
 
-Stock out (sale/loss/theft/other). Optional atomic CashEvent for sales.
+Stock out (sale/loss/theft/other). Optional atomic CashEvent for sales. Public alias: `POST /app/stock/out`.
 
 **Request Body:**
 
@@ -653,7 +659,7 @@ Stock out (sale/loss/theft/other). Optional atomic CashEvent for sales.
 **Auth Required:** Yes  
 **Status:** Implemented
 
-Get inventory valuation.
+Get inventory valuation. Public alias: `GET /app/valuation`.
 
 **Query Parameters:**
 - `item_id` (integer, optional)
@@ -665,7 +671,7 @@ Get inventory valuation.
 **Auth Required:** Yes  
 **Status:** Implemented
 
-List item movements.
+List item movements. Public alias: `GET /app/movements`.
 
 **Query Parameters:**
 - `item_id` (integer, optional)
@@ -678,7 +684,7 @@ List item movements.
 **Auth Required:** Yes  
 **Status:** Implemented
 
-Stock in (alternative to purchase).
+Stock in (alternative to purchase). Public alias: `POST /app/stock_in`.
 
 **Request Body:**
 
@@ -687,7 +693,8 @@ Stock in (alternative to purchase).
 | `item_id` | integer | Yes |
 | `uom` | string | Yes |
 | `quantity_decimal` | string | Yes |
-| `unit_cost_decimal` | string | No |
+| `unit_cost_decimal` | string | Yes |
+| `cost_uom` | string | Yes |
 | `vendor_id` | integer | No |
 
 ---
@@ -728,10 +735,11 @@ Record refund with optional restocking.
 | `uom` | string | Yes | — |
 | `restock_inventory` | boolean | Yes | — |
 | `related_source_id` | string | No | Original sale CashEvent.id (for cost lookup) |
-| `restock_unit_cost_cents` | integer | No | **Required if restock=true and no related_source_id** |
+| `restock_unit_cost_decimal` | string | No | **Required if restock=true and no related_source_id** |
+| `restock_cost_uom` | string | No | **Required if restock=true and no related_source_id** |
 
 **Validation Rules:**
-- If `restock_inventory=true` AND no `related_source_id`, then `restock_unit_cost_cents` REQUIRED
+- If `restock_inventory=true` AND no `related_source_id`, then `restock_unit_cost_decimal` + `restock_cost_uom` REQUIRED
 - If `related_source_id` provided, system looks up weighted-average cost from original sale movements
 
 **Errors:**
@@ -785,6 +793,34 @@ Get profit/margin summary for date window.
 **Status:** Implemented
 
 Trace cash event with linked movements.
+
+**Path Parameters:**
+- `source_id` (string, required)
+
+**Response (200):**
+```json
+{
+  "cash_event": {
+    "id": 12,
+    "kind": "sale",
+    "amount_cents": 600,
+    "source_id": "abc123",
+    "created_at": "2026-02-19T12:00:00Z"
+  },
+  "linked_movements": [
+    {
+      "id": 31,
+      "item_id": 2,
+      "qty_change": -2000,
+      "unit_cost_cents": 1,
+      "source_id": "abc123",
+      "created_at": "2026-02-19T12:00:00Z"
+    }
+  ],
+  "computed_cogs_cents": 2000,
+  "net_profit_cents": -1400
+}
+```
 
 **Errors:**
 - **404:** `cash_event_not_found`
@@ -901,7 +937,8 @@ Follow this exact sequence to build valid test history.
   "item_id": 2,
   "quantity_decimal": "5",
   "uom": "ea",
-  "unit_cost_cents": 500
+  "unit_cost_decimal": "5.00",
+  "cost_uom": "ea"
 }
 ```
 
@@ -911,7 +948,8 @@ Follow this exact sequence to build valid test history.
   "item_id": 3,
   "quantity_decimal": "1000",
   "uom": "g",
-  "unit_cost_cents": 50
+  "unit_cost_decimal": "50.00",
+  "cost_uom": "mc"
 }
 ```
 
@@ -1226,6 +1264,35 @@ All documented endpoints match actual FastAPI routes. Discrepancies are **clarif
         }
       }
     },
+    "/app/finance/expense": {
+      "post": {
+        "summary": "Record expense",
+        "operationId": "finance_expense",
+        "tags": ["finance"],
+        "security": [{"session": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "amount_cents": {"type": "integer", "minimum": 1},
+                  "category": {"type": ["string", "null"]},
+                  "notes": {"type": ["string", "null"]},
+                  "created_at": {"type": ["string", "null"], "format": "date-time"}
+                },
+                "required": ["amount_cents"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {"description": "Expense recorded"},
+          "400": {"description": "Validation error"}
+        }
+      }
+    },
     "/app/finance/refund": {
       "post": {
         "summary": "Record refund with optional restocking",
@@ -1272,6 +1339,26 @@ All documented endpoints match actual FastAPI routes. Discrepancies are **clarif
         "responses": {
           "200": {"description": "Profit summary"},
           "400": {"description": "Invalid parameters"}
+        }
+      }
+    },
+    "/app/finance/cash-event/{source_id}": {
+      "get": {
+        "summary": "Get cash event trace by source_id",
+        "operationId": "finance_cash_event_trace",
+        "tags": ["finance"],
+        "security": [{"session": []}],
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {"description": "Cash event trace with linked movements, computed COGS, and net profit"},
+          "404": {"description": "cash_event_not_found"}
         }
       }
     },
@@ -1355,9 +1442,10 @@ All documented endpoints match actual FastAPI routes. Discrepancies are **clarif
           "item_id": {"type": "integer"},
           "quantity_decimal": {"type": "string"},
           "uom": {"type": "string"},
-          "unit_cost_cents": {"type": "integer", "minimum": 0}
+          "unit_cost_decimal": {"type": "string"},
+          "cost_uom": {"type": "string"}
         },
-        "required": ["item_id", "quantity_decimal", "uom", "unit_cost_cents"]
+        "required": ["item_id", "quantity_decimal", "uom", "unit_cost_decimal", "cost_uom"]
       },
       "StockOutIn": {
         "type": "object",
@@ -1380,7 +1468,8 @@ All documented endpoints match actual FastAPI routes. Discrepancies are **clarif
           "uom": {"type": "string"},
           "restock_inventory": {"type": "boolean"},
           "related_source_id": {"type": "string"},
-          "restock_unit_cost_cents": {"type": "integer", "minimum": 0}
+          "restock_unit_cost_decimal": {"type": ["string", "null"]},
+          "restock_cost_uom": {"type": ["string", "null"]}
         },
         "required": ["item_id", "refund_amount_cents", "quantity_decimal", "uom", "restock_inventory"]
       },

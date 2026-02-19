@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 
@@ -29,7 +30,8 @@ def _purchase(client, item_id: int, qty_each: str, unit_cost_cents: int):
             "item_id": item_id,
             "quantity_decimal": qty_each,
             "uom": "ea",
-            "unit_cost_cents": unit_cost_cents,
+            "unit_cost_decimal": f"{Decimal(unit_cost_cents):.2f}",
+            "cost_uom": "ea",
             "meta": {},
             "note": "seed",
         },
@@ -67,7 +69,7 @@ def test_snapshot_dashboard_summary_30day_default(bus_client):
 
     assert j == {
         "window": {"start": j["window"]["start"], "end": j["window"]["end"]},
-        "inventory_value_cents": 99000,
+        "inventory_value_cents": 10000,
         "units_produced": 0,
         "gross_revenue_cents": 0,
         "refunds_cents": 0,
@@ -119,8 +121,8 @@ def test_snapshot_manufacturing_summary_known_fixture(bus_client):
     j = r.json()
 
     assert j["produced_quantity"] == 2
-    assert j["total_batch_cost_cents"] == 7
-    assert j["cost_per_unit_cents"] == 3.5
+    assert j["total_batch_cost_cents"] == 1
+    assert j["cost_per_unit_cents"] == 0.5
     assert len(j["movements"]) == 2
 
 
@@ -140,8 +142,8 @@ def test_snapshot_cash_event_trace_response(bus_client):
     j = r.json()
 
     assert j["cash_event"]["source_id"] == source_id
-    assert j["computed_cogs_cents"] == 30000
-    assert j["net_profit_cents"] == -29900
+    assert j["computed_cogs_cents"] == 3000
+    assert j["net_profit_cents"] == -2900
     assert len(j["linked_movements"]) >= 1
 
 

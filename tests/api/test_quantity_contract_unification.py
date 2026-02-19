@@ -39,7 +39,7 @@ def test_consume_accepts_decimal_uom_and_writes_base_int(bus_client):
     item_id = _create_item(client, "ConsumeItem", "count", "ea")
     purchase = client.post(
         "/app/purchase",
-        json={"item_id": item_id, "quantity_decimal": "3", "uom": "ea", "unit_cost_cents": 10},
+        json={"item_id": item_id, "quantity_decimal": "3", "uom": "ea", "unit_cost_decimal": "10.00", "cost_uom": "ea"},
     )
     assert purchase.status_code == 200, purchase.text
 
@@ -61,7 +61,7 @@ def test_stock_in_rejects_fractional_base_quantity(bus_client):
 
     resp = client.post(
         "/app/stock_in",
-        json={"item_id": item_id, "uom": "ea", "quantity_decimal": "0.0005", "unit_cost_decimal": "1.00"},
+        json={"item_id": item_id, "uom": "ea", "quantity_decimal": "0.0005", "unit_cost_decimal": "1.00", "cost_uom": "ea"},
     )
     assert resp.status_code == 400, resp.text
     assert resp.json()["detail"]["message"] == "fractional_base_quantity_not_allowed"
