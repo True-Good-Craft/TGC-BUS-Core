@@ -10,6 +10,7 @@ import * as contactsModule from "./js/screens/contacts.js";
 import * as recipesModule from "./js/screens/recipes.js";
 import * as manufacturingModule from "./js/screens/manufacturing.js";
 import * as logsModule from "./js/screens/logs.js";
+import * as financeModule from "./js/screens/finance.js";
 import * as settingsModule from "./js/screens/settings.js";
 
 const ROUTES = {
@@ -19,6 +20,7 @@ const ROUTES = {
   recipes: { container: '[data-role="recipes-screen"]', module: recipesModule },
   manufacturing: { container: '[data-role="manufacturing-screen"]', module: manufacturingModule },
   logs: { container: '[data-role="logs-screen"]', module: logsModule },
+  finance: { container: '[data-role="finance-screen"]', module: financeModule },
   settings: { container: '[data-role="settings-screen"]', module: settingsModule },
 };
 

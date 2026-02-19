@@ -26,6 +26,7 @@ from core.appdb.models import Item, ItemBatch, ItemMovement, CashEvent
 from core.appdb.paths import resolve_db_path
 from core.api.schemas_ledger import QtyDisplay, StockInReq, StockInResp
 from core.api.quantity_contract import normalize_quantity_to_base_int
+from core.api.cost_contract import normalize_cost_to_base_cents
 from core.metrics.metric import UNIT_MULTIPLIER, _norm_unit, default_unit_for, from_base
 from core.journal.inventory import append_inventory
 
@@ -82,7 +83,8 @@ class PurchaseIn(BaseModel):
     item_id: int
     quantity_decimal: str = Field(min_length=1)
     uom: str = Field(min_length=1)
-    unit_cost_cents: int = Field(ge=0)
+    unit_cost_decimal: str = Field(min_length=1)
+    cost_uom: str = Field(min_length=1)
     source_kind: str = "purchase"
     source_id: Optional[str] = None
 
@@ -91,6 +93,8 @@ class PurchaseIn(BaseModel):
     def reject_legacy_qty(cls, data):
         if isinstance(data, dict) and "qty" in data:
             raise ValueError("legacy_qty_field_not_allowed")
+        if isinstance(data, dict) and "unit_cost_cents" in data:
+            raise ValueError("legacy_unit_cost_field_not_allowed")
         return data
 
 
@@ -101,12 +105,13 @@ def purchase(body: PurchaseIn, db: Session = Depends(get_session)):
     if not item:
         raise HTTPException(status_code=404, detail="item_not_found")
     qty_base = normalize_quantity_to_base_int(item.dimension, body.uom, body.quantity_decimal)
+    base_unit_cost_cents = normalize_cost_to_base_cents(item.dimension, body.cost_uom, body.unit_cost_decimal)
 
     batch_id = add_batch(
         db,
         int(body.item_id),
         qty_base,
-        int(body.unit_cost_cents),
+        int(base_unit_cost_cents),
         body.source_kind,
         body.source_id,
     )
@@ -116,7 +121,7 @@ def purchase(body: PurchaseIn, db: Session = Depends(get_session)):
             "type": "purchase",
             "item_id": int(body.item_id),
             "qty_change": qty_base,
-            "unit_cost_cents": int(body.unit_cost_cents),
+            "unit_cost_cents": int(base_unit_cost_cents),
             "source_kind": body.source_kind,
             "source_id": body.source_id,
             "batch_id": int(batch_id),
@@ -448,15 +453,7 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
     uom_raw = payload.uom
     uom = _norm_unit(uom_raw)
     qty_int = normalize_quantity_to_base_int(item.dimension, uom_raw, payload.quantity_decimal)
-
-    unit_cost_cents: Optional[int]
-    if payload.unit_cost_decimal is None:
-        unit_cost_cents = 0
-    else:
-        try:
-            unit_cost_cents = int(round(float(payload.unit_cost_decimal) * 100))
-        except Exception:
-            raise HTTPException(status_code=400, detail="invalid_unit_cost")
+    unit_cost_cents = normalize_cost_to_base_cents(item.dimension, payload.cost_uom, payload.unit_cost_decimal)
 
     batch = ItemBatch(
         item_id=item.id,

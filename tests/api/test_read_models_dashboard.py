@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -25,7 +26,8 @@ def _purchase(client, item_id: int, qty_each: str, unit_cost_cents: int):
             "item_id": int(item_id),
             "quantity_decimal": str(qty_each),
             "uom": "ea",
-            "unit_cost_cents": int(unit_cost_cents),
+            "unit_cost_decimal": f"{Decimal(unit_cost_cents):.2f}",
+            "cost_uom": "ea",
             "meta": {},
             "note": "seed",
         },
@@ -56,7 +58,7 @@ def test_inventory_value_simple(bus_client):
     _purchase(client, item_id, qty_each="3", unit_cost_cents=25)
 
     with bus_client["engine"].SessionLocal() as db:
-        assert get_inventory_value(db) == 75000
+        assert get_inventory_value(db) == 9000
 
 
 def test_inventory_value_with_zero_cost(bus_client):
@@ -66,7 +68,7 @@ def test_inventory_value_with_zero_cost(bus_client):
     _purchase(client, item_id, qty_each="1", unit_cost_cents=0)
 
     with bus_client["engine"].SessionLocal() as db:
-        assert get_inventory_value(db) == 200000
+        assert get_inventory_value(db) == 20000
 
 
 def test_units_produced_window(bus_client):
@@ -95,8 +97,8 @@ def test_finance_summary_basic_sale(bus_client):
     assert summary.gross_revenue_cents == 600
     assert summary.refunds_cents == 0
     assert summary.net_revenue_cents == 600
-    assert summary.cogs_cents == 10000
-    assert summary.gross_profit_cents == -9400
+    assert summary.cogs_cents == 2000
+    assert summary.gross_profit_cents == -1400
 
 
 def test_finance_summary_refund(bus_client):

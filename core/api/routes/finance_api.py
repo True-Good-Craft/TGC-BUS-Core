@@ -15,6 +15,7 @@ from core.appdb.ledger import add_batch
 from core.appdb.models import CashEvent, ItemMovement
 from core.api.read_models import get_finance_summary
 from core.api.quantity_contract import normalize_quantity_to_base_int
+from core.api.cost_contract import normalize_cost_to_base_cents
 
 
 router = APIRouter(prefix="/finance", tags=["finance"])
@@ -54,7 +55,8 @@ class RefundIn(BaseModel):
     uom: str = Field(min_length=1)
     restock_inventory: bool
     related_source_id: Optional[str] = None
-    restock_unit_cost_cents: Optional[int] = None
+    restock_unit_cost_decimal: Optional[str] = None
+    restock_cost_uom: Optional[str] = None
     category: Optional[str] = None
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -64,6 +66,8 @@ class RefundIn(BaseModel):
     def reject_legacy_qty_base(cls, data):
         if isinstance(data, dict) and "qty_base" in data:
             raise ValueError("legacy_qty_field_not_allowed")
+        if isinstance(data, dict) and "restock_unit_cost_cents" in data:
+            raise ValueError("legacy_unit_cost_field_not_allowed")
         return data
 
 
@@ -78,7 +82,7 @@ def finance_refund(body: RefundIn, db: Session = Depends(get_session)):
     qty_base = normalize_quantity_to_base_int(item.dimension, body.uom, body.quantity_decimal)
     refund_amount_cents = int(body.refund_amount_cents)
 
-    if body.restock_inventory is True and (not body.related_source_id) and body.restock_unit_cost_cents is None:
+    if body.restock_inventory is True and (not body.related_source_id) and (body.restock_unit_cost_decimal is None or not body.restock_cost_uom):
         raise HTTPException(status_code=400, detail="restock_unit_cost_required_without_related_source_id")
 
     source_id = uuid.uuid4().hex
@@ -126,7 +130,7 @@ def finance_refund(body: RefundIn, db: Session = Depends(get_session)):
 
                 unit_cost_cents = int((total_cost / total_qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
             else:
-                unit_cost_cents = int(body.restock_unit_cost_cents)
+                unit_cost_cents = normalize_cost_to_base_cents(item.dimension, body.restock_cost_uom, body.restock_unit_cost_decimal)
 
             # Stock-in movement: qty_change = +qty_base, source_kind="refund_restock", source_id matches refund cash event.
             add_batch(

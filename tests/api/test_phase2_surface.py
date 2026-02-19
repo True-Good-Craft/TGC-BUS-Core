@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 
@@ -27,7 +28,8 @@ def _purchase(client, item_id: int, qty_each: str, unit_cost_cents: int):
             "item_id": item_id,
             "quantity_decimal": qty_each,
             "uom": "ea",
-            "unit_cost_cents": unit_cost_cents,
+            "unit_cost_decimal": f"{Decimal(unit_cost_cents):.2f}",
+            "cost_uom": "ea",
             "meta": {},
             "note": "seed",
         },
@@ -102,8 +104,8 @@ def test_manufacture_summary_cost_correct(bus_client):
     assert r.status_code == 200, r.text
     j = r.json()
     assert j["produced_quantity"] == 1000
-    assert j["total_batch_cost_cents"] == 50000
-    assert j["cost_per_unit_cents"] == 50.0
+    assert j["total_batch_cost_cents"] == 5000
+    assert j["cost_per_unit_cents"] == 5.0
     assert isinstance(j["run_id"], str)
     assert isinstance(j["movements"], list)
 
@@ -120,8 +122,8 @@ def test_manufacture_summary_rounding_precision(bus_client):
     )
     assert r.status_code == 200, r.text
     j = r.json()
-    assert j["total_batch_cost_cents"] == 1
-    assert j["cost_per_unit_cents"] == 0.3333
+    assert j["total_batch_cost_cents"] == 0
+    assert j["cost_per_unit_cents"] == 0.0
 
 
 def test_manufacture_summary_zero_quantity_guard(bus_client):
