@@ -11,11 +11,12 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
-from core.appdb.ledger import add_batch
-from core.appdb.models import CashEvent, ItemMovement
-from core.api.read_models import get_finance_summary
 from core.api.quantity_contract import normalize_quantity_to_base_int
 from core.api.cost_contract import normalize_cost_to_base_cents
+from core.appdb.ledger import add_batch
+from core.appdb.models import CashEvent, ItemMovement
+from core.services.finance_service import process_refund, record_expense
+from core.api.read_models import get_finance_summary
 
 
 router = APIRouter(prefix="/finance", tags=["finance"])
@@ -30,20 +31,13 @@ class ExpenseIn(BaseModel):
 
 @router.post("/expense")
 def finance_expense(body: ExpenseIn, db: Session = Depends(get_session)):
-    ce = CashEvent(
-        kind="expense",
+    ce = record_expense(
+        db,
+        amount_cents=int(body.amount_cents),
         category=body.category,
-        amount_cents=-abs(int(body.amount_cents)),
-        item_id=None,
-        qty_base=None,
-        unit_price_cents=None,
-        source_kind="expense",
-        source_id=None,
-        related_source_id=None,
         notes=body.notes,
-        created_at=body.created_at or datetime.utcnow(),
+        created_at=body.created_at,
     )
-    db.add(ce)
     db.commit()
     return {"ok": True, "id": int(ce.id) if ce.id is not None else None}
 
@@ -73,77 +67,25 @@ class RefundIn(BaseModel):
 
 @router.post("/refund")
 def finance_refund(body: RefundIn, db: Session = Depends(get_session)):
-    item_id = int(body.item_id)
-    from core.appdb.models import Item
-
-    item = db.get(Item, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="item_not_found")
-    qty_base = normalize_quantity_to_base_int(item.dimension, body.uom, body.quantity_decimal)
-    refund_amount_cents = int(body.refund_amount_cents)
-
-    if body.restock_inventory is True and (not body.related_source_id) and (body.restock_unit_cost_decimal is None or not body.restock_cost_uom):
-        raise HTTPException(status_code=400, detail="restock_unit_cost_required_without_related_source_id")
-
-    source_id = uuid.uuid4().hex
-
-    # Atomicity (REFUND): cash_events insert + optional stock-in movement must be a single transaction.
-    tx = db.begin_nested() if db.in_transaction() else db.begin()
-    with tx:
-        db.add(
-            CashEvent(
-                kind="refund",
-                category=body.category,
-                amount_cents=-abs(refund_amount_cents),
-                item_id=item_id,
-                qty_base=qty_base,
-                unit_price_cents=None,
-                source_kind="refund",
-                source_id=source_id,
-                related_source_id=(body.related_source_id or None),
-                notes=body.notes,
-                created_at=body.created_at or datetime.utcnow(),
-            )
-        )
-
-        if body.restock_inventory is True:
-            if body.related_source_id:
-                # Weighted-average unit cost from original sale movements linked by related_source_id.
-                rows = (
-                    db.query(ItemMovement)
-                    .filter(ItemMovement.item_id == item_id)
-                    .filter(ItemMovement.source_id == body.related_source_id)
-                    .filter(ItemMovement.qty_change < 0)
-                    .all()
-                )
-                if not rows:
-                    raise HTTPException(status_code=400, detail="related_source_id_not_found_for_item")
-
-                total_qty = Decimal("0")
-                total_cost = Decimal("0")
-                for m in rows:
-                    qabs = abs(int(m.qty_change))
-                    total_qty += Decimal(qabs)
-                    total_cost += Decimal(qabs) * Decimal(int(m.unit_cost_cents))
-                if total_qty == 0:
-                    raise HTTPException(status_code=400, detail="related_source_id_has_zero_qty")
-
-                unit_cost_cents = int((total_cost / total_qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-            else:
-                unit_cost_cents = normalize_cost_to_base_cents(item.dimension, body.restock_cost_uom, body.restock_unit_cost_decimal)
-
-            # Stock-in movement: qty_change = +qty_base, source_kind="refund_restock", source_id matches refund cash event.
-            add_batch(
-                db,
-                item_id=item_id,
-                qty=qty_base,
-                unit_cost_cents=unit_cost_cents,
-                source_kind="refund_restock",
-                source_id=source_id,
-            )
-
+    source_id = process_refund(
+        db,
+        item_id=int(body.item_id),
+        refund_amount_cents=int(body.refund_amount_cents),
+        quantity_decimal=body.quantity_decimal,
+        uom=body.uom,
+        restock_inventory=bool(body.restock_inventory),
+        related_source_id=body.related_source_id,
+        restock_unit_cost_decimal=body.restock_unit_cost_decimal,
+        restock_cost_uom=body.restock_cost_uom,
+        category=body.category,
+        notes=body.notes,
+        created_at=body.created_at,
+        normalize_quantity_fn=normalize_quantity_to_base_int,
+        normalize_cost_fn=normalize_cost_to_base_cents,
+        add_batch_fn=add_batch,
+    )
+    db.commit()
     return {"ok": True, "source_id": source_id}
-
 
 
 

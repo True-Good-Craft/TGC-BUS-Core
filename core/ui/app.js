@@ -12,6 +12,7 @@ import * as manufacturingModule from "./js/screens/manufacturing.js";
 import * as logsModule from "./js/screens/logs.js";
 import * as financeModule from "./js/screens/finance.js";
 import * as settingsModule from "./js/screens/settings.js";
+import * as welcomeModule from "./js/screens/welcome.js";
 
 const ROUTES = {
   home: { container: '[data-role="home-screen"]', module: homeModule },
@@ -22,9 +23,25 @@ const ROUTES = {
   logs: { container: '[data-role="logs-screen"]', module: logsModule },
   finance: { container: '[data-role="finance-screen"]', module: financeModule },
   settings: { container: '[data-role="settings-screen"]', module: settingsModule },
+  welcome: { container: '[data-role="welcome-screen"]', module: welcomeModule },
 };
 
 let currentScreen = null;
+
+let firstRunGuardChecked = false;
+
+async function shouldRedirectToWelcome(route) {
+  if (route !== "home" || firstRunGuardChecked) return false;
+  firstRunGuardChecked = true;
+  try {
+    const res = await fetch('/app/system/state', { credentials: 'include' });
+    if (!res.ok) return false;
+    const state = await res.json();
+    return !!state?.is_empty;
+  } catch (_) {
+    return false;
+  }
+}
 
 function hideAllScreens() {
   Object.values(ROUTES).forEach((r) => {
@@ -51,8 +68,14 @@ async function handleRouteChange() {
   await ensureToken();
 
   const requestedRoute = routeFromHash();
-  const spec = ROUTES[requestedRoute] || ROUTES.home;
   const activeRoute = ROUTES[requestedRoute] ? requestedRoute : 'home';
+
+  if (activeRoute !== 'welcome' && await shouldRedirectToWelcome(activeRoute)) {
+    if (location.hash !== '#/welcome') location.hash = '#/welcome';
+    return;
+  }
+
+  const spec = ROUTES[activeRoute] || ROUTES.home;
 
   if (currentScreen?.unmount) await currentScreen.unmount();
   hideAllScreens();

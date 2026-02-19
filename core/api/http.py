@@ -773,6 +773,8 @@ from core.api.routes.manufacturing import router as manufacturing_router
 from core.api.routes import logs_api
 from core.api.routes.finance_api import router as finance_router
 from core.api.routes.dashboard_api import router as dashboard_router
+from core.api.routes.demo import router as demo_router
+from core.api.routes.system import router as system_router
 from core.api.routes.ledger_api import public_router as ledger_public_router, router as ledger_router
 
 oauth = APIRouter()
@@ -2143,6 +2145,8 @@ def create_app():
         # Finance v1: MUST be /app/finance/...
         app.include_router(finance_router, prefix="/app")
         app.include_router(dashboard_router, prefix="/app")
+        app.include_router(demo_router, prefix="/app")
+        app.include_router(system_router, prefix="/app")
         app.include_router(transactions_routes.router, prefix="/app")
         app.include_router(config_routes.router, prefix="/app")
         app.state._domain_routes_registered = True
