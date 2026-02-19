@@ -2,6 +2,63 @@
 import { apiGet, apiPost, ensureToken } from '../api.js';
 import { mountAdmin } from './admin.js';
 
+
+function toast(message, tone = 'ok') {
+  const el = document.createElement('div');
+  el.textContent = message;
+  el.style.position = 'fixed';
+  el.style.right = '16px';
+  el.style.bottom = '16px';
+  el.style.zIndex = '9999';
+  el.style.padding = '10px 12px';
+  el.style.borderRadius = '10px';
+  el.style.color = '#fff';
+  el.style.background = tone === 'error' ? '#9f1239' : '#065f46';
+  el.style.boxShadow = '0 8px 22px rgba(0,0,0,.35)';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2200);
+}
+
+async function renderDemoSection(root) {
+  const section = document.createElement('section');
+  section.style.marginTop = '16px';
+  section.className = 'card';
+  section.innerHTML = '<h2 style="margin:0 0 12px;font-size:1.15em;font-weight:700;">Demo Data</h2><div data-role="demo-body">Loading...</div>';
+
+  const body = section.querySelector('[data-role="demo-body"]');
+  try {
+    const state = await apiGet('/app/system/state');
+    if (state?.is_empty) {
+      body.innerHTML = `
+        <p style="margin:0 0 10px;color:#cbd5e1;">Load the deterministic AvoArrow demo factory dataset.</p>
+        <button data-role="load-demo-factory">Load Demo Factory</button>
+      `;
+      const btn = body.querySelector('[data-role="load-demo-factory"]');
+      btn?.addEventListener('click', async () => {
+        btn.disabled = true;
+        const old = btn.textContent;
+        btn.textContent = 'Loading...';
+        try {
+          await apiPost('/app/demo/load', {});
+          toast('Demo Loaded');
+          location.hash = '#/home';
+          location.reload();
+        } catch (err) {
+          toast(String(err?.message || 'Failed to load demo'), 'error');
+          btn.disabled = false;
+          btn.textContent = old;
+        }
+      });
+    } else {
+      body.innerHTML = '<p style="margin:0;color:#94a3b8;">Demo already loaded or system contains data.</p>';
+    }
+  } catch (err) {
+    body.innerHTML = `<p style="margin:0;color:#fda4af;">${String(err?.message || 'Failed to load system state')}</p>`;
+  }
+
+  root.appendChild(section);
+}
+
 export async function settingsCard(el) {
   el.innerHTML = '<div style="padding:20px;">Loading settings...</div>';
 
@@ -105,6 +162,8 @@ export async function settingsCard(el) {
   if (adminHost) {
     mountAdmin(adminHost);
   }
+
+  await renderDemoSection(el);
 
   // Populate
   const themeSelect = root.querySelector('#setting-theme');
