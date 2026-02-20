@@ -8,8 +8,8 @@ import json
 import re
 from datetime import datetime, timezone
 from typing import Any, Mapping
-from urllib.error import URLError
-from urllib.request import urlopen
+
+import requests
 
 
 MANIFEST_UNREACHABLE = "MANIFEST_UNREACHABLE"
@@ -88,14 +88,16 @@ class UpdateService:
 
     def _fetch_manifest(self, manifest_url: str) -> Mapping[str, Any]:
         try:
-            with urlopen(manifest_url, timeout=4) as response:
-                raw = response.read()
-        except URLError as exc:  # includes timeout
+            response = requests.get(
+                manifest_url,
+                timeout=8,
+                headers={"User-Agent": "BUSCore-UpdateCheck/0.11.0"}
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
             raise ManifestUnreachable("manifest request failed") from exc
-
-        try:
-            payload = json.loads(raw.decode("utf-8"))
-        except Exception as exc:
+        except ValueError as exc:
             raise ManifestInvalidSchema("manifest JSON is invalid") from exc
 
         if not isinstance(payload, Mapping):

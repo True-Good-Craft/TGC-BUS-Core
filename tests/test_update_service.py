@@ -5,24 +5,25 @@ from __future__ import annotations
 
 import asyncio
 import json
-from urllib.error import URLError
+
+import requests
 
 from core.services import update_service
 from core.services.update_service import UpdateService, parse_semver
 
 
-class _Resp:
+class _MockResponse:
+    """Mock response object compatible with requests.Response API."""
     def __init__(self, payload: dict):
         self._payload = payload
+        self.status_code = 200
 
-    def read(self) -> bytes:
-        return json.dumps(self._payload).encode("utf-8")
+    def json(self) -> dict:
+        return self._payload
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return None
+    def raise_for_status(self) -> None:
+        """No-op for successful responses."""
+        pass
 
 
 def test_parse_semver_strict():
@@ -38,11 +39,11 @@ def test_parse_semver_strict():
 def test_check_disabled_skips_http(monkeypatch):
     called = {"value": False}
 
-    def _urlopen(*args, **kwargs):
+    def _mock_get(*args, **kwargs):
         called["value"] = True
-        raise AssertionError("should not be called")
+        raise AssertionError("requests.get should not be called")
 
-    monkeypatch.setattr(update_service, "urlopen", _urlopen)
+    monkeypatch.setattr("requests.get", _mock_get)
     svc = UpdateService(config={"updates": {"enabled": False}}, version="0.11.0")
 
     result = asyncio.run(svc.check())
@@ -52,8 +53,8 @@ def test_check_disabled_skips_http(monkeypatch):
 
 
 def test_check_enabled_manifest_ok(monkeypatch):
-    def _urlopen(*args, **kwargs):
-        return _Resp(
+    def _mock_get(*args, **kwargs):
+        return _MockResponse(
             {
                 "min_supported": "0.10.0",
                 "latest": {
@@ -68,7 +69,7 @@ def test_check_enabled_manifest_ok(monkeypatch):
             }
         )
 
-    monkeypatch.setattr(update_service, "urlopen", _urlopen)
+    monkeypatch.setattr("requests.get", _mock_get)
     svc = UpdateService(config={"updates": {"enabled": True, "manifest_url": "https://example.com/m.json"}}, version="0.11.0")
 
     result = asyncio.run(svc.check())
@@ -81,10 +82,10 @@ def test_check_enabled_manifest_ok(monkeypatch):
 
 
 def test_manifest_invalid_schema(monkeypatch):
-    def _urlopen(*args, **kwargs):
-        return _Resp({"latest": {"version": "0.11.1"}})
+    def _mock_get(*args, **kwargs):
+        return _MockResponse({"latest": {"version": "0.11.1"}})
 
-    monkeypatch.setattr(update_service, "urlopen", _urlopen)
+    monkeypatch.setattr("requests.get", _mock_get)
     svc = UpdateService(config={"updates": {"enabled": True}}, version="0.11.0")
 
     result = asyncio.run(svc.check())
@@ -93,8 +94,8 @@ def test_manifest_invalid_schema(monkeypatch):
 
 
 def test_invalid_latest_semver_maps_invalid_schema(monkeypatch):
-    def _urlopen(*args, **kwargs):
-        return _Resp(
+    def _mock_get(*args, **kwargs):
+        return _MockResponse(
             {
                 "latest": {
                     "version": "v0.11.2",
@@ -106,7 +107,7 @@ def test_invalid_latest_semver_maps_invalid_schema(monkeypatch):
             }
         )
 
-    monkeypatch.setattr(update_service, "urlopen", _urlopen)
+    monkeypatch.setattr("requests.get", _mock_get)
     svc = UpdateService(config={"updates": {"enabled": True}}, version="0.11.0")
 
     result = asyncio.run(svc.check())
@@ -115,8 +116,8 @@ def test_invalid_latest_semver_maps_invalid_schema(monkeypatch):
 
 
 def test_invalid_min_supported_maps_invalid_schema(monkeypatch):
-    def _urlopen(*args, **kwargs):
-        return _Resp(
+    def _mock_get(*args, **kwargs):
+        return _MockResponse(
             {
                 "min_supported": "invalid",
                 "latest": {
@@ -129,7 +130,7 @@ def test_invalid_min_supported_maps_invalid_schema(monkeypatch):
             }
         )
 
-    monkeypatch.setattr(update_service, "urlopen", _urlopen)
+    monkeypatch.setattr("requests.get", _mock_get)
     svc = UpdateService(config={"updates": {"enabled": True}}, version="0.11.0")
 
     result = asyncio.run(svc.check())
@@ -138,8 +139,8 @@ def test_invalid_min_supported_maps_invalid_schema(monkeypatch):
 
 
 def test_min_supported_false(monkeypatch):
-    def _urlopen(*args, **kwargs):
-        return _Resp(
+    def _mock_get(*args, **kwargs):
+        return _MockResponse(
             {
                 "min_supported": "0.11.1",
                 "latest": {
@@ -152,7 +153,7 @@ def test_min_supported_false(monkeypatch):
             }
         )
 
-    monkeypatch.setattr(update_service, "urlopen", _urlopen)
+    monkeypatch.setattr("requests.get", _mock_get)
     svc = UpdateService(config={"updates": {"enabled": True}}, version="0.11.0")
 
     result = asyncio.run(svc.check())
@@ -161,10 +162,10 @@ def test_min_supported_false(monkeypatch):
 
 
 def test_urlerror_maps_unreachable(monkeypatch):
-    def _urlopen(*args, **kwargs):
-        raise URLError("offline")
+    def _mock_get(*args, **kwargs):
+        raise requests.RequestException("offline")
 
-    monkeypatch.setattr(update_service, "urlopen", _urlopen)
+    monkeypatch.setattr("requests.get", _mock_get)
     svc = UpdateService(config={"updates": {"enabled": True}}, version="0.11.0")
 
     result = asyncio.run(svc.check())

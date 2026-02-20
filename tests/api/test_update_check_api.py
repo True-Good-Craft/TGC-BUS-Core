@@ -3,18 +3,16 @@
 
 from __future__ import annotations
 
-from core.services import update_service
-
 
 def test_update_check_disabled_no_http(bus_client, monkeypatch):
     client = bus_client["client"]
     called = {"value": False}
 
-    def _urlopen(*args, **kwargs):
+    def _mock_get(*args, **kwargs):
         called["value"] = True
-        raise AssertionError("urlopen should not be called")
+        raise AssertionError("requests.get should not be called")
 
-    monkeypatch.setattr(update_service, "urlopen", _urlopen)
+    monkeypatch.setattr("requests.get", _mock_get)
 
     client.request("PATCH", "/app/config", json={"updates": {"enabled": False}})
     res = client.get("/app/update/check")
