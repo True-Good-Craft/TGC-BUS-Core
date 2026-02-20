@@ -27,6 +27,7 @@ const ROUTES = {
 };
 
 let currentScreen = null;
+let startupUpdateChecked = false;
 
 let firstRunGuardChecked = false;
 
@@ -40,6 +41,45 @@ async function shouldRedirectToWelcome(route) {
     return !!state?.is_empty;
   } catch (_) {
     return false;
+  }
+}
+
+function renderUpdateBanner(result) {
+  if (!result?.is_update_available) return;
+  const appRoot = document.querySelector('#app');
+  if (!appRoot) return;
+  if (document.querySelector('[data-role="update-banner"]')) return;
+
+  const banner = document.createElement('div');
+  banner.dataset.role = 'update-banner';
+  banner.className = 'card';
+  banner.style.background = '#1f2937';
+  banner.style.border = '1px solid #2563eb';
+  banner.style.marginBottom = '12px';
+  banner.innerHTML = `
+    <strong>Update available:</strong> ${result.latest_version}
+    <span style="opacity:.8; margin-left:6px;">(current ${result.current_version})</span>
+    ${result.download_url ? `<a href="${result.download_url}" target="_blank" rel="noopener" style="margin-left:10px; color:#93c5fd;">Download</a>` : ''}
+  `;
+  appRoot.prepend(banner);
+}
+
+async function runStartupUpdateCheck() {
+  if (startupUpdateChecked) return;
+  startupUpdateChecked = true;
+  try {
+    const cfgRes = await fetch('/app/config', { credentials: 'include' });
+    if (!cfgRes.ok) return;
+    const config = await cfgRes.json();
+    const updates = config?.updates || {};
+    if (!(updates.enabled && updates.check_on_startup)) return;
+
+    const updateRes = await fetch('/app/update/check', { credentials: 'include' });
+    if (!updateRes.ok) return;
+    const update = await updateRes.json();
+    renderUpdateBanner(update);
+  } catch (_) {
+    // ignore silently by design
   }
 }
 
@@ -157,6 +197,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const el = document.querySelector('[data-role="ui-version"]');
       if (el && j?.info?.version) el.textContent = j.info.version;
     } catch (_) {}
+    await runStartupUpdateCheck();
   } catch (e) {
     console.error('BOOT FAIL', e);
   }

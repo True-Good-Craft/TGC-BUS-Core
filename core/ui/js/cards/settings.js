@@ -79,6 +79,7 @@ export async function settingsCard(el) {
   const launcher = config.launcher || {};
   const ui = config.ui || {};
   const backup = config.backup || {};
+  const updates = config.updates || {};
 
   el.innerHTML = '';
   const root = document.createElement('div');
@@ -117,6 +118,24 @@ export async function settingsCard(el) {
              style="width:100%; padding:10px; border-radius:10px; background:#232428; color:#888; border:1px solid #444;"
              value="">
       <div style="font-size:0.85em; color:#666; margin-top:4px;">To change this path, edit config.json directly.</div>
+    </div>
+
+    <div style="margin-bottom:20px; border-top:1px solid #333; padding-top:20px;">
+      <h2 style="margin:0 0 12px;font-size:1.15em;font-weight:700;color:#ccc;">Updates</h2>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+          <input type="checkbox" id="setting-updates-enabled" style="transform:scale(1.2);">
+          <span>Check for updates</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+          <input type="checkbox" id="setting-updates-startup" style="transform:scale(1.2);">
+          <span>Check on startup</span>
+        </label>
+      </div>
+      <div style="margin-top:10px;">
+        <button id="btn-check-now" type="button" style="padding:8px 14px; border-radius:8px;">Check now</button>
+      </div>
+      <div id="update-check-result" style="margin-top:12px; color:#cbd5e1;"></div>
     </div>
 
     <div style="margin-top:30px; border-top:1px solid #333; padding-top:20px;">
@@ -172,6 +191,56 @@ export async function settingsCard(el) {
   root.querySelector('#setting-start-tray').checked = !!launcher.auto_start_in_tray;
   root.querySelector('#setting-close-tray').checked = !!launcher.close_to_tray;
   root.querySelector('#setting-backup-dir').value = backup.default_directory || '';
+  root.querySelector('#setting-updates-enabled').checked = !!updates.enabled;
+  root.querySelector('#setting-updates-startup').checked = updates.check_on_startup !== false;
+
+  const updateResult = root.querySelector('#update-check-result');
+  const renderUpdateResult = (result) => {
+    if (!updateResult) return;
+    if (!result?.enabled) {
+      updateResult.innerHTML = '<p style="margin:0; color:#94a3b8;">Update checks are disabled.</p>';
+      return;
+    }
+    if (result?.error) {
+      updateResult.innerHTML = `<p style="margin:0; color:#fda4af;">${result.error.message || 'Update check failed.'}</p>`;
+      return;
+    }
+    const available = !!result?.is_update_available;
+    updateResult.innerHTML = `
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <div><strong>Current version:</strong> ${result.current_version || '-'}</div>
+        <div><strong>Latest version:</strong> ${result.latest_version || '-'}</div>
+        ${available ? `<div><a href="${result.download_url}" target="_blank" rel="noopener">Download update</a></div>` : '<div>No update available.</div>'}
+        ${available ? `<div><strong>SHA256:</strong> <code id="update-sha">${result.sha256 || '-'}</code> <button type="button" id="copy-sha" style="margin-left:8px; padding:3px 8px;">Copy</button></div>` : ''}
+        ${available && result.release_notes_url ? `<div><a href="${result.release_notes_url}" target="_blank" rel="noopener">Release notes</a></div>` : ''}
+      </div>
+    `;
+    const copyBtn = updateResult.querySelector('#copy-sha');
+    copyBtn?.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(result.sha256 || '');
+        toast('SHA256 copied');
+      } catch (_) {
+        toast('Failed to copy SHA256', 'error');
+      }
+    });
+  };
+
+  const btnCheckNow = root.querySelector('#btn-check-now');
+  btnCheckNow?.addEventListener('click', async () => {
+    btnCheckNow.disabled = true;
+    const prior = btnCheckNow.textContent;
+    btnCheckNow.textContent = 'Checking...';
+    try {
+      const result = await apiGet('/app/update/check');
+      renderUpdateResult(result);
+    } catch (_) {
+      renderUpdateResult({ enabled: true, error: { message: 'Update check failed.' } });
+    } finally {
+      btnCheckNow.disabled = false;
+      btnCheckNow.textContent = prior;
+    }
+  });
 
   // Handlers
   const btnSave = root.querySelector('#btn-save');
@@ -189,6 +258,11 @@ export async function settingsCard(el) {
           launcher: {
               auto_start_in_tray: root.querySelector('#setting-start-tray').checked,
               close_to_tray: root.querySelector('#setting-close-tray').checked
+          },
+          updates: {
+              enabled: root.querySelector('#setting-updates-enabled').checked,
+              check_on_startup: root.querySelector('#setting-updates-startup').checked,
+              channel: 'stable'
           }
       };
 
