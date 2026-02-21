@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import asc, func
 from sqlalchemy.orm import Session
@@ -98,9 +98,7 @@ class PurchaseIn(BaseModel):
         return data
 
 
-@router.post("/purchase")
-@public_router.post("/purchase")
-def purchase(body: PurchaseIn, db: Session = Depends(get_session)):
+def handle_purchase(body: PurchaseIn, db: Session):
     item = db.get(Item, int(body.item_id))
     if not item:
         raise HTTPException(status_code=404, detail="item_not_found")
@@ -128,6 +126,12 @@ def purchase(body: PurchaseIn, db: Session = Depends(get_session)):
         }
     )
     return {"ok": True, "batch_id": int(batch_id)}
+
+
+@router.post("/purchase")
+@public_router.post("/purchase")
+def purchase(body: PurchaseIn, db: Session = Depends(get_session)):
+    return handle_purchase(body, db)
 
 
 class ConsumeIn(BaseModel):
@@ -267,9 +271,7 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
             raise HTTPException(status_code=400, detail={"shortages": e.shortages})
 
 
-@router.post("/stock/out")
-@public_router.post("/stock/out")
-def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
+def handle_stock_out(body: StockOutIn, db: Session):
     try:
         item_id = int(body.item_id)
         it = db.get(Item, item_id)
@@ -347,6 +349,12 @@ def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
         raise HTTPException(status_code=400, detail={"shortages": e.shortages})
 
 
+@router.post("/stock/out")
+@public_router.post("/stock/out")
+def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
+    return handle_stock_out(body, db)
+
+
 @router.get("/valuation")
 @public_router.get("/valuation")
 def valuation(item_id: Optional[int] = None, db: Session = Depends(get_session)):
@@ -368,9 +376,7 @@ def valuation(item_id: Optional[int] = None, db: Session = Depends(get_session))
     return {"totals": [{"item_id": r.item_id, "total_value_cents": int(r.total or 0)} for r in rows]}
 
 
-@router.get("/movements")
-@public_router.get("/movements")
-def movements(item_id: Optional[int] = None, limit: int = 100, db: Session = Depends(get_session)):
+def get_ledger_history(item_id: Optional[int], limit: int, db: Session):
     q = db.query(ItemMovement)
     if item_id is not None:
         q = q.filter(ItemMovement.item_id == int(item_id))
@@ -390,6 +396,18 @@ def movements(item_id: Optional[int] = None, limit: int = 100, db: Session = Dep
         }
 
     return {"movements": [to_dict(m) for m in rows]}
+
+
+@router.get("/history")
+def ledger_history(item_id: Optional[int] = None, limit: int = 100, db: Session = Depends(get_session)):
+    return get_ledger_history(item_id, limit, db)
+
+
+@router.get("/movements")
+@public_router.get("/movements")
+def movements(response: Response, item_id: Optional[int] = None, limit: int = 100, db: Session = Depends(get_session)):
+    response.headers["X-BUS-Deprecation"] = "/app/ledger/history"
+    return get_ledger_history(item_id, limit, db)
 
 
 @router.get("/debug/db")
@@ -443,9 +461,7 @@ def _fifo_unit_cost_display(db: Session, item_id: int, unit: str) -> Optional[st
     return f"{_cents_to_display(int(cents))} / {unit}"
 
 
-@router.post("/stock_in", response_model=StockInResp)
-@public_router.post("/stock_in", response_model=StockInResp)
-def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
+def handle_stock_in(payload: StockInReq, db: Session):
     item = db.get(Item, payload.item_id)
     if not item:
         raise HTTPException(status_code=404, detail="item_not_found")
@@ -538,6 +554,19 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
         stock_on_hand_display=QtyDisplay(unit=display_unit, value=str(display_qty)),
         fifo_unit_cost_display=fifo_disp,
     )
+
+
+@router.post("/stock/in", response_model=StockInResp)
+@public_router.post("/stock/in", response_model=StockInResp)
+def stock_in_canonical(payload: StockInReq, db: Session = Depends(get_session)):
+    return handle_stock_in(payload, db)
+
+
+@router.post("/stock_in", response_model=StockInResp)
+@public_router.post("/stock_in", response_model=StockInResp)
+def stock_in(payload: StockInReq, response: Response, db: Session = Depends(get_session)):
+    response.headers["X-BUS-Deprecation"] = "/app/stock/in"
+    return handle_stock_in(payload, db)
 
 
 __all__ = ["router", "public_router"]
