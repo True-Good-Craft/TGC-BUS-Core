@@ -292,11 +292,13 @@ $consume = Invoke-Json POST ($BaseUrl + "/app/consume") @{ item_id = $itemD.id; 
 if ($consume.ok) { Pass "Consume succeeded" } else { Fail "Consume failed"; exit 1 }
 
 $dMoves = Get-MovementsByItem -ItemId $itemD.id -Limit 50
-$net = 0
-foreach ($m in $dMoves) { $net += [double]$m.qty_change }
+$netBase = 0
+foreach ($m in $dMoves) { $netBase += [double]$m.qty_change }
+# Convert base (mc) -> ea for count dimension
+$netEach = $netBase / 1000.0
 # PS 5.1-safe rounding + tolerance
-$rounded = [Math]::Round([double]$net, 2)
-if ([Math]::Abs($rounded - 3.0) -lt 0.001) { Pass "Remaining qty expected (3 units)" } else { Fail ("Unexpected remaining qty for Item D: {0} (rounded={1})" -f $net, $rounded); exit 1 }
+$rounded = [Math]::Round([double]$netEach, 2)
+if ([Math]::Abs($rounded - 3.0) -lt 0.001) { Pass "Remaining qty expected (3 units)" } else { Fail ("Unexpected remaining qty for Item D: {0} (rounded={1})" -f $netEach, $rounded); exit 1 }
 
 $orderedDMoves = @($dMoves | Sort-Object id)
 if ($orderedDMoves.Count -ge 2 -and $orderedDMoves[0].source_kind -eq "purchase" -and $orderedDMoves[1].source_kind -eq "consume") { Pass "FIFO ordering honored (purchase then consume)" } else { Fail "FIFO movement ordering incorrect"; exit 1 }
