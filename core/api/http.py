@@ -107,6 +107,7 @@ from core.api.utils.devguard import require_dev, is_dev
 from core.api.routes import dev as dev_routes
 from core.api.routes import transactions as transactions_routes
 from core.api.routes import config as config_routes
+from core.api.routes import update as update_routes
 from core.api.security import _calc_default_allow_writes
 from core.api.errors import error_envelope, normalize_http_exc, normalize_validation_err
 from core.config.paths import (
@@ -186,7 +187,7 @@ def _index_disabled() -> bool:
     return flag in {"1", "true", "yes"}
 
 
-app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
+app = FastAPI(title="BUS Core", version=VERSION, lifespan=lifespan)
 
 # --- Maintenance / Restore Interlock ---------------------------------------
 app.state.maintenance = False
@@ -769,9 +770,13 @@ protected.include_router(organizer_router)
 from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
 from core.api.routes.recipes import router as recipes_router
+from core.api.routes.manufacturing import public_router as manufacturing_public_router
 from core.api.routes.manufacturing import router as manufacturing_router
 from core.api.routes import logs_api
 from core.api.routes.finance_api import router as finance_router
+from core.api.routes.dashboard_api import router as dashboard_router
+from core.api.routes.demo import router as demo_router
+from core.api.routes.system import router as system_router
 from core.api.routes.ledger_api import public_router as ledger_public_router, router as ledger_router
 
 oauth = APIRouter()
@@ -2135,14 +2140,19 @@ def create_app():
         app.include_router(vendors_router, prefix="/app")
         app.include_router(recipes_router, prefix="/app")
         app.include_router(manufacturing_router, prefix="/app")
+        app.include_router(manufacturing_public_router, prefix="/app")
         app.include_router(logs_api.public_router)
         app.include_router(logs_api.router)
         app.include_router(ledger_public_router, prefix="/app")
         app.include_router(ledger_router, prefix="/app")
         # Finance v1: MUST be /app/finance/...
         app.include_router(finance_router, prefix="/app")
+        app.include_router(dashboard_router, prefix="/app")
+        app.include_router(demo_router, prefix="/app")
+        app.include_router(system_router, prefix="/app")
         app.include_router(transactions_routes.router, prefix="/app")
         app.include_router(config_routes.router, prefix="/app")
+        app.include_router(update_routes.router, prefix="/app")
         app.state._domain_routes_registered = True
     return app
 

@@ -20,3 +20,12 @@ def update_config(
 ) -> Dict[str, Any]:
     save_config(payload)
     return {"ok": True, "restart_required": True}
+
+
+@router.patch("/config")
+def patch_config(
+    payload: Dict[str, Any] = Body(...),
+    _writes: None = Depends(require_writes)
+) -> Dict[str, Any]:
+    save_config(payload)
+    return {"ok": True, "restart_required": True}

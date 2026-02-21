@@ -17,8 +17,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Version information for TGC Alpha Core."""
+"""Version information for TGC BUS Core."""
 
-VERSION = "0.10.5"
+VERSION = "0.11.0"
 
 __all__ = ["VERSION"]

@@ -4,10 +4,11 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Iterable
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from core.api.schemas.manufacturing import ManufacturingRunRequest, parse_run_request
@@ -21,6 +22,7 @@ from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
 
 router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
+public_router = APIRouter(tags=["manufacturing"])
 logger = logging.getLogger(__name__)
 
 
@@ -135,15 +137,7 @@ def _shortage_detail(shortages: list[dict], run_id: int | None) -> dict:
     }
 
 
-@router.post("/run")
-async def run_manufacturing(
-    req: Request,
-    raw_body: Any = Body(...),
-    db: Session = Depends(get_session),
-    _writes: None = Depends(require_writes),
-    _token: str = Depends(require_token_ctx),
-    _state: AppState = Depends(get_state),
-):
+async def run_manufacture(req: Request, raw_body: Any, db: Session):
     require_owner_commit(req)
 
     body: ManufacturingRunRequest = parse_run_request(raw_body)
@@ -181,11 +175,35 @@ async def run_manufacturing(
             )
         except Exception:
             pass
+        produced_quantity = int(getattr(body, "output_qty", 0) or 0)
+        total_batch_cost_cents = int(result.get("journal_entry", {}).get("cost_inputs_cents", 0) or 0)
+        if produced_quantity == 0:
+            cost_per_unit_cents = 0.0
+        else:
+            cost_per_unit_cents = float(
+                (Decimal(total_batch_cost_cents) / Decimal(produced_quantity)).quantize(
+                    Decimal("0.0001"), rounding=ROUND_HALF_UP
+                )
+            )
+
+        movements_payload = [
+            {
+                "movement_id": str(m.id) if getattr(m, "id", None) is not None else "",
+                "item_id": str(m.item_id) if getattr(m, "item_id", None) is not None else "",
+                "qty_change": int(m.qty_change),
+            }
+            for m in result.get("movement_rows", [])
+        ]
+
         return {
             "ok": True,
             "status": "completed",
-            "run_id": result["run"].id,
+            "run_id": str(result["run"].id),
             "output_unit_cost_cents": result["output_unit_cost_cents"],
+            "produced_quantity": produced_quantity,
+            "total_batch_cost_cents": total_batch_cost_cents,
+            "cost_per_unit_cents": cost_per_unit_cents,
+            "movements": movements_payload,
         }
     except InsufficientStock as exc:
         db.rollback()
@@ -210,6 +228,32 @@ async def run_manufacturing(
     except Exception:  # pragma: no cover - defensive
         db.rollback()
         raise HTTPException(status_code=500, detail={"status": "failed_error"})
+
+
+@public_router.post("/manufacture")
+async def manufacture(
+    req: Request,
+    raw_body: Any = Body(...),
+    db: Session = Depends(get_session),
+    _writes: None = Depends(require_writes),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
+):
+    return await run_manufacture(req, raw_body, db)
+
+
+@router.post("/run")
+async def run_manufacturing(
+    req: Request,
+    response: Response,
+    raw_body: Any = Body(...),
+    db: Session = Depends(get_session),
+    _writes: None = Depends(require_writes),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
+):
+    response.headers["X-BUS-Deprecation"] = "/app/manufacture"
+    return await run_manufacture(req, raw_body, db)
 
 
 def _append_manufacturing_journal(entry: dict) -> None:

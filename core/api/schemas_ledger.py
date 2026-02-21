@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from typing import Optional
 
-from pydantic import BaseModel, StrictStr
+from pydantic import BaseModel, StrictStr, model_validator
 
 try:
     from pydantic import ConfigDict  # v2
@@ -14,9 +14,17 @@ class StockInReq(BaseModel):
     item_id: int
     uom: StrictStr
     quantity_decimal: StrictStr
-    unit_cost_decimal: Optional[StrictStr] = None
+    unit_cost_decimal: StrictStr
+    cost_uom: StrictStr
     vendor_id: Optional[int] = None
     notes: Optional[StrictStr] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_unit_cost(cls, data):
+        if isinstance(data, dict) and "unit_cost_cents" in data:
+            raise ValueError("legacy_unit_cost_field_not_allowed")
+        return data
 
     if _ModelConfig:
         model_config = _ModelConfig(extra="forbid")

@@ -24,11 +24,19 @@ class BackupConfig(BaseModel):
 class DevConfig(BaseModel):
     writes_enabled: bool = False
 
+
+class UpdatesConfig(BaseModel):
+    enabled: bool = False
+    channel: Literal["stable"] = "stable"
+    manifest_url: str = "https://buscore.ca/manifest/core/stable.json"
+    check_on_startup: bool = True
+
 class Config(BaseModel):
     launcher: LauncherConfig = Field(default_factory=LauncherConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
     backup: BackupConfig = Field(default_factory=BackupConfig)
     dev: DevConfig = Field(default_factory=DevConfig)
+    updates: UpdatesConfig = Field(default_factory=UpdatesConfig)
 
 def load_config() -> Config:
     path = config_path()

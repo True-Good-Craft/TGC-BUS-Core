@@ -39,7 +39,7 @@ def test_positive_adjustment_creates_new_batch(ledger_setup):
 
     resp = client.post(
         "/app/adjust",
-        json={"item_id": ledger_setup["item_id"], "qty_change": 5, "note": "count"},
+        json={"item_id": ledger_setup["item_id"], "quantity_decimal": "5", "uom": "mc", "direction": "in", "note": "count"},
     )
 
     assert resp.status_code == 200, resp.text
@@ -79,7 +79,10 @@ def test_negative_adjustment_fifo_consume_and_400_on_insufficient(ledger_setup):
         ledger.add_batch(db, item_id, 3, unit_cost_cents=100, source_kind="purchase", source_id=None)
         ledger.add_batch(db, item_id, 2, unit_cost_cents=50, source_kind="purchase", source_id=None)
         db.commit()
-        resp = ledger_api.adjust_stock(ledger_api.AdjustmentInput(item_id=item_id, qty_change=-4, note="shrink"), db)
+        resp = ledger_api.adjust_stock(
+            ledger_api.AdjustmentInput(item_id=item_id, quantity_decimal="4", uom="mc", direction="out", note="shrink"),
+            db,
+        )
 
     assert resp == {"ok": True}
 
@@ -104,7 +107,10 @@ def test_negative_adjustment_fifo_consume_and_400_on_insufficient(ledger_setup):
 
     with engine.SessionLocal() as db:
         with pytest.raises(HTTPException) as excinfo:
-            ledger_api.adjust_stock(ledger_api.AdjustmentInput(item_id=item_id, qty_change=-3), db)
+            ledger_api.adjust_stock(
+                ledger_api.AdjustmentInput(item_id=item_id, quantity_decimal="3", uom="mc", direction="out"),
+                db,
+            )
     assert excinfo.value.status_code == 400
     assert excinfo.value.detail == {
         "shortages": [

@@ -16,7 +16,8 @@ from core.api.schemas.manufacturing import (
     ManufacturingRunRequest,
     RecipeRunRequest,
 )
-from core.metrics.metric import uom_multiplier  # normalized unit multipliers
+from core.api.quantity_contract import normalize_quantity_to_base_int
+from core.metrics.metric import default_unit_for
 from core.appdb.ledger import InsufficientStock, on_hand_qty
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.models_recipes import Recipe, RecipeItem
@@ -98,8 +99,8 @@ def format_shortages(shortages: List[dict]) -> List[dict]:
         formatted.append(
             {
                 "item_id": shortage.get("item_id"),
-                "required": float(shortage.get("required", 0.0)),
-                "available": float(shortage.get("available", shortage.get("on_hand", 0.0))),
+                "required": int(shortage.get("required", 0)),
+                "available": int(shortage.get("available", shortage.get("on_hand", 0))),
             }
         )
     return formatted
@@ -129,20 +130,51 @@ def validate_run(
             .order_by(RecipeItem.sort_order)
             .all()
         ):
+            item = session.get(Item, it.item_id)
+            if not item:
+                raise HTTPException(status_code=404, detail=f"Item {it.item_id} not found")
+            base_uom = default_unit_for(item.dimension)
+            qty_base = normalize_quantity_to_base_int(
+                item.dimension,
+                base_uom,
+                float(it.qty_required) * k,
+            )
+            original_requested_qty = float(it.qty_required) * k
+            if (float(original_requested_qty) > 0) and qty_base <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="invalid_normalized_quantity",
+                )
             required.append(
                 {
                     "item_id": it.item_id,
-                    "qty": float(it.qty_required) * k,
+                    "qty_base": qty_base,
                     "is_optional": bool(it.is_optional),
                 }
             )
     elif isinstance(body, AdhocRunRequest):
         output_item_id = body.output_item_id
         k = 1.0
-        required = [
-            {"item_id": c.item_id, "qty": c.qty_required, "is_optional": bool(c.is_optional)}
-            for c in body.components
-        ]
+        required = []
+        for c in body.components:
+            item = session.get(Item, c.item_id)
+            if not item:
+                raise HTTPException(status_code=404, detail=f"Item {c.item_id} not found")
+            base_uom = default_unit_for(item.dimension)
+            qty_base = normalize_quantity_to_base_int(item.dimension, base_uom, c.qty_required)
+            original_requested_qty = float(c.qty_required)
+            if (float(original_requested_qty) > 0) and qty_base <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="invalid_normalized_quantity",
+                )
+            required.append(
+                {
+                    "item_id": c.item_id,
+                    "qty_base": qty_base,
+                    "is_optional": bool(c.is_optional),
+                }
+            )
     else:  # pragma: no cover - defensive
         raise HTTPException(status_code=400, detail="invalid payload")
 
@@ -151,8 +183,10 @@ def validate_run(
         if r["is_optional"]:
             continue
         on_hand = on_hand_qty(session, r["item_id"])
-        if on_hand + 1e-9 < r["qty"]:
-            shortages.append({"item_id": r["item_id"], "required": r["qty"], "available": on_hand})
+        if on_hand < r["qty_base"]:
+            shortages.append(
+                {"item_id": r["item_id"], "required": r["qty_base"], "available": on_hand}
+            )
 
     formatted_shortages = format_shortages(shortages)
 
@@ -172,22 +206,35 @@ def execute_run_txn(
     mfg_run = ManufacturingRun(
         recipe_id=getattr(body, "recipe_id", None),
         output_item_id=output_item_id,
-        output_qty=body.output_qty,
+        output_qty=0,
         status="created",
         notes=getattr(body, "notes", None),
     )
     session.add(mfg_run)
     session.flush()
 
+    output_item = session.get(Item, output_item_id)
+    if not output_item:
+        raise HTTPException(status_code=404, detail=f"Item {output_item_id} not found")
+    output_base_uom = default_unit_for(output_item.dimension)
+    output_qty_base = normalize_quantity_to_base_int(
+        output_item.dimension,
+        output_base_uom,
+        body.output_qty,
+    )
+    mfg_run.output_qty = output_qty_base
+
     allocations: List[dict] = []
-    consumed_per_item: dict[int, float] = {}
+    consumed_per_item: dict[int, int] = {}
+    movement_rows: List[ItemMovement] = []
     for r in required:
-        if r["qty"] <= 0:
+        required_base = r["qty_base"]
+        if required_base <= 0:
             continue
         if r["is_optional"]:
-            if on_hand_qty(session, r["item_id"]) + 1e-9 < r["qty"]:
+            if on_hand_qty(session, r["item_id"]) < required_base:
                 continue
-        slices = fifo.allocate(session, r["item_id"], r["qty"])
+        slices = fifo.allocate(session, r["item_id"], required_base)
         for alloc in slices:
             allocations.append(alloc)
             consumed_per_item[alloc["item_id"]] = consumed_per_item.get(alloc["item_id"], 0) + alloc[
@@ -205,14 +252,15 @@ def execute_run_txn(
             is_oversold=False,
         )
         session.add(mv)
+        movement_rows.append(mv)
         unit_cost = int(alloc["unit_cost_cents"] or 0)
-        cost_inputs_cents += int(round(float(alloc["qty"]) * unit_cost))
+        cost_inputs_cents += int(alloc["qty"]) * unit_cost
 
-    per_output_cents = round_half_up_cents(cost_inputs_cents / max(float(body.output_qty or 0), 1e-9))
+    per_output_cents = round_half_up_cents(cost_inputs_cents / max(float(output_qty_base or 0), 1e-9))
     output_batch = ItemBatch(
         item_id=output_item_id,
-        qty_initial=body.output_qty,
-        qty_remaining=body.output_qty,
+        qty_initial=output_qty_base,
+        qty_remaining=output_qty_base,
         unit_cost_cents=per_output_cents,
         source_kind="manufacturing",
         source_id=mfg_run.id,
@@ -228,33 +276,32 @@ def execute_run_txn(
             "mfg:cost",
             extra={
                 "inputs_cents": cost_inputs_cents,
-                "out_qty_base": body.output_qty,
+                "out_qty_base": output_qty_base,
                 "per_out_cents": per_output_cents,
             },
         )
     except Exception:
         pass
 
-    session.add(
-        ItemMovement(
-            item_id=output_item_id,
-            batch_id=output_batch.id,
-            qty_change=body.output_qty,
-            unit_cost_cents=per_output_cents,
-            source_kind="manufacturing",
-            source_id=mfg_run.id,
-            is_oversold=False,
-        )
+    output_mv = ItemMovement(
+        item_id=output_item_id,
+        batch_id=output_batch.id,
+        qty_change=output_qty_base,
+        unit_cost_cents=per_output_cents,
+        source_kind="manufacturing",
+        source_id=mfg_run.id,
+        is_oversold=False,
     )
+    session.add(output_mv)
+    movement_rows.append(output_mv)
 
     for item_id, qty in consumed_per_item.items():
         item = session.get(Item, item_id)
         if item:
             item.qty_stored = (item.qty_stored or 0) - qty
 
-    output_item = session.get(Item, output_item_id)
     if output_item:
-        output_item.qty_stored = (output_item.qty_stored or 0) + body.output_qty
+        output_item.qty_stored = (output_item.qty_stored or 0) + output_qty_base
 
     mfg_run.status = "completed"
     mfg_run.executed_at = datetime.utcnow()
@@ -272,17 +319,20 @@ def execute_run_txn(
         "run_id": mfg_run.id,
         "recipe_id": getattr(body, "recipe_id", None),
         "output_item_id": output_item_id,
-        "output_qty": body.output_qty,
+        "output_qty": output_qty_base,
         "allocations": allocations,
         "output_batch_id": output_batch.id,
         "per_output_cents": per_output_cents,
         "cost_inputs_cents": cost_inputs_cents,
     }
 
+    session.flush()
+
     return {
         "run": mfg_run,
         "journal_entry": journal_entry,
         "output_unit_cost_cents": per_output_cents,
+        "movement_rows": movement_rows,
     }
 
 

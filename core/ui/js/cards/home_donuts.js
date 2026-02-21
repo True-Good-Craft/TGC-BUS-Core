@@ -1,29 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // TGC BUS Core (Business Utility System Core)
-// Copyright (C) 2025 True Good Craft
-//
-// This file is part of TGC BUS Core.
-//
-// TGC BUS Core is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// TGC BUS Core is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
 import { apiGetJson } from '../token.js';
 
 let activeType = null; // 'in' | 'out' | null
+let _bound = false;
+let _dinHandler = null;
+let _doutHandler = null;
 
 function drawDonut(el, totalCents, categories, color) {
   if (!el) return;
   const size = 80, r = 32, cx = 40, cy = 40, strokeW = 12;
+  void size;
   el.innerHTML = '';
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox','0 0 80 80');
@@ -35,7 +23,7 @@ function drawDonut(el, totalCents, categories, color) {
   const total = Number(totalCents || 0);
   if (!total || !categories || !categories.length) { el.appendChild(svg); return; }
   let start = -90;
-  categories.forEach(c => {
+  categories.forEach((c) => {
     const cents = Math.max(0, Number(c.amount_cents || 0));
     const frac = Math.max(0, Math.min(1, cents / total));
     const sweep = 360 * frac;
@@ -60,26 +48,18 @@ function drawDonut(el, totalCents, categories, color) {
 async function fetchSummary() {
   return apiGetJson('/app/transactions/summary?window=30d');
 }
+
 async function fetchLast10() {
   const res = await apiGetJson('/app/transactions?limit=10');
   return res.items || [];
-}
-
-async function render() {
-  const sum = await fetchSummary();
-  const din  = document.querySelector('[data-role="donut-in"]');
-  const dout = document.querySelector('[data-role="donut-out"]');
-  drawDonut(din,  sum?.income?.total_cents,  sum?.income?.categories,  '#22c55e');
-  drawDonut(dout, sum?.expense?.total_cents, sum?.expense?.categories, '#ef4444');
-  await renderTable();
 }
 
 async function renderTable() {
   const tbody = document.querySelector('[data-role="recent-transactions"] tbody');
   if (!tbody) return;
   let rows = await fetchLast10();
-  if (activeType === 'in')  rows = rows.filter(r => r.type === 'revenue');
-  if (activeType === 'out') rows = rows.filter(r => r.type === 'expense');
+  if (activeType === 'in') rows = rows.filter((r) => r.type === 'revenue');
+  if (activeType === 'out') rows = rows.filter((r) => r.type === 'expense');
   tbody.innerHTML = '';
   for (const t of rows) {
     const amt = (Number(t.amount_cents || 0) / 100).toFixed(2);
@@ -89,21 +69,29 @@ async function renderTable() {
   }
 }
 
-function wireClicks() {
-  const din  = document.querySelector('[data-role="donut-in"]');
+export async function mount() {
+  const din = document.querySelector('[data-role="donut-in"]');
   const dout = document.querySelector('[data-role="donut-out"]');
-  if (din)  din.addEventListener('click',  async () => { activeType = (activeType === 'in'  ? null : 'in');  await renderTable(); });
-  if (dout) dout.addEventListener('click', async () => { activeType = (activeType === 'out' ? null : 'out'); await renderTable(); });
+  if (!din || !dout) return;
+  if (!_bound) {
+    _dinHandler = async () => { activeType = (activeType === 'in' ? null : 'in'); await renderTable(); };
+    _doutHandler = async () => { activeType = (activeType === 'out' ? null : 'out'); await renderTable(); };
+    din.addEventListener('click', _dinHandler);
+    dout.addEventListener('click', _doutHandler);
+    _bound = true;
+  }
+  const sum = await fetchSummary();
+  drawDonut(din, sum?.income?.total_cents, sum?.income?.categories, '#22c55e');
+  drawDonut(dout, sum?.expense?.total_cents, sum?.expense?.categories, '#ef4444');
+  await renderTable();
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-  wireClicks();
-  try { await render(); } catch (_) {}
-});
-
-// Also re-render when routed back to home
-window.addEventListener('hashchange', async () => {
-  const route = (location.hash || '#/home').replace(/^#\/?/, '').split(/[\/?]/)[0] || 'home';
-  if (route === 'home') { try { await render(); } catch (_) {} }
-});
-
+export function unmount() {
+  const din = document.querySelector('[data-role="donut-in"]');
+  const dout = document.querySelector('[data-role="donut-out"]');
+  if (din && _dinHandler) din.removeEventListener('click', _dinHandler);
+  if (dout && _doutHandler) dout.removeEventListener('click', _doutHandler);
+  _bound = false;
+  _dinHandler = null;
+  _doutHandler = null;
+}

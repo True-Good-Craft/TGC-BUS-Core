@@ -5,13 +5,13 @@ import logging
 import os
 import sqlite3
 import sys
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import asc, func
 from sqlalchemy.orm import Session
 
@@ -25,13 +25,9 @@ from core.appdb.ledger import (
 from core.appdb.models import Item, ItemBatch, ItemMovement, CashEvent
 from core.appdb.paths import resolve_db_path
 from core.api.schemas_ledger import QtyDisplay, StockInReq, StockInResp
-from core.metrics.metric import (
-    UNIT_MULTIPLIER,
-    _norm_unit,
-    default_unit_for,
-    from_base,
-    to_base_qty,
-)
+from core.api.quantity_contract import normalize_quantity_to_base_int
+from core.api.cost_contract import normalize_cost_to_base_cents
+from core.metrics.metric import UNIT_MULTIPLIER, _norm_unit, default_unit_for, from_base
 from core.journal.inventory import append_inventory
 
 # NOTE: Primary router uses legacy "/ledger" prefix; public_router exposes routes without it
@@ -85,20 +81,35 @@ def health():
 
 class PurchaseIn(BaseModel):
     item_id: int
-    qty: int = Field(gt=0)
-    unit_cost_cents: int = Field(ge=0)
+    quantity_decimal: str = Field(min_length=1)
+    uom: str = Field(min_length=1)
+    unit_cost_decimal: str = Field(min_length=1)
+    cost_uom: str = Field(min_length=1)
     source_kind: str = "purchase"
     source_id: Optional[str] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_qty(cls, data):
+        if isinstance(data, dict) and "qty" in data:
+            raise ValueError("legacy_qty_field_not_allowed")
+        if isinstance(data, dict) and "unit_cost_cents" in data:
+            raise ValueError("legacy_unit_cost_field_not_allowed")
+        return data
 
-@router.post("/purchase")
-@public_router.post("/purchase")
-def purchase(body: PurchaseIn, db: Session = Depends(get_session)):
+
+def handle_purchase(body: PurchaseIn, db: Session):
+    item = db.get(Item, int(body.item_id))
+    if not item:
+        raise HTTPException(status_code=404, detail="item_not_found")
+    qty_base = normalize_quantity_to_base_int(item.dimension, body.uom, body.quantity_decimal)
+    base_unit_cost_cents = normalize_cost_to_base_cents(item.dimension, body.cost_uom, body.unit_cost_decimal)
+
     batch_id = add_batch(
         db,
         int(body.item_id),
-        int(body.qty),
-        int(body.unit_cost_cents),
+        qty_base,
+        int(base_unit_cost_cents),
         body.source_kind,
         body.source_id,
     )
@@ -107,8 +118,8 @@ def purchase(body: PurchaseIn, db: Session = Depends(get_session)):
         {
             "type": "purchase",
             "item_id": int(body.item_id),
-            "qty_change": int(body.qty),
-            "unit_cost_cents": int(body.unit_cost_cents),
+            "qty_change": qty_base,
+            "unit_cost_cents": int(base_unit_cost_cents),
             "source_kind": body.source_kind,
             "source_id": body.source_id,
             "batch_id": int(batch_id),
@@ -117,27 +128,53 @@ def purchase(body: PurchaseIn, db: Session = Depends(get_session)):
     return {"ok": True, "batch_id": int(batch_id)}
 
 
+@router.post("/purchase")
+@public_router.post("/purchase")
+def purchase(body: PurchaseIn, db: Session = Depends(get_session)):
+    return handle_purchase(body, db)
+
+
 class ConsumeIn(BaseModel):
     item_id: int
-    qty: int = Field(gt=0)
+    quantity_decimal: str = Field(min_length=1)
+    uom: str = Field(min_length=1)
     source_kind: str = "consume"
     source_id: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_qty(cls, data):
+        if isinstance(data, dict) and "qty" in data:
+            raise ValueError("legacy_qty_field_not_allowed")
+        return data
 
 
 class StockOutIn(BaseModel):
     item_id: int
-    qty: int = Field(gt=0)
+    quantity_decimal: str = Field(min_length=1)
+    uom: str = Field(min_length=1)
     reason: Literal["sold", "loss", "theft", "other"] = "sold"
     note: Optional[str] = None
     record_cash_event: bool = True
     sell_unit_price_cents: Optional[int] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_qty(cls, data):
+        if isinstance(data, dict) and "qty" in data:
+            raise ValueError("legacy_qty_field_not_allowed")
+        return data
+
 
 @router.post("/consume")
 @public_router.post("/consume")
 def consume(body: ConsumeIn, db: Session = Depends(get_session)):
+    item = db.get(Item, int(body.item_id))
+    if not item:
+        raise HTTPException(status_code=404, detail="item_not_found")
+    qty_base = normalize_quantity_to_base_int(item.dimension, body.uom, body.quantity_decimal)
     try:
-        moves = sa_fifo_consume(db, int(body.item_id), int(body.qty), body.source_kind, body.source_id)
+        moves = sa_fifo_consume(db, int(body.item_id), qty_base, body.source_kind, body.source_id)
         db.commit()
         lines = [
             {
@@ -151,7 +188,7 @@ def consume(body: ConsumeIn, db: Session = Depends(get_session)):
             {
                 "type": "consume",
                 "item_id": int(body.item_id),
-                "qty_change": -int(body.qty),
+                "qty_change": -qty_base,
                 "source_kind": body.source_kind,
                 "source_id": body.source_id,
             }
@@ -166,14 +203,23 @@ def consume(body: ConsumeIn, db: Session = Depends(get_session)):
 # -------------------------
 class AdjustmentInput(BaseModel):
     item_id: int
-    qty_change: int = Field(...)
+    quantity_decimal: str = Field(min_length=1)
+    uom: str = Field(min_length=1)
+    direction: Literal["in", "out"]
     note: str | None = None
 
-    @field_validator("qty_change")
+    @model_validator(mode="before")
     @classmethod
-    def qty_change_non_zero(cls, value: int) -> int:
-        if value == 0:
-            raise ValueError("qty_change must not be 0")
+    def reject_legacy_qty_change(cls, data):
+        if isinstance(data, dict) and "qty_change" in data:
+            raise ValueError("legacy_qty_field_not_allowed")
+        return data
+
+    @field_validator("direction")
+    @classmethod
+    def direction_valid(cls, value: str) -> str:
+        if value not in {"in", "out"}:
+            raise ValueError("direction must be 'in' or 'out'")
         return value
 
 
@@ -188,14 +234,19 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
       - consume FIFO from existing batches
       - 400 if insufficient on-hand; no partials
     """
-    if body.qty_change > 0:
-        add_batch(db, int(body.item_id), int(body.qty_change), 0, "adjustment", body.note)
+    item = db.get(Item, int(body.item_id))
+    if not item:
+        raise HTTPException(status_code=404, detail="item_not_found")
+    qty_base = normalize_quantity_to_base_int(item.dimension, body.uom, body.quantity_decimal)
+
+    if body.direction == "in":
+        add_batch(db, int(body.item_id), qty_base, 0, "adjustment", body.note)
         db.commit()
         _append_inventory_journal(
             {
                 "type": "adjustment",
                 "item_id": int(body.item_id),
-                "qty_change": int(body.qty_change),
+                "qty_change": qty_base,
                 "unit_cost_cents": 0,
                 "source_kind": "adjustment",
                 "source_id": body.note or None,
@@ -204,13 +255,13 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
         return {"ok": True}
     else:
         try:
-            sa_fifo_consume(db, int(body.item_id), -int(body.qty_change), "adjustment", body.note)
+            sa_fifo_consume(db, int(body.item_id), qty_base, "adjustment", body.note)
             db.commit()
             _append_inventory_journal(
                 {
                     "type": "adjustment",
                     "item_id": int(body.item_id),
-                    "qty_change": int(body.qty_change),
+                    "qty_change": -qty_base,
                     "source_kind": "adjustment",
                     "source_id": body.note or None,
                 }
@@ -220,18 +271,16 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
             raise HTTPException(status_code=400, detail={"shortages": e.shortages})
 
 
-@router.post("/stock/out")
-@public_router.post("/stock/out")
-def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
+def handle_stock_out(body: StockOutIn, db: Session):
     try:
         item_id = int(body.item_id)
-        qty_base = int(body.qty)
+        it = db.get(Item, item_id)
+        if not it:
+            raise HTTPException(status_code=404, detail="item_not_found")
+        qty_base = normalize_quantity_to_base_int(it.dimension, body.uom, body.quantity_decimal)
 
         # Atomicity (SALE): fifo movements + cash_events insert must share a single transaction.
         if body.reason == "sold" and bool(body.record_cash_event) is True:
-            it = db.get(Item, item_id)
-            if not it:
-                raise HTTPException(status_code=404, detail="item_not_found")
             if (getattr(it, "dimension", None) or "").lower() != "count":
                 raise HTTPException(status_code=400, detail="sold_cash_event_count_only")
 
@@ -289,7 +338,7 @@ def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
             {
                 "type": body.reason,
                 "item_id": int(body.item_id),
-                "qty_change": -int(body.qty),
+                "qty_change": -qty_base,
                 "unit_cost_cents": 0,
                 "source_kind": body.reason,
                 "source_id": body.note or None,
@@ -298,6 +347,12 @@ def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
         return {"ok": True, "lines": lines}
     except InsufficientStock as e:
         raise HTTPException(status_code=400, detail={"shortages": e.shortages})
+
+
+@router.post("/stock/out")
+@public_router.post("/stock/out")
+def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
+    return handle_stock_out(body, db)
 
 
 @router.get("/valuation")
@@ -321,9 +376,7 @@ def valuation(item_id: Optional[int] = None, db: Session = Depends(get_session))
     return {"totals": [{"item_id": r.item_id, "total_value_cents": int(r.total or 0)} for r in rows]}
 
 
-@router.get("/movements")
-@public_router.get("/movements")
-def movements(item_id: Optional[int] = None, limit: int = 100, db: Session = Depends(get_session)):
+def get_ledger_history(item_id: Optional[int], limit: int, db: Session):
     q = db.query(ItemMovement)
     if item_id is not None:
         q = q.filter(ItemMovement.item_id == int(item_id))
@@ -343,6 +396,18 @@ def movements(item_id: Optional[int] = None, limit: int = 100, db: Session = Dep
         }
 
     return {"movements": [to_dict(m) for m in rows]}
+
+
+@router.get("/history")
+def ledger_history(item_id: Optional[int] = None, limit: int = 100, db: Session = Depends(get_session)):
+    return get_ledger_history(item_id, limit, db)
+
+
+@router.get("/movements")
+@public_router.get("/movements")
+def movements(response: Response, item_id: Optional[int] = None, limit: int = 100, db: Session = Depends(get_session)):
+    response.headers["X-BUS-Deprecation"] = "/app/ledger/history"
+    return get_ledger_history(item_id, limit, db)
 
 
 @router.get("/debug/db")
@@ -396,104 +461,15 @@ def _fifo_unit_cost_display(db: Session, item_id: int, unit: str) -> Optional[st
     return f"{_cents_to_display(int(cents))} / {unit}"
 
 
-@router.post("/stock_in", response_model=StockInResp)
-@public_router.post("/stock_in", response_model=StockInResp)
-def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
+def handle_stock_in(payload: StockInReq, db: Session):
     item = db.get(Item, payload.item_id)
     if not item:
         raise HTTPException(status_code=404, detail="item_not_found")
 
-    def parse_decimal_str(val: str, field: str) -> Decimal:
-        try:
-            cleaned = (val or "").strip().replace(",", "")
-            if cleaned in ("", ".", "-.", "+."):
-                raise InvalidOperation()
-            if cleaned.startswith("."):
-                cleaned = "0" + cleaned
-            d = Decimal(cleaned)
-        except (InvalidOperation, TypeError):
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "bad_request",
-                    "message": f"invalid_{field}",
-                    "fields": {"dimension": item.dimension, "uom": uom, field: val},
-                },
-            )
-        if d <= 0:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "bad_request",
-                    "message": f"invalid_{field}",
-                    "fields": {"dimension": item.dimension, "uom": uom, field: str(d)},
-                },
-            )
-        return d
-
     uom_raw = payload.uom
     uom = _norm_unit(uom_raw)
-    units_for_dim = UNIT_MULTIPLIER.get(item.dimension, {})
-    if item.dimension not in UNIT_MULTIPLIER or uom not in units_for_dim:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "bad_request",
-                "message": "unsupported_uom",
-                "fields": {"dimension": item.dimension, "uom": uom_raw, "normalized_uom": uom},
-            },
-        )
-
-    qty_dec = parse_decimal_str(payload.quantity_decimal, "quantity")
-    try:
-        qty_int = to_base_qty(item.dimension, uom, qty_dec)
-    except Exception as exc:  # pragma: no cover - defensive path
-        logger.exception(
-            "stock_in quantity conversion failed",
-            extra={
-                "item_id": item.id,
-                "dimension": item.dimension,
-                "uom": uom,
-                "qty_decimal": str(qty_dec),
-            },
-        )
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "bad_request",
-                "message": "invalid_quantity",
-                "fields": {
-                    "dimension": item.dimension,
-                    "uom": uom_raw,
-                    "normalized_uom": uom,
-                    "qty_decimal": str(qty_dec),
-                },
-            },
-        ) from exc
-    if qty_int <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "bad_request",
-                "message": "invalid_quantity",
-                "fields": {
-                    "dimension": item.dimension,
-                    "uom": uom_raw,
-                    "normalized_uom": uom,
-                    "qty_decimal": str(qty_dec),
-                    "qty_int": qty_int,
-                },
-            },
-        )
-
-    unit_cost_cents: Optional[int]
-    if payload.unit_cost_decimal is None:
-        unit_cost_cents = 0
-    else:
-        try:
-            unit_cost_cents = int(round(float(payload.unit_cost_decimal) * 100))
-        except Exception:
-            raise HTTPException(status_code=400, detail="invalid_unit_cost")
+    qty_int = normalize_quantity_to_base_int(item.dimension, uom_raw, payload.quantity_decimal)
+    unit_cost_cents = normalize_cost_to_base_cents(item.dimension, payload.cost_uom, payload.unit_cost_decimal)
 
     batch = ItemBatch(
         item_id=item.id,
@@ -514,7 +490,7 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
             "dimension": item.dimension,
             "uom": uom,
             "uom_raw": uom_raw,
-            "qty_decimal": str(qty_dec),
+            "qty_decimal": str(payload.quantity_decimal),
             "qty_int": qty_int,
             "unit_cost_decimal": payload.unit_cost_decimal,
             "unit_cost_cents": unit_cost_cents,
@@ -578,6 +554,19 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
         stock_on_hand_display=QtyDisplay(unit=display_unit, value=str(display_qty)),
         fifo_unit_cost_display=fifo_disp,
     )
+
+
+@router.post("/stock/in", response_model=StockInResp)
+@public_router.post("/stock/in", response_model=StockInResp)
+def stock_in_canonical(payload: StockInReq, db: Session = Depends(get_session)):
+    return handle_stock_in(payload, db)
+
+
+@router.post("/stock_in", response_model=StockInResp)
+@public_router.post("/stock_in", response_model=StockInResp)
+def stock_in(payload: StockInReq, response: Response, db: Session = Depends(get_session)):
+    response.headers["X-BUS-Deprecation"] = "/app/stock/in"
+    return handle_stock_in(payload, db)
 
 
 __all__ = ["router", "public_router"]
