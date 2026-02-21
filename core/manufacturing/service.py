@@ -139,6 +139,12 @@ def validate_run(
                 base_uom,
                 float(it.qty_required) * k,
             )
+            original_requested_qty = float(it.qty_required) * k
+            if (float(original_requested_qty) > 0) and qty_base <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="invalid_normalized_quantity",
+                )
             required.append(
                 {
                     "item_id": it.item_id,
@@ -156,6 +162,12 @@ def validate_run(
                 raise HTTPException(status_code=404, detail=f"Item {c.item_id} not found")
             base_uom = default_unit_for(item.dimension)
             qty_base = normalize_quantity_to_base_int(item.dimension, base_uom, c.qty_required)
+            original_requested_qty = float(c.qty_required)
+            if (float(original_requested_qty) > 0) and qty_base <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="invalid_normalized_quantity",
+                )
             required.append(
                 {
                     "item_id": c.item_id,
