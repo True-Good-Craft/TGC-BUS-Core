@@ -62,7 +62,14 @@ function Invoke-Json {
     if ($BodyObj -is [string]) { $args['Body'] = $BodyObj }
     else { $args['Body'] = ($BodyObj | ConvertTo-Json -Depth 12) }
   }
-  return Invoke-RestMethod @args
+  try {
+    return Invoke-RestMethod @args
+  } catch {
+    if ($Method -eq "POST" -and $PSBoundParameters.ContainsKey('BodyObj') -and $null -ne $BodyObj) {
+      Write-Host "Payload:" ($BodyObj | ConvertTo-Json -Depth 5)
+    }
+    throw
+  }
 }
 
 function Try-Invoke {
@@ -260,17 +267,17 @@ if ($delContact.ok) { Pass "Contact deleted" } else { Fail "Contact delete faile
 Step "3. Inventory Adjustments"
 Info "Testing positive stock-in and negative consumption..."
 $beforeAdjId = Get-LatestMovementId
-$pos = Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemA.id; qty_change = 30 }
+$pos = Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemA.id; quantity_decimal = "30"; uom = "ea"; direction = "in"; note = "smoke" }
 $afterPosId = Get-LatestMovementId
 if ($pos) { Pass "Positive adjust (+30) on Item A accepted" } else { Fail "Positive adjust failed"; exit 1 }
 if ($afterPosId -gt $beforeAdjId) { Pass "Movement recorded for positive adjust" } else { Fail "Movement count did not advance for positive adjust"; exit 1 }
 
-$neg = Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemA.id; qty_change = -4 }
+$neg = Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemA.id; quantity_decimal = "4"; uom = "ea"; direction = "out"; note = "smoke" }
 $afterNegId = Get-LatestMovementId
 if ($neg) { Pass "Negative adjust (-4) on Item A accepted" } else { Fail "Negative adjust failed"; exit 1 }
 if ($afterNegId -gt $afterPosId) { Pass "Movement recorded for negative adjust" } else { Fail "Movement count did not advance for negative adjust"; exit 1 }
 
-$negTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemB.id; qty_change = -999 } }
+$negTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemB.id; quantity_decimal = "999"; uom = "ea"; direction = "out"; note = "smoke" } }
 if (-not $negTry.ok -and $negTry.err.Exception.Response.StatusCode.value__ -eq 400) { Pass "Oversized negative adjust rejected (400)" } else { Fail "Oversized negative adjust should be 400"; exit 1 }
 
 # --------------------------------------
@@ -278,10 +285,10 @@ if (-not $negTry.ok -and $negTry.err.Exception.Response.StatusCode.value__ -eq 4
 # --------------------------------------
 Step "4. FIFO Purchase + Consume"
 Info "Purchasing and consuming FIFO stock..."
-$purchase = Invoke-Json POST ($BaseUrl + "/app/purchase") @{ item_id = $itemD.id; qty = 5; unit_cost_cents = 120; source_kind = "purchase"; source_id = "smoke-$($RunLabel)-p1" }
+$purchase = Invoke-Json POST ($BaseUrl + "/app/purchase") @{ item_id = $itemD.id; quantity_decimal = "5"; uom = "ea"; unit_cost_decimal = "1.20"; cost_uom = "ea"; source_kind = "purchase"; source_id = "smoke-$($RunLabel)-p1" }
 if ($purchase.ok) { Pass "Purchase created batch" } else { Fail "Purchase failed"; exit 1 }
 
-$consume = Invoke-Json POST ($BaseUrl + "/app/consume") @{ item_id = $itemD.id; qty = 2; source_kind = "consume"; source_id = "smoke-$($RunLabel)-c1" }
+$consume = Invoke-Json POST ($BaseUrl + "/app/consume") @{ item_id = $itemD.id; quantity_decimal = "2"; uom = "ea"; source_kind = "consume"; source_id = "smoke-$($RunLabel)-c1" }
 if ($consume.ok) { Pass "Consume succeeded" } else { Fail "Consume failed"; exit 1 }
 
 $dMoves = Get-MovementsByItem -ItemId $itemD.id -Limit 50
@@ -352,7 +359,7 @@ catch {
     foreach ($s in $parsed.detail.shortages) {
       $needed = [math]::Ceiling([double]$s.required - [double]$s.available)
       if ($needed -gt 0) {
-        $adjBody = @{ item_id = [int]$s.component; qty_change = [double]$needed; reason = "smoke-topup" }
+        $adjBody = @{ item_id = [int]$s.component; quantity_decimal = [string][int]$needed; uom = "ea"; direction = "in"; note = "smoke-topup" }
         Invoke-RestMethod -Method Post -Uri "$BaseUrl/app/adjust" `
           -Body ($adjBody | ConvertTo-Json -Depth 8) -ContentType "application/json" -WebSession $script:Session | Out-Null
       }
@@ -578,7 +585,7 @@ $export = $resp
 # B) Mutate DB (create reversible change)
 Info "Applying reversible inventory mutation..."
 $mvBaseline = Get-LatestMovementId
-$mut = Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemA.id; qty_change = 5 }
+$mut = Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemA.id; quantity_decimal = "5"; uom = "ea"; direction = "in"; note = "smoke" }
 $mvAfterMut = Get-LatestMovementId
 if ($mvAfterMut -gt $mvBaseline) { Pass "Movement id advanced after mutation" } else { Fail "Expected movement id to advance after mutation"; exit 1 }
 
@@ -717,7 +724,9 @@ foreach ($itm in $targetItems) {
     [double]$qty = $current.qty_stored
     if ($qty -ne 0) {
       $delta = -$qty
-      $adj = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $id; qty_change = $delta; reason = "Smoke Test Cleanup" } }
+      $direction = if ($delta -ge 0) { "in" } else { "out" }
+      $qtyDecimal = [string]([math]::Abs([decimal]$delta))
+      $adj = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $id; quantity_decimal = $qtyDecimal; uom = "ea"; direction = $direction; note = "Smoke Test Cleanup" } }
       if ($adj.ok) { Pass ("Zeroed inventory for Item {0} (delta={1})" -f $id, $delta) } else { Fail ("Failed to zero inventory for Item {0}" -f $id) }
     } else {
       Pass ("Item {0} already at zero inventory" -f $id)
