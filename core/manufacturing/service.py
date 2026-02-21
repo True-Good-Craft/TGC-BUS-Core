@@ -99,8 +99,8 @@ def format_shortages(shortages: List[dict]) -> List[dict]:
         formatted.append(
             {
                 "item_id": shortage.get("item_id"),
-                "required": float(shortage.get("required", 0.0)),
-                "available": float(shortage.get("available", shortage.get("on_hand", 0.0))),
+                "required": int(shortage.get("required", 0)),
+                "available": int(shortage.get("available", shortage.get("on_hand", 0))),
             }
         )
     return formatted
@@ -216,12 +216,13 @@ def execute_run_txn(
     consumed_per_item: dict[int, int] = {}
     movement_rows: List[ItemMovement] = []
     for r in required:
-        if r["qty_base"] <= 0:
+        required_base = r["qty_base"]
+        if required_base <= 0:
             continue
         if r["is_optional"]:
-            if on_hand_qty(session, r["item_id"]) < r["qty_base"]:
+            if on_hand_qty(session, r["item_id"]) < required_base:
                 continue
-        slices = fifo.allocate(session, r["item_id"], r["qty_base"])
+        slices = fifo.allocate(session, r["item_id"], required_base)
         for alloc in slices:
             allocations.append(alloc)
             consumed_per_item[alloc["item_id"]] = consumed_per_item.get(alloc["item_id"], 0) + alloc[
