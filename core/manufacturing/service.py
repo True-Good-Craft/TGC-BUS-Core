@@ -17,7 +17,7 @@ from core.api.schemas.manufacturing import (
     ManufacturingRunRequest,
     RecipeRunRequest,
 )
-from core.api.quantity_contract import normalize_quantity_to_base_int
+from core.api.quantity_contract import UNIT_MULTIPLIER, normalize_quantity_to_base_int
 from core.appdb.ledger import InsufficientStock, on_hand_qty
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.models_recipes import Recipe, RecipeItem
@@ -255,7 +255,10 @@ def execute_run_txn(
         session.add(mv)
         movement_rows.append(mv)
         unit_cost = int(alloc["unit_cost_cents"] or 0)
-        cost_inputs_cents += int(alloc["qty"]) * unit_cost
+        item = session.get(Item, alloc["item_id"])
+        multiplier = UNIT_MULTIPLIER.get(item.dimension, {}).get(item.uom, 1) if item else 1
+        human_qty = int(alloc["qty"]) // multiplier
+        cost_inputs_cents += human_qty * unit_cost
 
     per_output_cents = round_half_up_cents(cost_inputs_cents / max(float(output_qty_base or 0), 1e-9))
     output_batch = ItemBatch(
