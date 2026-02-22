@@ -308,7 +308,7 @@ def execute_run_txn(
     mfg_run.executed_at = datetime.utcnow()
     mfg_run.meta = json.dumps(
         {
-            "k": k,
+            "k": float(k),
             "cost_inputs_cents": cost_inputs_cents,
             "per_output_cents": per_output_cents,
             "allocations": allocations,
