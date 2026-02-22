@@ -3,10 +3,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from core.api.cost_contract import normalize_cost_to_base_cents
-from core.api.quantity_contract import normalize_quantity_to_base_int
-from core.api.routes.ledger_api import StockOutIn, stock_out
-from core.appdb.ledger import add_batch
+from core.api.routes.ledger_api import PurchaseIn, StockOutIn, purchase, stock_out
 from core.appdb.models import CashEvent, Item, ItemBatch, ItemMovement, Vendor
 from core.appdb.models_recipes import Recipe, RecipeItem
 from core.manufacturing.service import execute_run_txn, validate_run
@@ -42,23 +39,6 @@ def _create_item(db: Session, name: str, *, is_product: bool = False) -> Item:
     return item
 
 
-def _purchase_batch(db: Session, item: Item, quantity_decimal: str, unit_cost_decimal: str) -> None:
-    qty_base = normalize_quantity_to_base_int(item.dimension, "ea", quantity_decimal)
-    unit_cost_cents = normalize_cost_to_base_cents(
-        item.dimension,
-        "ea",
-        unit_cost_decimal,
-    )
-    add_batch(
-        db,
-        item_id=int(item.id),
-        qty=int(qty_base),
-        unit_cost_cents=int(unit_cost_cents),
-        source_kind="purchase",
-        source_id="avoarrow_demo",
-    )
-
-
 def load_demo_factory(db: Session) -> dict:
     summary = {
         "vendors_created": 0,
@@ -86,11 +66,66 @@ def load_demo_factory(db: Session) -> dict:
             nose_weight = _create_item(db, "Nose Weight Insert")
             summary["items_created"] += 3
 
-            _purchase_batch(db, paper, "100", "0.05")
-            _purchase_batch(db, paper, "100", "0.07")
-            _purchase_batch(db, carbon, "50", "0.20")
-            _purchase_batch(db, carbon, "50", "0.25")
-            _purchase_batch(db, nose_weight, "100", "0.10")
+            purchase(
+                PurchaseIn(
+                    item_id=int(paper.id),
+                    quantity_decimal="100",
+                    uom="ea",
+                    unit_cost_decimal="0.05",
+                    cost_uom="ea",
+                    source_kind="purchase",
+                    source_id="avoarrow_demo",
+                ),
+                db,
+            )
+            purchase(
+                PurchaseIn(
+                    item_id=int(paper.id),
+                    quantity_decimal="100",
+                    uom="ea",
+                    unit_cost_decimal="0.07",
+                    cost_uom="ea",
+                    source_kind="purchase",
+                    source_id="avoarrow_demo",
+                ),
+                db,
+            )
+            purchase(
+                PurchaseIn(
+                    item_id=int(carbon.id),
+                    quantity_decimal="50",
+                    uom="ea",
+                    unit_cost_decimal="0.20",
+                    cost_uom="ea",
+                    source_kind="purchase",
+                    source_id="avoarrow_demo",
+                ),
+                db,
+            )
+            purchase(
+                PurchaseIn(
+                    item_id=int(carbon.id),
+                    quantity_decimal="50",
+                    uom="ea",
+                    unit_cost_decimal="0.25",
+                    cost_uom="ea",
+                    source_kind="purchase",
+                    source_id="avoarrow_demo",
+                ),
+                db,
+            )
+            purchase(
+                PurchaseIn(
+                    item_id=int(nose_weight.id),
+                    quantity_decimal="100",
+                    uom="ea",
+                    unit_cost_decimal="0.10",
+                    cost_uom="ea",
+                    source_kind="purchase",
+                    source_id="avoarrow_demo",
+                ),
+                db,
+            )
             summary["batches_created"] = 5
 
             avoarrow = _create_item(db, "AvoArrow Mk I", is_product=True)

@@ -113,7 +113,11 @@ def handle_purchase(body: PurchaseIn, db: Session):
         body.source_kind,
         body.source_id,
     )
-    db.commit()
+
+    if db.in_transaction():
+        db.flush()
+    else:
+        db.commit()
     _append_inventory_journal(
         {
             "type": "purchase",
