@@ -4,6 +4,8 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from core.api.quantity_contract import normalize_quantity_to_base_int
+
 pytestmark = pytest.mark.api
 
 
@@ -16,8 +18,13 @@ def manufacturing_no_oversell_setup(request: pytest.FixtureRequest):
     client = env["client"]
 
     with engine_module.SessionLocal() as db:
+        input_qty_base = normalize_quantity_to_base_int(
+            dimension="count",
+            uom="ea",
+            quantity_decimal="6",
+        )
         output_item = models_module.Item(name="Output", uom="ea", qty_stored=0)
-        input_item = models_module.Item(name="Input", uom="ea", qty_stored=6)
+        input_item = models_module.Item(name="Input", uom="ea", qty_stored=input_qty_base)
         db.add_all([output_item, input_item])
         db.flush()
 
@@ -37,8 +44,8 @@ def manufacturing_no_oversell_setup(request: pytest.FixtureRequest):
         db.add(
             models_module.ItemBatch(
                 item_id=input_item.id,
-                qty_initial=6.0,
-                qty_remaining=6.0,
+                qty_initial=input_qty_base,
+                qty_remaining=input_qty_base,
                 unit_cost_cents=15,
                 source_kind="seed",
                 source_id=None,
