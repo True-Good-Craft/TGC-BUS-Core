@@ -139,16 +139,26 @@ def test_atomic_multiple_input_batches_one_output_batch(manufacturing_success_se
         )
         assert len(movements) == 3
         negative = [m for m in movements if m.qty_change < 0]
+        expected_4 = normalize_quantity_to_base_int("count", "ea", "4")
+        expected_2 = normalize_quantity_to_base_int("count", "ea", "2")
         assert sorted([(m.batch_id, m.qty_change, m.unit_cost_cents) for m in negative]) == [
-            (1, -4.0, 10),
-            (2, -2.0, 20),
+            (1, -expected_4, 10),
+            (2, -expected_2, 20),
         ]
         positive = [m for m in movements if m.qty_change > 0]
         assert len(positive) == 1
-        assert positive[0].qty_change == 2
+        expected_output = normalize_quantity_to_base_int("count", "ea", "2")
+        assert positive[0].qty_change == expected_output
 
-        batches = db.query(models.ItemBatch).order_by(models.ItemBatch.id).all()
-        assert [b.qty_remaining for b in batches] == [0.0, 2.0, 2.0]
+        remaining_batches = db.query(models.ItemBatch).order_by(models.ItemBatch.id).all()
+        expected_0 = 0
+        expected_2 = normalize_quantity_to_base_int("count", "ea", "2")
+
+        assert [b.qty_remaining for b in remaining_batches] == [
+            expected_0,
+            expected_2,
+            expected_2,
+        ]
 
         meta = json.loads(run.meta)
         assert meta["cost_inputs_cents"] == 80
