@@ -260,7 +260,14 @@ def execute_run_txn(
         human_qty = int(alloc["qty"]) // multiplier
         cost_inputs_cents += human_qty * unit_cost
 
-    per_output_cents = round_half_up_cents(cost_inputs_cents / max(float(output_qty_base or 0), 1e-9))
+    multiplier = UNIT_MULTIPLIER.get(output_item.dimension, {}).get(output_item.uom, 1)
+    human_output_qty = output_qty_base // multiplier
+
+    per_output_cents = (
+        cost_inputs_cents // human_output_qty
+        if human_output_qty > 0
+        else 0
+    )
     output_batch = ItemBatch(
         item_id=output_item_id,
         qty_initial=output_qty_base,
