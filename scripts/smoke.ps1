@@ -170,6 +170,8 @@ function Parse-ErrorDetail {
 $script:RunLabel = (Get-Date -Format "yyyyMMddHHmmss")
 $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
 
+Step "1. Session token acquisition"
+Info "Acquiring session token..."
 # Establish session first (avoid 401s on protected endpoints)
 $tokResp = Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") -WebSession $script:Session
 if ($tokResp) {
@@ -231,9 +233,9 @@ function Get-JournalDir {
 $journalDir = Get-JournalDir
 
 # -----------------------------
-# 1) Items: create definition
+# 2) Items: create definition
 # -----------------------------
-Step "1. Items Definition"
+Step "2. Items Definition"
 Info "Creating basic items..."
 $itemA = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-A-$($RunLabel)" }
 $itemB = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-B-$($RunLabel)" }
@@ -242,9 +244,9 @@ $itemD = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-D-$($RunLabel
 if ( ($itemA.id -as [int]) -gt 0 -and ($itemB.id -as [int]) -gt 0 -and ($itemC.id -as [int]) -gt 0 -and ($itemD.id -as [int]) -gt 0 ) { Pass "Created items A, B, C, D successfully" } else { Fail "Item creation failed"; exit 1 }
 
 # --------------------------------------
-# 2) Contacts CRUD
+# 3) Contacts CRUD
 # --------------------------------------
-Step "2. Contacts CRUD"
+Step "3. Contacts CRUD"
 Info "Creating and updating contacts..."
 $contactName = "SMK-Contact-$($RunLabel)"
 $contact = Invoke-Json POST ($BaseUrl + "/app/contacts") @{ name = $contactName; contact = "smoke@example.test" }
@@ -262,9 +264,9 @@ $delContact = Try-Invoke { Invoke-RestMethod -Method Delete -Uri ($BaseUrl + "/a
 if ($delContact.ok) { Pass "Contact deleted" } else { Fail "Contact delete failed"; exit 1 }
 
 # --------------------------------------
-# 3) Adjustments: FIFO, shortage=400
+# 4) Adjustments: FIFO, shortage=400
 # --------------------------------------
-Step "3. Inventory Adjustments"
+Step "4. Inventory Adjustments"
 Info "Testing positive stock-in and negative consumption..."
 $beforeAdjId = Get-LatestMovementId
 $pos = Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemA.id; quantity_decimal = "30"; uom = "ea"; direction = "in"; note = "smoke" }
@@ -281,9 +283,9 @@ $negTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = 
 if (-not $negTry.ok -and $negTry.err.Exception.Response.StatusCode.value__ -eq 400) { Pass "Oversized negative adjust rejected (400)" } else { Fail "Oversized negative adjust should be 400"; exit 1 }
 
 # --------------------------------------
-# 4) FIFO Purchase + Consume
+# 5) FIFO Purchase + Consume
 # --------------------------------------
-Step "4. FIFO Purchase + Consume"
+Step "5. FIFO Purchase + Consume"
 Info "Purchasing and consuming FIFO stock..."
 $purchase = Invoke-Json POST ($BaseUrl + "/app/purchase") @{ item_id = $itemD.id; quantity_decimal = "5"; uom = "ea"; unit_cost_decimal = "1.20"; cost_uom = "ea"; source_kind = "purchase"; source_id = "smoke-$($RunLabel)-p1" }
 if ($purchase.ok) { Pass "Purchase created batch" } else { Fail "Purchase failed"; exit 1 }
@@ -309,9 +311,9 @@ if (Test-Path $inventoryJournal) { $invLineCount = (Get-Content -LiteralPath $in
 if ($invLineCount -ge 2) { Pass "Inventory journal appended" } else { Fail "Inventory journal missing entries"; exit 1 }
 
 # --------------------------------------
-# 5) Recipes: create + PUT
+# 6) Recipes: create + PUT
 # --------------------------------------
-Step "5. Recipe Management"
+Step "6. Recipe Management"
 Info "Creating and updating recipes..."
 $rec = Invoke-Json POST ($BaseUrl + "/app/recipes") @{
   name = "SMK: B-from-A"
@@ -339,42 +341,17 @@ try {
 Pass "Recipe updated via PUT"
 
 # --------------------------------------
-# 6) Manufacturing: happy + error
+# 7) Manufacturing Success Case
 # --------------------------------------
-Step "6. Manufacturing Logic"
+Step "7. Manufacturing Success Case"
 Info "Standard Run..."
 $mfgJournal = Join-Path $journalDir 'manufacturing.jsonl'
 $mfgLinesBefore = 0
 if (Test-Path $mfgJournal) { $mfgLinesBefore = (Get-Content -LiteralPath $mfgJournal -ErrorAction SilentlyContinue).Count }
 $body = @{ recipe_id = $rec.id; output_qty = 2; notes = "smoke run ok" }
-try {
-  $okRun = Invoke-RestMethod -Method Post -Uri "$BaseUrl/app/manufacturing/run" `
-             -Body ($body | ConvertTo-Json -Depth 8) -ContentType "application/json" -WebSession $script:Session
-  Write-Host ("  [OK] Manufacturing run_id={0}" -f $okRun.run_id)
-}
-catch {
-  $raw = $_.ErrorDetails.Message
-  $parsed = $null
-  try { $parsed = $raw | ConvertFrom-Json } catch {}
-
-  if ($null -ne $parsed -and $parsed.detail -and $parsed.detail.error -eq 'insufficient_stock') {
-    foreach ($s in $parsed.detail.shortages) {
-      $needed = [math]::Ceiling([double]$s.required - [double]$s.available)
-      if ($needed -gt 0) {
-        $adjBody = @{ item_id = [int]$s.component; quantity_decimal = [string][int]$needed; uom = "ea"; direction = "in"; note = "smoke-topup" }
-        Invoke-RestMethod -Method Post -Uri "$BaseUrl/app/adjust" `
-          -Body ($adjBody | ConvertTo-Json -Depth 8) -ContentType "application/json" -WebSession $script:Session | Out-Null
-      }
-    }
-
-    $okRun = Invoke-RestMethod -Method Post -Uri "$BaseUrl/app/manufacturing/run" `
-               -Body ($body | ConvertTo-Json -Depth 8) -ContentType "application/json" -WebSession $script:Session
-    Write-Host ("  [OK] Manufacturing run_id={0} (after top-up)" -f $okRun.run_id)
-  }
-  else {
-    throw
-  }
-}
+$okRun = Invoke-RestMethod -Method Post -Uri "$BaseUrl/app/manufacturing/run" `
+           -Body ($body | ConvertTo-Json -Depth 8) -ContentType "application/json" -WebSession $script:Session
+Write-Host ("  [OK] Manufacturing run_id={0}" -f $okRun.run_id)
 if ($okRun.status -ne "completed") { Fail "Expected completed run"; exit 1 }
 if (Test-Path $mfgJournal) {
   $mfgLinesAfter = (Get-Content -LiteralPath $mfgJournal -ErrorAction SilentlyContinue).Count
@@ -385,9 +362,73 @@ if (Test-Path $mfgJournal) {
 }
 Pass "Run completed successfully"
 
+# --------------------------------------
+# 7) Advanced Invariants (0.8.2)
+# --------------------------------------
 Info "Validation checks..."
+
+# 5.1 single-run only (reject array payload)
+Info "Checking API strictness..."
+$bulkTry = Try-Invoke {
+  # Force an array raw-json payload to hit the route validator
+  Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @(
+    @{ recipe_id = $rec.id; output_qty = 1 },
+    @{ recipe_id = $rec.id; output_qty = 1 }
+  )
+}
+# PS 5.1: emulate ternary with if-else
+$bulkStatus = 200
+if (-not $bulkTry.ok) { $bulkStatus = $bulkTry.err.Exception.Response.StatusCode.value__ }
+if ($bulkStatus -eq 400 -or $bulkStatus -eq 422) { Pass "Array payload (bulk run) rejected ($bulkStatus)" } else { Fail "Array payload should be rejected (400/422), got $bulkStatus"; exit 1 }
+
+# 5.2 ad-hoc components[] required (non-empty)
+$emptyComp = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ output_item_id = $itemC.id; output_qty = 1; components = @() } }
+$emptyStatus = 200
+if (-not $emptyComp.ok) { $emptyStatus = $emptyComp.err.Exception.Response.StatusCode.value__ }
+if ($emptyStatus -eq 400) { Pass "Ad-hoc with empty components[] rejected (400)" } else { Fail "Empty components[] should be 400 (got $emptyStatus)"; exit 1 }
+
+# 5.3 success is atomic: movements committed (>=1 consume + 1 output)
+$ok2 = Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 2; notes="atomic-check" }
+if ($ok2.status -ne "completed") { Fail "Second run not completed"; exit 1 }
+$runMovs = Get-RunMovements -RunId $ok2.run_id -Limit 200
+$consumes = @($runMovs | Where-Object { [double]$_.qty_change -lt 0 })
+$outputs  = @($runMovs | Where-Object { [double]$_.qty_change -gt 0 })
+if ($consumes.Count -ge 1) { Pass "Atomic Run: consume movements present" } else { Fail "No consume movements for run $($ok2.run_id)"; exit 1 }
+if ($outputs.Count -eq 1)  { Pass "Atomic Run: exactly one output movement" } else { Fail "Expected exactly one output movement"; exit 1 }
+
+# 5.4 unit cost rule: sum(consumed_cost)/output_qty (round-half-up)
+Info "Checking Unit Cost & Oversold invariants..."
+$ok3 = Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 2; notes="cost-check" }
+if ($ok3.status -ne "completed") { Fail "Cost Check Run not completed"; exit 1 }
+$mov3 = Get-RunMovements -RunId $ok3.run_id -Limit 200
+$consumed = @($mov3 | Where-Object { [double]$_.qty_change -lt 0 })
+$output   = @($mov3 | Where-Object { [double]$_.qty_change -gt 0 })
+if ($output.Count -ne 1) { Fail "Cost check: expected one output movement"; exit 1 }
+
+[int64]$totalCents = 0
+foreach ($m in $consumed) {
+  $qtyAbs = [decimal]([math]::Abs([double]$m.qty_change))
+  $unit   = [decimal]([int]$m.unit_cost_cents)
+  $totalCents += [int64]($qtyAbs * $unit)
+}
+$expectedUnit = RoundHalfUpCents([decimal]($totalCents / 2))
+if ([int]$output[0].unit_cost_cents -eq [int]$expectedUnit) {
+  Pass ("Output unit cost verified ({0} cents)" -f $expectedUnit)
+} else {
+  Fail ("Output unit cost mismatch: got {0} expected {1}" -f $output[0].unit_cost_cents, $expectedUnit); exit 1
+}
+
+# 5.5 never oversell: manufacturing movements must have is_oversold=0
+$overs = @($mov3 | Where-Object { $_.source_kind -eq "manufacturing" -and [int]$_.is_oversold -ne 0 })
+if ($overs.Count -eq 0) { Pass "Manufacturing movements have is_oversold=0" } else { Fail "Found is_oversold=1 on manufacturing movement(s)"; exit 1 }
+
+# --------------------------------------
+# 8) Manufacturing Insufficient Stock Case (recipe)
+# --------------------------------------
+Step "8. Manufacturing Insufficient Stock Case (recipe)"
+$mvIdBefore = Get-LatestMovementId
 $badRun = Try-Invoke {
-  Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 999 }
+  Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 1000000 }
 }
 $badStatus = 0
 if ($badRun.ok) { $badStatus = 200 }
@@ -395,43 +436,49 @@ else {
   try { $badStatus = $badRun.err.Exception.Response.StatusCode.value__ } catch { $badStatus = 0 }
 }
 
-# Expect 400 for insufficient stock
 if ($badStatus -ne 400) {
   Fail "Expected 400 on insufficient stock, got $badStatus"
-} else {
-  $errBody = Get-WebErrorBody $badRun
-  $obj = $null
-  if (-not [string]::IsNullOrWhiteSpace($errBody)) {
-    try { $obj = $errBody | ConvertFrom-Json } catch { $obj = $null }
-  }
-  $err = Parse-ErrorDetail -Json $obj
-  if ($err.kind -in @("string","list","object")) {
-    Pass "Run with insufficient stock rejected (400)"
-    Pass "Error detail parsed ($($err.kind)): $($err.message)"
-  } else {
-    Fail "Error detail missing/unknown shape (content empty or not JSON)"
-  }
-
-  # confirm shortages present in error payload
-  $shortOK = $false
-  if ($obj -and $obj.detail -and $obj.detail.shortages) { $shortOK = $true }
-  elseif ($obj -and $obj.shortages) { $shortOK = $true }
-  elseif ($errBody -match '"shortages"') { $shortOK = $true }
-
-  if ($shortOK) {
-    Pass "Error payload contains 'shortages' details"
-  } else {
-    Fail "No 'shortages' detail found"
-    exit 1
-  }
+  exit 1
 }
 
-# ad-hoc shortage
+$errBody = Get-WebErrorBody $badRun
+$obj = $null
+if (-not [string]::IsNullOrWhiteSpace($errBody)) {
+  try { $obj = $errBody | ConvertFrom-Json } catch { $obj = $null }
+}
+$err = Parse-ErrorDetail -Json $obj
+if ($err.kind -in @("string","list","object")) {
+  Pass "Run with insufficient stock rejected (400)"
+  Pass "Error detail parsed ($($err.kind)): $($err.message)"
+} else {
+  Fail "Error detail missing/unknown shape (content empty or not JSON)"
+  exit 1
+}
+
+$shortOK = $false
+if ($obj -and $obj.detail -and $obj.detail.shortages) { $shortOK = $true }
+elseif ($obj -and $obj.shortages) { $shortOK = $true }
+elseif ($errBody -match '"shortages"') { $shortOK = $true }
+
+if ($shortOK) {
+  Pass "Error payload contains 'shortages' details"
+} else {
+  Fail "No 'shortages' detail found"
+  exit 1
+}
+
+$mvIdAfter = Get-LatestMovementId
+if ($mvIdAfter -eq $mvIdBefore) { Pass "Fail-fast produced no new movements" } else { Fail ("Fail-fast wrote movements (before={0}, after={1})" -f $mvIdBefore, $mvIdAfter); exit 1 }
+
+# --------------------------------------
+# 9) Manufacturing Insufficient Stock Case (adhoc)
+# --------------------------------------
+Step "9. Manufacturing Insufficient Stock Case (adhoc)"
 $adhocShort = Try-Invoke {
   Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{
     output_item_id = $itemC.id
     output_qty     = 1
-    components     = @(@{ item_id = $itemB.id; qty_required = 999 })
+    components     = @(@{ item_id = $itemB.id; qty_required = 1000000 })
   }
 }
 $adhocStatus = 0
@@ -463,79 +510,10 @@ if (-not $adhocShort.ok -and $adhocStatus -eq 400) {
   exit 1
 }
 
-# --------------------------------------
-# 7) Advanced Invariants (0.8.2)
-# --------------------------------------
-Step "7. Advanced Invariants (0.8.2)"
-
-# 5.1 single-run only (reject array payload)
-Info "Checking API strictness..."
-$bulkTry = Try-Invoke {
-  # Force an array raw-json payload to hit the route validator
-  Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @(
-    @{ recipe_id = $rec.id; output_qty = 1 },
-    @{ recipe_id = $rec.id; output_qty = 1 }
-  )
-}
-# PS 5.1: emulate ternary with if-else
-$bulkStatus = 200
-if (-not $bulkTry.ok) { $bulkStatus = $bulkTry.err.Exception.Response.StatusCode.value__ }
-if ($bulkStatus -eq 400 -or $bulkStatus -eq 422) { Pass "Array payload (bulk run) rejected ($bulkStatus)" } else { Fail "Array payload should be rejected (400/422), got $bulkStatus"; exit 1 }
-
-# 5.2 ad-hoc components[] required (non-empty)
-$emptyComp = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ output_item_id = $itemC.id; output_qty = 1; components = @() } }
-$emptyStatus = 200
-if (-not $emptyComp.ok) { $emptyStatus = $emptyComp.err.Exception.Response.StatusCode.value__ }
-if ($emptyStatus -eq 400) { Pass "Ad-hoc with empty components[] rejected (400)" } else { Fail "Empty components[] should be 400 (got $emptyStatus)"; exit 1 }
-
-# 5.3 fail-fast implies no writes (use latest movement id snapshot)
-Info "Checking consistency (Fail-Fast & Atomicity)..."
-$mvIdBefore = Get-LatestMovementId
-$ff = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 99999 } }
-if (-not $ff.ok -and $ff.err.Exception.Response.StatusCode.value__ -eq 400) {
-  $mvIdAfter = Get-LatestMovementId
-  if ($mvIdAfter -eq $mvIdBefore) { Pass "Fail-fast produced no new movements" } else { Fail ("Fail-fast wrote movements (before={0}, after={1})" -f $mvIdBefore, $mvIdAfter); exit 1 }
-} else { Fail "Expected 400 on fail-fast shortage"; exit 1 }
-
-# 5.4 success is atomic: movements committed (>=1 consume + 1 output)
-$ok2 = Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 2; notes="atomic-check" }
-if ($ok2.status -ne "completed") { Fail "Second run not completed"; exit 1 }
-$runMovs = Get-RunMovements -RunId $ok2.run_id -Limit 200
-$consumes = @($runMovs | Where-Object { [double]$_.qty_change -lt 0 })
-$outputs  = @($runMovs | Where-Object { [double]$_.qty_change -gt 0 })
-if ($consumes.Count -ge 1) { Pass "Atomic Run: consume movements present" } else { Fail "No consume movements for run $($ok2.run_id)"; exit 1 }
-if ($outputs.Count -eq 1)  { Pass "Atomic Run: exactly one output movement" } else { Fail "Expected exactly one output movement"; exit 1 }
-
-# 5.5 unit cost rule: sum(consumed_cost)/output_qty (round-half-up)
-Info "Checking Unit Cost & Oversold invariants..."
-$ok3 = Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 2; notes="cost-check" }
-if ($ok3.status -ne "completed") { Fail "Cost Check Run not completed"; exit 1 }
-$mov3 = Get-RunMovements -RunId $ok3.run_id -Limit 200
-$consumed = @($mov3 | Where-Object { [double]$_.qty_change -lt 0 })
-$output   = @($mov3 | Where-Object { [double]$_.qty_change -gt 0 })
-if ($output.Count -ne 1) { Fail "Cost check: expected one output movement"; exit 1 }
-
-[int64]$totalCents = 0
-foreach ($m in $consumed) {
-  $qtyAbs = [decimal]([math]::Abs([double]$m.qty_change))
-  $unit   = [decimal]([int]$m.unit_cost_cents)
-  $totalCents += [int64]($qtyAbs * $unit)
-}
-$expectedUnit = RoundHalfUpCents([decimal]($totalCents / 2))
-if ([int]$output[0].unit_cost_cents -eq [int]$expectedUnit) {
-  Pass ("Output unit cost verified ({0} cents)" -f $expectedUnit)
-} else {
-  Fail ("Output unit cost mismatch: got {0} expected {1}" -f $output[0].unit_cost_cents, $expectedUnit); exit 1
-}
-
-# 5.6 never oversell: manufacturing movements must have is_oversold=0
-$overs = @($mov3 | Where-Object { $_.source_kind -eq "manufacturing" -and [int]$_.is_oversold -ne 0 })
-if ($overs.Count -eq 0) { Pass "Manufacturing movements have is_oversold=0" } else { Fail "Found is_oversold=1 on manufacturing movement(s)"; exit 1 }
-
 # -----------------------------
 # 8) v0.8.3 Journals + Encrypted Backup/Restore
 # -----------------------------
-Step "8. v0.8.3 Journals + Encrypted Backup/Restore"
+Step "10. v0.8.3 Journals + Encrypted Backup/Restore"
 
 # A) Export DB (AES-GCM, password)
 Info "Exporting encrypted backup..."
@@ -689,7 +667,7 @@ try { Remove-Item -Path $export.path -Force -ErrorAction Stop; Pass "Export arti
 # -----------------------------
 # 9) Integrity Checks
 # -----------------------------
-Step "9. Integrity Checks"
+Step "11. Integrity Checks"
 Info "Validating movements and on-hand balances..."
 $itemSnapshot = Invoke-Json GET ($BaseUrl + "/app/items") $null
 $negOnHand = @($itemSnapshot | Where-Object { [double]$_.qty_stored -lt 0 })
@@ -703,7 +681,7 @@ if ($mfgOvers.Count -eq 0 -and $overs.Count -eq 0) { Pass "No oversold flags pre
 # -----------------------------
 # 10) Cleanup
 # -----------------------------
-Step "10. Cleanup"
+Step "12. Cleanup"
 Info "Zeroing inventory and removing test data..."
 
 $targetItems = @($itemA, $itemB, $itemC, $itemD)
