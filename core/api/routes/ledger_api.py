@@ -114,6 +114,10 @@ def handle_purchase(body: PurchaseIn, db: Session):
         body.source_id,
     )
 
+    # Maintain invariant: qty_stored reflects on-hand
+    if hasattr(item, "qty_stored"):
+        item.qty_stored = int((getattr(item, "qty_stored", 0) or 0) + qty_base)
+
     if db.in_transaction():
         db.flush()
     else:
