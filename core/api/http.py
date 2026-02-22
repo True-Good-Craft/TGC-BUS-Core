@@ -53,6 +53,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 from starlette.responses import RedirectResponse, Response
@@ -2154,6 +2155,17 @@ def create_app():
         app.include_router(config_routes.router, prefix="/app")
         app.include_router(update_routes.router, prefix="/app")
         app.state._domain_routes_registered = True
+
+    print("==== REGISTERED ROUTES ====")
+    run_route_count = 0
+    for route in app.routes:
+        if isinstance(route, APIRoute):
+            print(f"{route.methods} {route.path} -> {route.endpoint.__name__}")
+            if route.path == "/app/manufacturing/run" and "POST" in route.methods:
+                run_route_count += 1
+    if run_route_count > 1:
+        print("WARNING: DUPLICATE /app/manufacturing/run ROUTE DETECTED")
+    print("==== END ROUTES ====")
     return app
 
 

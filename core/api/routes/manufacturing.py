@@ -138,6 +138,7 @@ def _shortage_detail(shortages: list[dict], run_id: int | None) -> dict:
 
 
 async def run_manufacture(req: Request, raw_body: Any, db: Session):
+    print(">>> NEW run_manufacture() HIT")
     require_owner_commit(req)
 
     body: ManufacturingRunRequest = parse_run_request(raw_body)
@@ -239,6 +240,7 @@ async def manufacture(
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
+    print(">>> PUBLIC manufacture() HIT")
     return await run_manufacture(req, raw_body, db)
 
 
@@ -252,6 +254,7 @@ async def run_manufacturing(
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
+    print(">>> WRAPPER run_manufacturing() HIT")
     response.headers["X-BUS-Deprecation"] = "/app/manufacture"
     return await run_manufacture(req, raw_body, db)
 
