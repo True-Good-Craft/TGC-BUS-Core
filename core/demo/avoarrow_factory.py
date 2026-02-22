@@ -154,7 +154,7 @@ def load_demo_factory(db: Session) -> dict:
             output_item_id, required, k, shortages = validate_run(db, req)
             if shortages:
                 raise ValueError("Unexpected demo shortage")
-            execute_run_txn.__wrapped__(db, req, output_item_id, required, k)
+            execute_run_txn(db, req, output_item_id, required, k)
             summary["units_manufactured"] = 10
 
             sale_resp = stock_out(
