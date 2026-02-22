@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from core.api.quantity_contract import normalize_quantity_to_base_int
 from core.api.schemas.manufacturing import RecipeRunRequest
 from core.manufacturing.service import execute_run_txn, validate_run
 
@@ -20,8 +21,18 @@ def manufacturing_success_setup(request: pytest.FixtureRequest):
     client = env["client"]
 
     with engine_module.SessionLocal() as db:
+        input_qty_base = normalize_quantity_to_base_int(
+            dimension="count",
+            uom="ea",
+            quantity_decimal="8",
+        )
+        batch_qty_base = normalize_quantity_to_base_int(
+            dimension="count",
+            uom="ea",
+            quantity_decimal="4",
+        )
         output_item = models_module.Item(name="Output", uom="ea", qty_stored=0)
-        input_item = models_module.Item(name="Input", uom="ea", qty_stored=8)
+        input_item = models_module.Item(name="Input", uom="ea", qty_stored=input_qty_base)
         db.add_all([output_item, input_item])
         db.flush()
 
@@ -42,8 +53,8 @@ def manufacturing_success_setup(request: pytest.FixtureRequest):
             [
                 models_module.ItemBatch(
                     item_id=input_item.id,
-                    qty_initial=4.0,
-                    qty_remaining=4.0,
+                    qty_initial=batch_qty_base,
+                    qty_remaining=batch_qty_base,
                     unit_cost_cents=10,
                     source_kind="seed",
                     source_id=None,
@@ -51,8 +62,8 @@ def manufacturing_success_setup(request: pytest.FixtureRequest):
                 ),
                 models_module.ItemBatch(
                     item_id=input_item.id,
-                    qty_initial=4.0,
-                    qty_remaining=4.0,
+                    qty_initial=batch_qty_base,
+                    qty_remaining=batch_qty_base,
                     unit_cost_cents=20,
                     source_kind="seed",
                     source_id=None,
@@ -97,7 +108,15 @@ def test_atomic_multiple_input_batches_one_output_batch(manufacturing_success_se
         assert db.query(recipes.ManufacturingRun).count() == 0
         assert db.query(models.ItemMovement).filter(models.ItemMovement.source_kind == "manufacturing").count() == 0
         remaining_batches = db.query(models.ItemBatch).order_by(models.ItemBatch.id).all()
-        assert [b.qty_remaining for b in remaining_batches] == [4.0, 4.0]
+        expected_batch_qty = normalize_quantity_to_base_int(
+            dimension="count",
+            uom="ea",
+            quantity_decimal="4",
+        )
+        assert [b.qty_remaining for b in remaining_batches] == [
+            expected_batch_qty,
+            expected_batch_qty,
+        ]
 
     resp = client.post(
         "/app/manufacturing/run",

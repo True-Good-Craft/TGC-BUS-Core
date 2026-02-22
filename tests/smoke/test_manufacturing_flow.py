@@ -5,6 +5,8 @@ import json
 
 import pytest
 
+from core.api.quantity_contract import normalize_quantity_to_base_int
+
 pytestmark = pytest.mark.integration
 
 
@@ -62,8 +64,18 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
     env = bootstrap_app(monkeypatch, request)
 
     with env["engine"].SessionLocal() as db:
+        input_qty_base = normalize_quantity_to_base_int(
+            dimension="count",
+            uom="ea",
+            quantity_decimal="8",
+        )
+        batch_qty_base = normalize_quantity_to_base_int(
+            dimension="count",
+            uom="ea",
+            quantity_decimal="4",
+        )
         output_item = env["models"].Item(name="Output", uom="ea", qty_stored=0)
-        input_item = env["models"].Item(name="Input", uom="ea", qty_stored=8)
+        input_item = env["models"].Item(name="Input", uom="ea", qty_stored=input_qty_base)
         db.add_all([output_item, input_item])
         db.flush()
 
@@ -84,8 +96,8 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
             [
                 env["models"].ItemBatch(
                     item_id=input_item.id,
-                    qty_initial=4.0,
-                    qty_remaining=4.0,
+                    qty_initial=batch_qty_base,
+                    qty_remaining=batch_qty_base,
                     unit_cost_cents=10,
                     source_kind="seed",
                     source_id=None,
@@ -93,8 +105,8 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
                 ),
                 env["models"].ItemBatch(
                     item_id=input_item.id,
-                    qty_initial=4.0,
-                    qty_remaining=4.0,
+                    qty_initial=batch_qty_base,
+                    qty_remaining=batch_qty_base,
                     unit_cost_cents=20,
                     source_kind="seed",
                     source_id=None,
