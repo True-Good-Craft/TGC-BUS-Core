@@ -124,6 +124,7 @@ def validate_run(
         output_item_id = recipe.output_item_id
         k = body.output_qty / (recipe.output_qty or 1.0)
         required = []
+        raw_required_qtys: List[float] = []
         for it in (
             session.query(RecipeItem)
             .filter(RecipeItem.recipe_id == recipe.id)
@@ -152,10 +153,12 @@ def validate_run(
                     "is_optional": bool(it.is_optional),
                 }
             )
+            raw_required_qtys.append(original_requested_qty)
     elif isinstance(body, AdhocRunRequest):
         output_item_id = body.output_item_id
         k = 1.0
         required = []
+        raw_required_qtys: List[float] = []
         for c in body.components:
             item = session.get(Item, c.item_id)
             if not item:
@@ -175,14 +178,24 @@ def validate_run(
                     "is_optional": bool(c.is_optional),
                 }
             )
+            raw_required_qtys.append(original_requested_qty)
     else:  # pragma: no cover - defensive
         raise HTTPException(status_code=400, detail="invalid payload")
 
     shortages: List[dict] = []
-    for r in required:
+    for idx, r in enumerate(required):
         if r["is_optional"]:
             continue
         on_hand = on_hand_qty(session, r["item_id"])
+        shortage_amount = max(r["qty_base"] - on_hand, 0)
+        print(
+            ">>> VALIDATE_RUN DEBUG "
+            f"item_id={r['item_id']} "
+            f"raw_required_qty={raw_required_qtys[idx]} "
+            f"qty_base={r['qty_base']} "
+            f"on_hand_qty={on_hand} "
+            f"shortage_amount={shortage_amount}"
+        )
         if on_hand < r["qty_base"]:
             shortages.append(
                 {"item_id": r["item_id"], "required": r["qty_base"], "available": on_hand}
