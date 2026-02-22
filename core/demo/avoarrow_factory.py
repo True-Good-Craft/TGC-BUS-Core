@@ -52,154 +52,153 @@ def load_demo_factory(db: Session) -> dict:
     }
 
     try:
-        with db.begin():
-            _require_empty(db)
+        _require_empty(db)
 
-            maple = _create_vendor(db, "Maple Fibre Supply", "Ontario")
-            _ = maple
-            _create_vendor(db, "Northern Composites Ltd", "Quebec")
-            _create_vendor(db, "TrueNorth Packaging", "Alberta")
-            summary["vendors_created"] = 3
+        maple = _create_vendor(db, "Maple Fibre Supply", "Ontario")
+        _ = maple
+        _create_vendor(db, "Northern Composites Ltd", "Quebec")
+        _create_vendor(db, "TrueNorth Packaging", "Alberta")
+        summary["vendors_created"] = 3
 
-            paper = _create_item(db, "Premium Paper Sheet")
-            carbon = _create_item(db, "Carbon Reinforcement Strip")
-            nose_weight = _create_item(db, "Nose Weight Insert")
-            summary["items_created"] += 3
+        paper = _create_item(db, "Premium Paper Sheet")
+        carbon = _create_item(db, "Carbon Reinforcement Strip")
+        nose_weight = _create_item(db, "Nose Weight Insert")
+        summary["items_created"] += 3
 
-            purchase(
-                PurchaseIn(
-                    item_id=int(paper.id),
-                    quantity_decimal="100",
-                    uom="ea",
-                    unit_cost_decimal="0.05",
-                    cost_uom="ea",
-                    source_kind="purchase",
-                    source_id="avoarrow_demo",
-                ),
-                db,
-            )
-            purchase(
-                PurchaseIn(
-                    item_id=int(paper.id),
-                    quantity_decimal="100",
-                    uom="ea",
-                    unit_cost_decimal="0.07",
-                    cost_uom="ea",
-                    source_kind="purchase",
-                    source_id="avoarrow_demo",
-                ),
-                db,
-            )
-            purchase(
-                PurchaseIn(
-                    item_id=int(carbon.id),
-                    quantity_decimal="50",
-                    uom="ea",
-                    unit_cost_decimal="0.20",
-                    cost_uom="ea",
-                    source_kind="purchase",
-                    source_id="avoarrow_demo",
-                ),
-                db,
-            )
-            purchase(
-                PurchaseIn(
-                    item_id=int(carbon.id),
-                    quantity_decimal="50",
-                    uom="ea",
-                    unit_cost_decimal="0.25",
-                    cost_uom="ea",
-                    source_kind="purchase",
-                    source_id="avoarrow_demo",
-                ),
-                db,
-            )
-            purchase(
-                PurchaseIn(
-                    item_id=int(nose_weight.id),
-                    quantity_decimal="100",
-                    uom="ea",
-                    unit_cost_decimal="0.10",
-                    cost_uom="ea",
-                    source_kind="purchase",
-                    source_id="avoarrow_demo",
-                ),
-                db,
-            )
-            summary["batches_created"] = 5
-
-            avoarrow = _create_item(db, "AvoArrow Mk I", is_product=True)
-            summary["items_created"] += 1
-
-            recipe = Recipe(
-                name="AvoArrow Mk I Blueprint",
-                code="AVOARROW-MK1",
-                output_item_id=int(avoarrow.id),
-                output_qty=1,
-                archived=False,
-                notes="Blueprint for AvoArrow Mk I",
-            )
-            db.add(recipe)
-            db.flush()
-            db.add_all(
-                [
-                    RecipeItem(recipe_id=recipe.id, item_id=paper.id, qty_required=2, is_optional=False, sort_order=0),
-                    RecipeItem(recipe_id=recipe.id, item_id=carbon.id, qty_required=1, is_optional=False, sort_order=1),
-                    RecipeItem(recipe_id=recipe.id, item_id=nose_weight.id, qty_required=1, is_optional=False, sort_order=2),
-                ]
-            )
-            summary["blueprints_created"] = 1
-
-            req = RecipeRunRequest(recipe_id=int(recipe.id), output_qty=10)
-            output_item_id, required, k, shortages = validate_run(db, req)
-            if shortages:
-                raise ValueError("Unexpected demo shortage")
-            execute_run_txn(db, req, output_item_id, required, k)
-            summary["units_manufactured"] = 10
-
-            sale_resp = stock_out(
-                StockOutIn(
-                    item_id=int(avoarrow.id),
-                    quantity_decimal="5",
-                    uom="ea",
-                    reason="sold",
-                    record_cash_event=True,
-                    sell_unit_price_cents=1500,
-                ),
-                db,
-            )
-            summary["units_sold"] = 5 if sale_resp.get("ok") else 0
-
-            sale_event = (
-                db.query(CashEvent)
-                .filter(CashEvent.kind == "sale", CashEvent.item_id == int(avoarrow.id))
-                .order_by(CashEvent.id.desc())
-                .first()
-            )
-            if not sale_event or not sale_event.source_id:
-                raise ValueError("Demo sale source id missing")
-
-            sale_source_id = str(sale_event.source_id)
-            process_refund(
-                db,
-                item_id=int(avoarrow.id),
-                refund_amount_cents=1500,
-                quantity_decimal="1",
+        purchase(
+            PurchaseIn(
+                item_id=int(paper.id),
+                quantity_decimal="100",
                 uom="ea",
-                restock_inventory=True,
-                related_source_id=str(sale_source_id),
-                category="refund",
-                notes="Demo customer refund with restock",
-            )
-            summary["refunds_processed"] = 1
+                unit_cost_decimal="0.05",
+                cost_uom="ea",
+                source_kind="purchase",
+                source_id="avoarrow_demo",
+            ),
+            db,
+        )
+        purchase(
+            PurchaseIn(
+                item_id=int(paper.id),
+                quantity_decimal="100",
+                uom="ea",
+                unit_cost_decimal="0.07",
+                cost_uom="ea",
+                source_kind="purchase",
+                source_id="avoarrow_demo",
+            ),
+            db,
+        )
+        purchase(
+            PurchaseIn(
+                item_id=int(carbon.id),
+                quantity_decimal="50",
+                uom="ea",
+                unit_cost_decimal="0.20",
+                cost_uom="ea",
+                source_kind="purchase",
+                source_id="avoarrow_demo",
+            ),
+            db,
+        )
+        purchase(
+            PurchaseIn(
+                item_id=int(carbon.id),
+                quantity_decimal="50",
+                uom="ea",
+                unit_cost_decimal="0.25",
+                cost_uom="ea",
+                source_kind="purchase",
+                source_id="avoarrow_demo",
+            ),
+            db,
+        )
+        purchase(
+            PurchaseIn(
+                item_id=int(nose_weight.id),
+                quantity_decimal="100",
+                uom="ea",
+                unit_cost_decimal="0.10",
+                cost_uom="ea",
+                source_kind="purchase",
+                source_id="avoarrow_demo",
+            ),
+            db,
+        )
+        summary["batches_created"] = 5
 
-            record_expense(
-                db,
-                amount_cents=20000,
-                category="rent",
-                notes="Workshop Lease",
-            )
-            summary["expenses_recorded"] = 1
+        avoarrow = _create_item(db, "AvoArrow Mk I", is_product=True)
+        summary["items_created"] += 1
+
+        recipe = Recipe(
+            name="AvoArrow Mk I Blueprint",
+            code="AVOARROW-MK1",
+            output_item_id=int(avoarrow.id),
+            output_qty=1,
+            archived=False,
+            notes="Blueprint for AvoArrow Mk I",
+        )
+        db.add(recipe)
+        db.flush()
+        db.add_all(
+            [
+                RecipeItem(recipe_id=recipe.id, item_id=paper.id, qty_required=2, is_optional=False, sort_order=0),
+                RecipeItem(recipe_id=recipe.id, item_id=carbon.id, qty_required=1, is_optional=False, sort_order=1),
+                RecipeItem(recipe_id=recipe.id, item_id=nose_weight.id, qty_required=1, is_optional=False, sort_order=2),
+            ]
+        )
+        summary["blueprints_created"] = 1
+
+        req = RecipeRunRequest(recipe_id=int(recipe.id), output_qty=10)
+        output_item_id, required, k, shortages = validate_run(db, req)
+        if shortages:
+            raise ValueError("Unexpected demo shortage")
+        execute_run_txn(db, req, output_item_id, required, k)
+        summary["units_manufactured"] = 10
+
+        sale_resp = stock_out(
+            StockOutIn(
+                item_id=int(avoarrow.id),
+                quantity_decimal="5",
+                uom="ea",
+                reason="sold",
+                record_cash_event=True,
+                sell_unit_price_cents=1500,
+            ),
+            db,
+        )
+        summary["units_sold"] = 5 if sale_resp.get("ok") else 0
+
+        sale_event = (
+            db.query(CashEvent)
+            .filter(CashEvent.kind == "sale", CashEvent.item_id == int(avoarrow.id))
+            .order_by(CashEvent.id.desc())
+            .first()
+        )
+        if not sale_event or not sale_event.source_id:
+            raise ValueError("Demo sale source id missing")
+
+        sale_source_id = str(sale_event.source_id)
+        process_refund(
+            db,
+            item_id=int(avoarrow.id),
+            refund_amount_cents=1500,
+            quantity_decimal="1",
+            uom="ea",
+            restock_inventory=True,
+            related_source_id=str(sale_source_id),
+            category="refund",
+            notes="Demo customer refund with restock",
+        )
+        summary["refunds_processed"] = 1
+
+        record_expense(
+            db,
+            amount_cents=20000,
+            category="rent",
+            notes="Workshop Lease",
+        )
+        summary["expenses_recorded"] = 1
     except Exception:
         db.rollback()
         raise
