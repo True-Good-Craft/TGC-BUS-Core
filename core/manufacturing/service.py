@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from contextlib import wraps
 from datetime import datetime
+from decimal import Decimal
 from typing import Callable, Dict, List, Tuple
 
 from fastapi import HTTPException
@@ -17,7 +18,6 @@ from core.api.schemas.manufacturing import (
     RecipeRunRequest,
 )
 from core.api.quantity_contract import normalize_quantity_to_base_int
-from core.metrics.metric import default_unit_for
 from core.appdb.ledger import InsufficientStock, on_hand_qty
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.models_recipes import Recipe, RecipeItem
@@ -108,7 +108,7 @@ def format_shortages(shortages: List[dict]) -> List[dict]:
 
 def validate_run(
     session: Session, body: ManufacturingRunRequest
-) -> Tuple[int, list[dict], float, list[dict]]:
+) -> Tuple[int, list[dict], Decimal, list[dict]]:
     """Validate a manufacturing run request before any writes occur.
 
     Returns a tuple of (output_item_id, required_components, scale_k, shortages).
@@ -122,7 +122,10 @@ def validate_run(
             raise HTTPException(status_code=400, detail="Recipe has no output_item_id")
 
         output_item_id = recipe.output_item_id
-        k = body.output_qty / (recipe.output_qty or 1.0)
+        k = (
+            Decimal(str(body.output_qty))
+            / Decimal(str(recipe.output_qty or 1))
+        )
         required = []
         for it in (
             session.query(RecipeItem)
@@ -133,14 +136,15 @@ def validate_run(
             item = session.get(Item, it.item_id)
             if not item:
                 raise HTTPException(status_code=404, detail=f"Item {it.item_id} not found")
-            base_uom = default_unit_for(item.dimension)
+            required_decimal = (
+                Decimal(str(it.qty_required)) * k
+            )
             qty_base = normalize_quantity_to_base_int(
                 item.dimension,
-                base_uom,
-                float(it.qty_required) * k,
+                item.uom,
+                required_decimal,
             )
-            original_requested_qty = float(it.qty_required) * k
-            if (float(original_requested_qty) > 0) and qty_base <= 0:
+            if required_decimal > 0 and qty_base <= 0:
                 raise HTTPException(
                     status_code=400,
                     detail="invalid_normalized_quantity",
@@ -154,16 +158,14 @@ def validate_run(
             )
     elif isinstance(body, AdhocRunRequest):
         output_item_id = body.output_item_id
-        k = 1.0
+        k = Decimal("1")
         required = []
         for c in body.components:
             item = session.get(Item, c.item_id)
             if not item:
                 raise HTTPException(status_code=404, detail=f"Item {c.item_id} not found")
-            base_uom = default_unit_for(item.dimension)
-            qty_base = normalize_quantity_to_base_int(item.dimension, base_uom, c.qty_required)
-            original_requested_qty = float(c.qty_required)
-            if (float(original_requested_qty) > 0) and qty_base <= 0:
+            qty_base = normalize_quantity_to_base_int(item.dimension, item.uom, c.qty_required)
+            if Decimal(str(c.qty_required)) > 0 and qty_base <= 0:
                 raise HTTPException(
                     status_code=400,
                     detail="invalid_normalized_quantity",
@@ -199,7 +201,7 @@ def execute_run_txn(
     body: ManufacturingRunRequest,
     output_item_id: int,
     required: list[dict],
-    k: float,
+    k: Decimal,
 ):
     from core.appdb.models_recipes import ManufacturingRun
 
@@ -216,10 +218,9 @@ def execute_run_txn(
     output_item = session.get(Item, output_item_id)
     if not output_item:
         raise HTTPException(status_code=404, detail=f"Item {output_item_id} not found")
-    output_base_uom = default_unit_for(output_item.dimension)
     output_qty_base = normalize_quantity_to_base_int(
         output_item.dimension,
-        output_base_uom,
+        output_item.uom,
         body.output_qty,
     )
     mfg_run.output_qty = output_qty_base
