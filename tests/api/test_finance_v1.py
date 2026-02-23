@@ -33,10 +33,10 @@ def _purchase_count_stock(client: TestClient, item_id: int, qty_each: str, unit_
         "/app/purchase",
         json={
             "item_id": int(item_id),
-            "qty": qty_base,
+            "quantity_decimal": str(qty_base),
+            "uom": "mc",
             "unit_cost_cents": int(unit_cost_cents),
-            "meta": {},
-            "note": "seed",
+            "source_id": "seed",
         },
     )
     assert r.status_code == 200, r.text
@@ -55,7 +55,8 @@ def test_sale_records_cash_event_and_links_source_id(bus_client):
         "/app/stock/out",
         json={
             "item_id": item_id,
-            "qty": 2000,
+            "quantity_decimal": "2000",
+            "uom": "mc",
             "reason": "sold",
             "note": "sale",
             "record_cash_event": True,

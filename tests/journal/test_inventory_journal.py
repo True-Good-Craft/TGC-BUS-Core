@@ -8,6 +8,18 @@ import pytest
 pytestmark = pytest.mark.api
 
 
+def _install_test_journal(monkeypatch, journal_path):
+    import json
+
+    def _write(entry):
+        journal_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(journal_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+
+    monkeypatch.setattr("core.services.stock_mutation.append_inventory", _write)
+
+
+
 @pytest.fixture()
 def inventory_journal_setup(tmp_path, monkeypatch, request: pytest.FixtureRequest):
     journal_path = tmp_path / "journals" / "inventory.jsonl"
@@ -29,19 +41,21 @@ def inventory_journal_setup(tmp_path, monkeypatch, request: pytest.FixtureReques
     }
 
 
-def test_purchase_appends_journal(inventory_journal_setup):
+def test_purchase_appends_journal(inventory_journal_setup, monkeypatch):
     client = inventory_journal_setup["client"]
     engine = inventory_journal_setup["engine"]
     models = inventory_journal_setup["models"]
     journal_path = inventory_journal_setup["journal_path"]
 
+    _install_test_journal(monkeypatch, journal_path)
+
     resp = client.post(
         "/app/purchase",
         json={
             "item_id": inventory_journal_setup["item_id"],
-            "qty": 3,
+            "quantity_decimal": "3",
+            "uom": "mc",
             "unit_cost_cents": 125,
-            "source_kind": "purchase",
             "source_id": "po-1",
         },
     )
@@ -65,7 +79,7 @@ def test_purchase_appends_journal(inventory_journal_setup):
     assert entry["qty"] == pytest.approx(3)
     assert entry["unit_cost_cents"] == 125
     assert entry["item_id"] == inventory_journal_setup["item_id"]
-    assert entry["batch_id"] == resp.json().get("batch_id")
+    assert entry["batch_id"] == resp.json().get("batch_ids")[0]
 
 
 def test_journal_failure_does_not_block_adjustment(inventory_journal_setup, monkeypatch):
@@ -77,7 +91,7 @@ def test_journal_failure_does_not_block_adjustment(inventory_journal_setup, monk
     def boom(_entry):
         raise RuntimeError("fsync failed")
 
-    monkeypatch.setattr("core.api.routes.ledger_api.append_inventory", boom)
+    monkeypatch.setattr("core.services.stock_mutation.append_inventory", boom)
 
     resp = client.post(
         "/app/adjust",

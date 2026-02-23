@@ -11,8 +11,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
-from core.appdb.ledger import add_batch
 from core.appdb.models import CashEvent, ItemMovement
+from core.services.stock_mutation import perform_stock_in_base
 
 
 router = APIRouter(prefix="/finance", tags=["finance"])
@@ -112,14 +112,13 @@ def finance_refund(body: RefundIn, db: Session = Depends(get_session)):
             else:
                 unit_cost_cents = int(body.restock_unit_cost_cents)
 
-            # Stock-in movement: qty_change = +qty_base, source_kind="refund_restock", source_id matches refund cash event.
-            add_batch(
+            perform_stock_in_base(
                 db,
-                item_id=item_id,
-                qty=qty_base,
+                item_id=str(item_id),
+                qty_base=qty_base,
                 unit_cost_cents=unit_cost_cents,
-                source_kind="refund_restock",
-                source_id=source_id,
+                ref=source_id,
+                meta={"source_kind": "refund_restock", "source_id": source_id},
             )
 
     return {"ok": True, "source_id": source_id}
