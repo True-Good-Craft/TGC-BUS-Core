@@ -5,14 +5,16 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from core.api.utils.quantity_guard import reject_legacy_qty_keys
 from core.appdb.engine import get_session
 from core.appdb.models import Item
 from core.appdb.models_recipes import ManufacturingRun, Recipe, RecipeItem
 from core.config.writes import require_writes
+from core.metrics.metric import default_unit_for, from_base, normalize_quantity_to_base_int
 from core.policy.guard import require_owner_commit
 from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
@@ -43,7 +45,8 @@ def _append_recipe_journal(entry: dict) -> None:
 
 class RecipeItemIn(BaseModel):
     item_id: int
-    qty_required: int
+    quantity_decimal: str
+    uom: str
     optional: bool = False
     sort: int = 0
 
@@ -52,7 +55,8 @@ class RecipeCreate(BaseModel):
     name: str
     code: str | None = None
     output_item_id: int
-    output_qty: int = 1
+    quantity_decimal: str = "1"
+    uom: str = "ea"
     archived: bool = False
     notes: str | None = None
     items: list[RecipeItemIn] = []
@@ -62,23 +66,42 @@ class RecipeUpdate(BaseModel):
     name: str | None = None
     code: str | None = None
     output_item_id: int | None = None
-    output_qty: int | None = None
+    quantity_decimal: str | None = None
+    uom: str | None = None
     archived: bool | None = None
     notes: str | None = None
     items: list[RecipeItemIn] = []
 
 
+def _to_decimal_string(value) -> str:
+    text = str(value)
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def _resolve_uom_for_item(item: Item) -> str:
+    return (getattr(item, "uom", None) or default_unit_for(item.dimension) or "ea").lower()
+
+
 def _serialize_recipe_detail(db: Session, recipe: Recipe) -> dict:
+    output_item = db.get(Item, recipe.output_item_id) if recipe.output_item_id else None
+    output_uom = _resolve_uom_for_item(output_item) if output_item else "ea"
+    output_dimension = output_item.dimension if output_item else "count"
+    output_quantity_decimal = _to_decimal_string(from_base(int(recipe.output_qty or 0), output_uom, output_dimension))
+
     items = []
-    for ri in (
-        db.query(RecipeItem).filter(RecipeItem.recipe_id == recipe.id).order_by(RecipeItem.sort_order).all()
-    ):
+    for ri in db.query(RecipeItem).filter(RecipeItem.recipe_id == recipe.id).order_by(RecipeItem.sort_order).all():
         it = db.get(Item, ri.item_id)
+        item_uom = _resolve_uom_for_item(it) if it else "ea"
+        item_dimension = it.dimension if it else "count"
+        quantity_decimal = _to_decimal_string(from_base(int(ri.qty_required or 0), item_uom, item_dimension))
         items.append(
             {
                 "id": ri.id,
                 "item_id": ri.item_id,
-                "qty_required": ri.qty_required,
+                "quantity_decimal": quantity_decimal,
+                "uom": item_uom,
                 "optional": bool(ri.is_optional),
                 "sort": ri.sort_order,
                 "item": None
@@ -92,13 +115,13 @@ def _serialize_recipe_detail(db: Session, recipe: Recipe) -> dict:
             }
         )
 
-    output_item = db.get(Item, recipe.output_item_id) if recipe.output_item_id else None
     return {
         "id": recipe.id,
         "name": recipe.name,
         "code": recipe.code,
         "output_item_id": recipe.output_item_id,
-        "output_qty": recipe.output_qty,
+        "quantity_decimal": output_quantity_decimal,
+        "uom": output_uom,
         "archived": bool(recipe.archived),
         "notes": recipe.notes,
         "items": items,
@@ -120,18 +143,24 @@ async def list_recipes(
     _state: AppState = Depends(get_state),
 ):
     rs = db.query(Recipe).all()
-    return [
-        {
-            "id": r.id,
-            "name": r.name,
-            "code": r.code,
-            "output_item_id": r.output_item_id,
-            "output_qty": r.output_qty,
-            "archived": bool(r.archived),
-            "notes": r.notes,
-        }
-        for r in rs
-    ]
+    out = []
+    for r in rs:
+        output_item = db.get(Item, r.output_item_id) if r.output_item_id else None
+        output_uom = _resolve_uom_for_item(output_item) if output_item else "ea"
+        output_dimension = output_item.dimension if output_item else "count"
+        out.append(
+            {
+                "id": r.id,
+                "name": r.name,
+                "code": r.code,
+                "output_item_id": r.output_item_id,
+                "quantity_decimal": _to_decimal_string(from_base(int(r.output_qty or 0), output_uom, output_dimension)),
+                "uom": output_uom,
+                "archived": bool(r.archived),
+                "notes": r.notes,
+            }
+        )
+    return out
 
 
 @router.get("/{rid}")
@@ -149,32 +178,56 @@ async def get_recipe(
 
 @router.post("")
 async def create_recipe(
-    payload: RecipeCreate,
     req: Request,
+    raw: dict = Body(...),
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
+    reject_legacy_qty_keys(raw)
+    payload = RecipeCreate(**raw)
+
     require_owner_commit(req)
+    output_item = db.get(Item, payload.output_item_id)
+    if not output_item:
+        raise HTTPException(404, "output item not found")
+
+    output_qty_base = normalize_quantity_to_base_int(
+        quantity_decimal=payload.quantity_decimal,
+        uom=payload.uom,
+        dimension=output_item.dimension,
+    )
+    if output_qty_base <= 0:
+        raise HTTPException(status_code=400, detail="quantity_decimal must be > 0")
+
     recipe = Recipe(
         name=payload.name,
         code=payload.code,
         output_item_id=payload.output_item_id,
-        output_qty=1,
+        output_qty=output_qty_base,
         archived=bool(payload.archived),
         notes=payload.notes,
     )
     db.add(recipe)
     db.flush()
+
     for idx, it in enumerate(payload.items or []):
-        if it.qty_required <= 0:
-            raise HTTPException(status_code=400, detail="qty_required must be > 0")
+        item = db.get(Item, it.item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail=f"item_not_found:{it.item_id}")
+        qty_required_base = normalize_quantity_to_base_int(
+            quantity_decimal=it.quantity_decimal,
+            uom=it.uom,
+            dimension=item.dimension,
+        )
+        if qty_required_base <= 0:
+            raise HTTPException(status_code=400, detail="quantity_decimal must be > 0")
         db.add(
             RecipeItem(
                 recipe_id=recipe.id,
                 item_id=it.item_id,
-                qty_required=it.qty_required,
+                qty_required=qty_required_base,
                 is_optional=it.optional,
                 sort_order=it.sort or idx,
             )
@@ -192,41 +245,69 @@ async def create_recipe(
 @router.put("/{rid}")
 async def update_recipe(
     rid: int,
-    payload: RecipeUpdate,
     req: Request,
+    raw: dict = Body(...),
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
+    reject_legacy_qty_keys(raw)
+    payload = RecipeUpdate(**raw)
+
     require_owner_commit(req)
     recipe = db.get(Recipe, rid)
     if not recipe:
         raise HTTPException(404, "recipe not found")
+
     if payload.name is not None:
         recipe.name = payload.name
     if payload.code is not None:
         recipe.code = payload.code
     if payload.output_item_id is not None:
         recipe.output_item_id = payload.output_item_id
-    recipe.output_qty = 1
+
+    output_item = db.get(Item, recipe.output_item_id) if recipe.output_item_id else None
+    if not output_item:
+        raise HTTPException(404, "output item not found")
+
+    quantity_decimal = payload.quantity_decimal if payload.quantity_decimal is not None else _to_decimal_string(
+        from_base(int(recipe.output_qty or 0), _resolve_uom_for_item(output_item), output_item.dimension)
+    )
+    output_uom = payload.uom if payload.uom is not None else _resolve_uom_for_item(output_item)
+    recipe.output_qty = normalize_quantity_to_base_int(
+        quantity_decimal=quantity_decimal,
+        uom=output_uom,
+        dimension=output_item.dimension,
+    )
+
     if payload.archived is not None:
         recipe.archived = bool(payload.archived)
     if payload.notes is not None:
         recipe.notes = payload.notes
+
     db.query(RecipeItem).filter(RecipeItem.recipe_id == rid).delete()
     for idx, it in enumerate(payload.items or []):
-        if it.qty_required <= 0:
-            raise HTTPException(status_code=400, detail="qty_required must be > 0")
+        item = db.get(Item, it.item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail=f"item_not_found:{it.item_id}")
+        qty_required_base = normalize_quantity_to_base_int(
+            quantity_decimal=it.quantity_decimal,
+            uom=it.uom,
+            dimension=item.dimension,
+        )
+        if qty_required_base <= 0:
+            raise HTTPException(status_code=400, detail="quantity_decimal must be > 0")
         db.add(
             RecipeItem(
                 recipe_id=rid,
                 item_id=it.item_id,
-                qty_required=it.qty_required,
+                qty_required=qty_required_base,
                 is_optional=it.optional,
                 sort_order=it.sort or idx,
             )
         )
+
     db.commit()
     db.refresh(recipe)
     _append_recipe_journal({
@@ -245,7 +326,7 @@ async def delete_recipe(
     _writes: None = Depends(require_writes),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
-): 
+):
     require_owner_commit(req)
     r = db.get(Recipe, recipe_id)
     if not r:
@@ -264,3 +345,7 @@ async def delete_recipe(
         }
     )
     return {"ok": True, "deleted": recipe_id}
+
+
+if sys.version_info < (3, 11):
+    pass

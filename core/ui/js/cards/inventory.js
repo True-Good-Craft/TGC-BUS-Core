@@ -3,6 +3,7 @@
 
 import { apiGetJson, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
 import * as canonical from '../api/canonical.js';
+import { fromBaseUnitPrice, fmtMoney } from '../lib/units.js';
 import { fromBaseQty, fromBaseUnitPrice, fmtQty, fmtMoney } from '../lib/units.js';
 import { unitOptionsList, dimensionForUnit, DIM_DEFAULTS_IMPERIAL, DIM_DEFAULTS_METRIC } from '../lib/units.js';
 
@@ -132,20 +133,17 @@ function toast(message, tone = 'ok') {
   }, 2000);
 }
 
-// Compute list quantity from base every time to avoid legacy server scaling (ea=0.001).
 function formatOnHandDisplay(item) {
-  const base =
-    (typeof item?.stock_on_hand_int === 'number') ? item.stock_on_hand_int :
-    (typeof item?.quantity_int === 'number') ? item.quantity_int : 0;
-  const unit =
-    item?.display_unit ||
-    (item?.dimension === 'area' ? 'm2' :
-     item?.dimension === 'length' ? 'm' :
-     item?.dimension === 'volume' ? 'l' :
-     (item?.dimension === 'mass' || item?.dimension === 'weight') ? 'g' : 'ea');
-  const dim = dimensionForUnit(unit) || item?.dimension || 'count';
-  const val = fromBaseQty(base, unit, dim);
-  return `${fmtQty(val)} ${unit}`;
+  if (item?.stock_on_hand_display) {
+    return String(item.stock_on_hand_display);
+  }
+  if (item?.quantity_decimal != null && item?.uom) {
+    return `${item.quantity_decimal} ${item.uom}`;
+  }
+  if (item?.quantity_display?.value != null && item?.quantity_display?.unit) {
+    return `${item.quantity_display.value} ${item.quantity_display.unit}`;
+  }
+  return '—';
 }
 
 function renderTable(state) {
@@ -412,14 +410,14 @@ export async function _mountInventory(container) {
     const qtyRow = document.createElement('div');
     qtyRow.className = 'field-row';
     const qtyLabel = document.createElement('label');
-    qtyLabel.textContent = 'Quantity (base units)';
+    qtyLabel.textContent = 'Quantity';
     const qtyWrap = document.createElement('div');
     qtyWrap.className = 'field-input';
     const qtyInput = document.createElement('input');
     qtyInput.type = 'number';
-    qtyInput.min = '1';
-    qtyInput.step = '1';
-    qtyInput.value = '1000';
+    qtyInput.min = '0.001';
+    qtyInput.step = '0.001';
+    qtyInput.value = '1';
     qtyWrap.appendChild(qtyInput);
     qtyRow.append(qtyLabel, qtyWrap);
 
@@ -515,13 +513,13 @@ export async function _mountInventory(container) {
       errorBanner.textContent = '';
 
       const itemId = Number(itemSelect.value);
-      const qtyBase = Math.trunc(Number(qtyInput.value));
+      const quantityDecimal = String(decimalString(qtyInput.value));
       const refundDollars = Number(amountInput.value);
       const restockInventory = Boolean(restockInput.checked);
       const relatedSourceId = relatedInput.value.trim();
 
-      if (!Number.isInteger(itemId) || !Number.isInteger(qtyBase) || qtyBase <= 0) {
-        errorBanner.textContent = 'Select an item and enter a positive integer quantity.';
+      if (!Number.isInteger(itemId) || Number(quantityDecimal) <= 0) {
+        errorBanner.textContent = 'Select an item and enter a positive quantity.';
         errorBanner.hidden = false;
         return;
       }
@@ -543,7 +541,8 @@ export async function _mountInventory(container) {
         await ensureToken();
         const payload = {
           item_id: itemId,
-          qty_base: qtyBase,
+          quantity_decimal: quantityDecimal,
+          uom: itemSelect.options[itemSelect.selectedIndex]?.dataset?.uom || 'ea',
           refund_amount_cents: Math.round(refundDollars * 100),
           restock_inventory: restockInventory,
           related_source_id: relatedSourceId || null,
@@ -730,8 +729,6 @@ let _detailsObserverBound = false;
 function enhanceDetailsPanel(panel) {
   if (!panel || _processedDetailsPanels.has(panel)) return;
   const unit = panel.dataset.displayUnit || 'ea';
-  const dimRaw = panel.dataset.dimension || 'count';
-  const dim = dimRaw === 'weight' ? 'mass' : dimRaw;
 
   // Hide duplicate Price/Location rows (label + value)
   panel.querySelectorAll('.kv').forEach((kv) => {
@@ -751,10 +748,8 @@ function enhanceDetailsPanel(panel) {
     const baseRemain = parseInt(m[1], 10);
     const baseOrig = parseInt(m[2], 10);
     if (Number.isNaN(baseRemain) || Number.isNaN(baseOrig)) continue;
-    const remain = fmtQty(fromBaseQty(baseRemain, unit, dim));
-    const orig = fmtQty(fromBaseQty(baseOrig, unit, dim));
-    n.textContent = `${remain} / ${orig} ${unit}`;
-    n.title = `${baseRemain.toLocaleString()} / ${baseOrig.toLocaleString()} (base)`;
+    n.textContent = `${baseRemain} / ${baseOrig} ${unit}`;
+    n.title = `${baseRemain.toLocaleString()} / ${baseOrig.toLocaleString()}`;
     break;
   }
 
