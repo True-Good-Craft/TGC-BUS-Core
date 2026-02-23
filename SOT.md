@@ -686,3 +686,59 @@ a1fb6db
 
 ## (4) NOTES / FOLLOW-UPS (NON-BLOCKING)
 - Optional: unify round_half_up_cents helper with manufacturing/shared utility to avoid duplication.
+
+### v0.11.0 — 2026-02-22 — Smoke Harness Canonical Contract Alignment
+- Smoke scripts/tests use canonical /app endpoints and canonical quantity payloads
+- Smoke runs twice on fresh DBs (BUS_DB override) to prove determinism
+
+# SoT DELTA — Smoke Harness Canonical Contract Alignment — POST-WORK VERIFIED
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Smoke Harness Canonical Contract Alignment (Endpoints + Quantity Contract) — POST-WORK VERIFIED
+DATE: 2026-02-22
+SCOPE: smoke scripts/tests, canonical endpoints usage, canonical quantity payloads, fresh DB determinism
+COMMIT: b3fce38
+BRANCH: docs/smoke-postwork-sot
+[/DELTA HEADER]
+
+## (1) IMPLEMENTED CHANGES (CLAIMS)
+- Smoke harness uses canonical /app endpoints only (no legacy endpoint calls).
+- Smoke payloads use canonical quantity contract only: quantity_decimal (string) + uom (string).
+- Smoke avoids deprecated keys: qty, qty_base, quantity, quantity_int, output_qty.
+- Smoke replaces legacy /app/consume usage with canonical /app/stock/out (reason="other", record_cash_event=false) where needed.
+- Smoke executes twice on fresh DBs using BUS_DB override to prove determinism.
+
+## (2) EVIDENCE (PASTE VERBATIM OUTPUTS)
+
+```text
+docs/smoke-postwork-sot
+b3fce38
+```
+
+```text
+..                                                                       [100%]
+2 passed in 3.06s
+```
+
+```text
+..                                                                       [100%]
+2 passed in 2.97s
+```
+
+```text
+
+```
+
+```text
+[db] BUS_DB (APPDATA) -> /root/.buscore/app/app.db
+TARGET CHECKS:
+POST   /app/stock/in => PRESENT
+POST   /app/stock/out => PRESENT
+POST   /app/purchase => PRESENT
+GET    /app/ledger/history => PRESENT
+POST   /app/manufacture => PRESENT
+```
+
+## (3) NOTES / FOLLOW-UPS (NON-BLOCKING)
+- PowerShell runner exists for Windows-local full smoke execution; CI may rely on python smoke evidence.
