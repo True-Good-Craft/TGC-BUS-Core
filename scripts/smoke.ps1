@@ -162,6 +162,30 @@ function Parse-ErrorDetail {
   }
 }
 
+function Extract-Movements {
+  param($resp)
+
+  if ($null -eq $resp) { return @() }
+
+  # Case 1: already an array/list (but not an envelope object)
+  if ($resp -is [System.Collections.IEnumerable] -and -not ($resp -is [string])) {
+    $props = $resp.PSObject.Properties.Name
+    if ($props -contains "movements" -or $props -contains "items" -or $props -contains "entries") {
+      # fall through to envelope handling
+    } else {
+      return @($resp)
+    }
+  }
+
+  # Case 2: envelope forms
+  $p = $resp.PSObject.Properties.Name
+  if ($p -contains "movements") { return @($resp.movements) }
+  if ($p -contains "items") { return @($resp.items) }
+  if ($p -contains "entries") { return @($resp.entries) }
+
+  return @()
+}
+
 $script:RunLabel = (Get-Date -Format "yyyyMMddHHmmss")
 $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
 
@@ -198,24 +222,27 @@ try {
 function Get-LatestMovementId {
   # Returns the highest movement id currently observed
   $r = Invoke-Json GET (LedgerHistoryUrl -Limit 1) $null
-  if ($r -and $r.movements -and $r.movements.Count -gt 0) { return [int]$r.movements[0].id }
+  $moves = @(Extract-Movements $r)
+  if ($moves.Count -gt 0) { return [int]$moves[0].id }
   return 0
 }
 
 function Get-RunMovements {
   param([int]$RunId, [int]$Limit = 200)
   $r = Invoke-Json GET (LedgerHistoryUrl -Limit $Limit) $null
-  if (-not $r -or -not $r.movements) { return @() }
+  $moves = @(Extract-Movements $r)
+  if ($moves.Count -eq 0) { return @() }
   # Filter to manufacturing movements of this run (expects source_kind/manufacturing & source_id=run_id)
-  $list = @($r.movements | Where-Object { $_.source_kind -eq "manufacturing" -and $_.source_id -eq "$RunId" })
+  $list = @($moves | Where-Object { $_.source_kind -eq "manufacturing" -and $_.source_id -eq "$RunId" })
   return $list
 }
 
 function Get-MovementsByItem {
   param([int]$ItemId, [int]$Limit = 200)
   $resp = Invoke-Json GET (LedgerHistoryUrl -Limit $Limit) $null
-  if (-not $resp -or -not $resp.movements) { return @() }
-  return @($resp.movements | Where-Object { $_.item_id -eq $ItemId })
+  $moves = @(Extract-Movements $resp)
+  if ($moves.Count -eq 0) { return @() }
+  return @($moves | Where-Object { $_.item_id -eq $ItemId })
 }
 
 function Get-JournalDir {
@@ -297,10 +324,16 @@ if ($itemASeedPositive.Count -ge 1) {
 } else {
   $posRespJson = ""
   try { $posRespJson = ($pos.resp | ConvertTo-Json -Depth 10 -Compress) } catch { $posRespJson = "<unserializable>" }
+  $itemALedgerResp = Invoke-Json GET (LedgerHistoryUrl -Limit 200) $null
+  $itemALedgerKeys = ""
+  try { $itemALedgerKeys = (($itemALedgerResp.PSObject.Properties.Name) -join ",") } catch { $itemALedgerKeys = "" }
+  $itemALedgerExtracted = @(Extract-Movements $itemALedgerResp)
   $itemALedgerDebug = @($itemAMovesAfterStockIn | Select-Object -First 10 | ForEach-Object {
     "{0}|{1}|{2}|{3}|{4}" -f ([string]$_.id), ([string]$_.source_kind), ([string]$_.source_id), ([string]$_.quantity_decimal), ([string]$_.uom)
   })
   Info ("Stock-in response: {0}" -f $posRespJson)
+  Info ("Ledger response keys: {0}" -f $itemALedgerKeys)
+  Info ("Extracted movement count: {0}" -f $itemALedgerExtracted.Count)
   Info ("Item A first 10 ledger rows after stock/in: {0}" -f ($itemALedgerDebug -join "; "))
   Fail "Stock in returned success but no positive Item A movement persisted"
   exit 1
@@ -789,7 +822,8 @@ $negOnHand = @($itemSnapshot | Where-Object { [double]$_.qty_stored -lt 0 })
 if ($negOnHand.Count -eq 0) { Pass "No negative on-hand quantities" } else { Fail "Found negative on-hand quantities"; exit 1 }
 
 $movementSnapshot = Invoke-Json GET (LedgerHistoryUrl -Limit 200) $null
-$overs = @($movementSnapshot.movements | Where-Object { [int]$_.is_oversold -ne 0 })
+$movementSnapshotRows = @(Extract-Movements $movementSnapshot)
+$overs = @($movementSnapshotRows | Where-Object { [int]$_.is_oversold -ne 0 })
 $mfgOvers = @($overs | Where-Object { $_.source_kind -eq "manufacturing" })
 if ($mfgOvers.Count -eq 0 -and $overs.Count -eq 0) { Pass "No oversold flags present" } elseif ($mfgOvers.Count -gt 0) { Fail "Oversold flags present on manufacturing entries"; exit 1 } else { Fail "Unexpected oversold flags present"; exit 1 }
 
