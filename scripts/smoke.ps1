@@ -290,6 +290,22 @@ $pos = Try-Invoke {
 }
 if ($pos.ok) { Pass "Positive stock in (+30) on Item A accepted" } else { Fail "Positive stock in failed"; exit 1 }
 
+$itemAMovesAfterStockIn = @(Get-MovementsByItem -ItemId $itemA.id -Limit 200)
+$itemASeedPositive = @($itemAMovesAfterStockIn | Where-Object { [string]$_.uom -eq "ea" -and (ParseDec([string]$_.quantity_decimal)) -gt 0 })
+if ($itemASeedPositive.Count -ge 1) {
+  Pass "Stock in persistence sanity check found Item A positive movement in ea"
+} else {
+  $posRespJson = ""
+  try { $posRespJson = ($pos.resp | ConvertTo-Json -Depth 10 -Compress) } catch { $posRespJson = "<unserializable>" }
+  $itemALedgerDebug = @($itemAMovesAfterStockIn | Select-Object -First 10 | ForEach-Object {
+    "{0}|{1}|{2}|{3}|{4}" -f ([string]$_.id), ([string]$_.source_kind), ([string]$_.source_id), ([string]$_.quantity_decimal), ([string]$_.uom)
+  })
+  Info ("Stock-in response: {0}" -f $posRespJson)
+  Info ("Item A first 10 ledger rows after stock/in: {0}" -f ($itemALedgerDebug -join "; "))
+  Fail "Stock in returned success but no positive Item A movement persisted"
+  exit 1
+}
+
 $neg = Try-Invoke {
   Invoke-Json POST ($BaseUrl + "/app/stock/out") @{
     item_id = $itemA.id
@@ -664,7 +680,7 @@ $export = $resp
 # B) Mutate DB (create reversible change)
 Info "Applying reversible inventory mutation..."
 $mvBaseline = Get-LatestMovementId
-$mut = Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemA.id; qty_change = 5 }
+$mut = Invoke-Json POST ($BaseUrl + "/app/stock/in") @{ item_id = $itemA.id; quantity_decimal = "5"; uom = "ea"; unit_cost_cents = 100; source_id = "smoke-mutation" }
 $mvAfterMut = Get-LatestMovementId
 if ($mvAfterMut -gt $mvBaseline) { Pass "Movement id advanced after mutation" } else { Fail "Expected movement id to advance after mutation"; exit 1 }
 
@@ -800,11 +816,21 @@ foreach ($itm in $targetItems) {
   $current = $allItems | Where-Object { $_.id -eq $id }
 
   if ($current) {
-    [double]$onHandQty = $current.qty_stored
-    if ($onHandQty -ne 0) {
-      $delta = -$onHandQty
-      $adj = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $id; qty_change = $delta; reason = "Smoke Test Cleanup" } }
-      if ($adj.ok) { Pass ("Zeroed inventory for Item {0} (delta={1})" -f $id, $delta) } else { Fail ("Failed to zero inventory for Item {0}" -f $id) }
+    [decimal]$onHandQty = [decimal]$current.qty_stored
+    if ($onHandQty -ne [decimal]0) {
+      $absQty = [decimal]::Abs($onHandQty)
+      $qtyText = $absQty.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+      if ($onHandQty -gt [decimal]0) {
+        $zeroTry = Try-Invoke {
+          Invoke-Json POST ($BaseUrl + "/app/stock/out") @{ item_id = $id; quantity_decimal = $qtyText; uom = "ea"; reason = "loss"; note = "Smoke Test Cleanup"; record_cash_event = $false }
+        }
+      } else {
+        $zeroTry = Try-Invoke {
+          Invoke-Json POST ($BaseUrl + "/app/stock/in") @{ item_id = $id; quantity_decimal = $qtyText; uom = "ea"; unit_cost_cents = 0; source_id = "smoke-cleanup" }
+        }
+      }
+
+      if ($zeroTry.ok) { Pass ("Zeroed inventory for Item {0} (qty={1})" -f $id, $qtyText) } else { Fail ("Failed to zero inventory for Item {0}" -f $id) }
     } else {
       Pass ("Item {0} already at zero inventory" -f $id)
     }
