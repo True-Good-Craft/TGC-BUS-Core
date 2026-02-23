@@ -572,3 +572,60 @@ POST   /app/manufacture => PRESENT
 ## (4) NOTES / KNOWN FOLLOW-UPS (NON-BLOCKING)
 - Cost authority corrections (per_output_unit_cost_cents derived from human qty) are Phase 2B.
 - Finance COGS authority corrections are Phase 2C.
+
+### v0.11.0 — 2026-02-22 — Phase 2B Manufacturing Cost Authority
+- Allocation costing uses base→human conversion once (Decimal), no float()
+- Per-output cost divides by human output quantity
+- Regression test locks human-unit cost authority (count dimension)
+
+# SoT DELTA — Manufacturing Base-Unit Convergence — Phase 2B — POST-WORK VERIFIED
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Manufacturing Base-Unit Convergence — Phase 2B (Cost Authority) — POST-WORK VERIFIED
+DATE: 2026-02-22
+SCOPE: manufacturing cost authority, base→human conversion once, float ban, regression test lock
+COMMIT: 0095935
+BRANCH: docs/phase2b-postwork-sot
+[/DELTA HEADER]
+
+## (1) IMPLEMENTED CHANGES (CLAIMS)
+- Manufacturing costing now treats unit_cost_cents as cents per human unit (item.uom).
+- Allocation cost uses base→human conversion exactly once per allocation quantity.
+- per_output_unit_cost_cents divides by human output quantity (never output_qty_base).
+- No float() usage exists in manufacturing cost computations.
+- Added regression test enforcing human-unit cost authority for count-dimension items (ea with base mc).
+
+## (2) FORBIDDEN PATTERNS (NOW ENFORCED)
+- No float() in manufacturing service costing path.
+- No division by output_qty_base for per-output cost.
+- No multiplication of unit_cost_cents by alloc["qty"] directly.
+
+## (3) EVIDENCE (PASTE VERBATIM OUTPUTS)
+
+```text
+docs/phase2b-postwork-sot
+0095935
+```
+
+```text
+........................................................................ [ 98%]
+.                                                                        [100%]
+73 passed, 2 skipped in 26.20s
+```
+
+```text
+
+```
+
+```text
+
+```
+
+```text
+120:def test_cost_authority_uses_human_units_for_count_dimension(request: pytest.FixtureRequest):
+```
+
+## (4) NOTES / FOLLOW-UPS (NON-BLOCKING)
+- Finance COGS cost authority is Phase 2C.
+- Optional tightening later: make _basis_uom_for_item treat multiplier==0 as invalid (fallback to default_unit_for).
