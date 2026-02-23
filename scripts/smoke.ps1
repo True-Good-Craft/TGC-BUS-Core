@@ -8,7 +8,7 @@
     - /openapi.json (feature presence)
     - /app/items
     - /app/contacts
-    - /app/adjust
+    - /app/stock/in
     - /app/purchase
     - /app/stock/out
     - /app/recipes  (POST/PUT)
@@ -274,23 +274,56 @@ $delContact = Try-Invoke { Invoke-RestMethod -Method Delete -Uri ($BaseUrl + "/a
 if ($delContact.ok) { Pass "Contact deleted" } else { Fail "Contact delete failed"; exit 1 }
 
 # --------------------------------------
-# 3) Adjustments: FIFO, shortage=400
+# 3) Inventory Mutations: stock/in + stock/out, shortage=400
 # --------------------------------------
 Step "3. Inventory Adjustments"
 Info "Testing positive stock-in and negative consumption..."
-$beforeAdjId = Get-LatestMovementId
-$pos = Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemA.id; qty_change = 30 }
-$afterPosId = Get-LatestMovementId
-if ($pos) { Pass "Positive adjust (+30) on Item A accepted" } else { Fail "Positive adjust failed"; exit 1 }
-if ($afterPosId -gt $beforeAdjId) { Pass "Movement recorded for positive adjust" } else { Fail "Movement count did not advance for positive adjust"; exit 1 }
 
-$neg = Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemA.id; qty_change = -4 }
-$afterNegId = Get-LatestMovementId
-if ($neg) { Pass "Negative adjust (-4) on Item A accepted" } else { Fail "Negative adjust failed"; exit 1 }
-if ($afterNegId -gt $afterPosId) { Pass "Movement recorded for negative adjust" } else { Fail "Movement count did not advance for negative adjust"; exit 1 }
+$pos = Try-Invoke {
+  Invoke-Json POST ($BaseUrl + "/app/stock/in") @{
+    item_id = $itemA.id
+    quantity_decimal = "30"
+    uom = "ea"
+    unit_cost_cents = 100
+    source_id = "smoke-seed"
+  }
+}
+if ($pos.ok) { Pass "Positive stock in (+30) on Item A accepted" } else { Fail "Positive stock in failed"; exit 1 }
 
-$negTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemB.id; qty_change = -1000000 } }
-if (-not $negTry.ok -and $negTry.err.Exception.Response.StatusCode.value__ -eq 400) { Pass "Oversized negative adjust rejected (400)" } else { Fail "Oversized negative adjust should be 400"; exit 1 }
+$neg = Try-Invoke {
+  Invoke-Json POST ($BaseUrl + "/app/stock/out") @{
+    item_id = $itemA.id
+    quantity_decimal = "4"
+    uom = "ea"
+    reason = "loss"
+    note = "smoke consume"
+    record_cash_event = $false
+  }
+}
+if ($neg.ok) { Pass "Negative stock out (-4) on Item A accepted" } else { Fail "Negative stock out failed"; exit 1 }
+
+$negTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/stock/out") @{ item_id = $itemA.id; quantity_decimal = "999999"; uom = "ea"; reason = "loss"; note = "smoke oversize"; record_cash_event = $false } }
+if (-not $negTry.ok -and $negTry.err.Exception.Response.StatusCode.value__ -eq 400) { Pass "Oversized negative stock out rejected (400)" } else { Fail "Oversized negative stock out should be 400"; exit 1 }
+
+$itemAMoves = @(Get-MovementsByItem -ItemId $itemA.id -Limit 200)
+$itemAPositive = @($itemAMoves | Where-Object { (ParseDec([string]$_.quantity_decimal)) -gt 0 -and [string]$_.uom -eq "ea" })
+$itemANegative = @($itemAMoves | Where-Object { (ParseDec([string]$_.quantity_decimal)) -lt 0 -and [string]$_.uom -eq "ea" })
+if ($itemAPositive.Count -ge 1) { Pass "Item A positive movement recorded in ea" } else { Fail "Missing Item A positive movement in ea"; exit 1 }
+if ($itemANegative.Count -ge 1) { Pass "Item A negative movement recorded in ea" } else { Fail "Missing Item A negative movement in ea"; exit 1 }
+
+$itemANet = [decimal]0
+foreach ($m in $itemAMoves) { $itemANet += ParseDec([string]$m.quantity_decimal) }
+$itemANetRounded = [decimal]::Round($itemANet, 2, [System.MidpointRounding]::AwayFromZero)
+if ($itemANetRounded -eq [decimal]26) {
+  Pass "Item A net movement for Step 3 is 26 ea"
+} else {
+  $itemADebug = @($itemAMoves | Select-Object -First 10 | ForEach-Object {
+    "{0}|{1}|{2}|{3}|{4}" -f ([string]$_.id), ([string]$_.source_kind), ([string]$_.source_id), ([string]$_.quantity_decimal), ([string]$_.uom)
+  })
+  Info ("Item A Step 3 movement debug: {0}" -f ($itemADebug -join "; "))
+  Fail ("Unexpected Item A Step 3 net quantity: {0} (rounded={1})" -f $itemANet, $itemANetRounded)
+  exit 1
+}
 
 # --------------------------------------
 # 4) FIFO Purchase + Consume
@@ -317,8 +350,34 @@ foreach ($m in $dMoves) { $net += ParseDec([string]$m.quantity_decimal) }
 $rounded = [decimal]::Round($net, 2, [System.MidpointRounding]::AwayFromZero)
 if ($rounded -eq [decimal]3) { Pass "Remaining qty expected (3 units)" } else { Fail ("Unexpected remaining qty for Item D: {0} (rounded={1})" -f $net, $rounded); exit 1 }
 
-$orderedDMoves = @($dMoves | Sort-Object id)
-if ($orderedDMoves.Count -ge 2 -and $orderedDMoves[0].source_kind -eq "purchase" -and $orderedDMoves[1].source_kind -eq "consume") { Pass "FIFO ordering honored (purchase then consume)" } else { Fail "FIFO movement ordering incorrect"; exit 1 }
+$hasCreatedAt = $dMoves.Count -gt 0 -and ($dMoves[0].PSObject.Properties.Name -contains "created_at")
+if ($hasCreatedAt) {
+  $orderedDMoves = @($dMoves | Sort-Object created_at)
+} else {
+  $orderedDMoves = @($dMoves | Sort-Object id)
+}
+
+$firstIsPurchasePositive = $false
+$secondIsNegative = $false
+if ($orderedDMoves.Count -ge 2) {
+  $firstQty = ParseDec([string]$orderedDMoves[0].quantity_decimal)
+  $secondQty = ParseDec([string]$orderedDMoves[1].quantity_decimal)
+  $firstIsPurchasePositive = ($orderedDMoves[0].source_kind -eq "purchase" -and $firstQty -gt 0)
+  $secondIsNegative = ($secondQty -lt 0)
+}
+
+if ($orderedDMoves.Count -ge 2 -and $firstIsPurchasePositive -and $secondIsNegative) {
+  Pass "FIFO ordering honored (purchase then negative movement)"
+} else {
+  $debugMoves = @($orderedDMoves | Select-Object -First 5 | ForEach-Object {
+    $createdAt = ""
+    if ($_.PSObject.Properties.Name -contains "created_at") { $createdAt = [string]$_.created_at }
+    "{0}|{1}|{2}|{3}|{4}|{5}" -f ([string]$_.id), $createdAt, ([string]$_.source_kind), ([string]$_.source_id), ([string]$_.quantity_decimal), ([string]$_.uom)
+  })
+  Info ("Item D movement debug (first 5): {0}" -f ($debugMoves -join "; "))
+  Fail "FIFO movement ordering incorrect"
+  exit 1
+}
 
 $inventoryJournal = Join-Path $journalDir 'inventory.jsonl'
 $invLineCount = 0
