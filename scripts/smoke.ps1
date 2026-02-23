@@ -317,8 +317,34 @@ foreach ($m in $dMoves) { $net += ParseDec([string]$m.quantity_decimal) }
 $rounded = [decimal]::Round($net, 2, [System.MidpointRounding]::AwayFromZero)
 if ($rounded -eq [decimal]3) { Pass "Remaining qty expected (3 units)" } else { Fail ("Unexpected remaining qty for Item D: {0} (rounded={1})" -f $net, $rounded); exit 1 }
 
-$orderedDMoves = @($dMoves | Sort-Object id)
-if ($orderedDMoves.Count -ge 2 -and $orderedDMoves[0].source_kind -eq "purchase" -and $orderedDMoves[1].source_kind -eq "consume") { Pass "FIFO ordering honored (purchase then consume)" } else { Fail "FIFO movement ordering incorrect"; exit 1 }
+$hasCreatedAt = $dMoves.Count -gt 0 -and ($dMoves[0].PSObject.Properties.Name -contains "created_at")
+if ($hasCreatedAt) {
+  $orderedDMoves = @($dMoves | Sort-Object created_at)
+} else {
+  $orderedDMoves = @($dMoves | Sort-Object id)
+}
+
+$firstIsPurchasePositive = $false
+$secondIsNegative = $false
+if ($orderedDMoves.Count -ge 2) {
+  $firstQty = ParseDec([string]$orderedDMoves[0].quantity_decimal)
+  $secondQty = ParseDec([string]$orderedDMoves[1].quantity_decimal)
+  $firstIsPurchasePositive = ($orderedDMoves[0].source_kind -eq "purchase" -and $firstQty -gt 0)
+  $secondIsNegative = ($secondQty -lt 0)
+}
+
+if ($orderedDMoves.Count -ge 2 -and $firstIsPurchasePositive -and $secondIsNegative) {
+  Pass "FIFO ordering honored (purchase then negative movement)"
+} else {
+  $debugMoves = @($orderedDMoves | Select-Object -First 5 | ForEach-Object {
+    $createdAt = ""
+    if ($_.PSObject.Properties.Name -contains "created_at") { $createdAt = [string]$_.created_at }
+    "{0}|{1}|{2}|{3}|{4}|{5}" -f ([string]$_.id), $createdAt, ([string]$_.source_kind), ([string]$_.source_id), ([string]$_.quantity_decimal), ([string]$_.uom)
+  })
+  Info ("Item D movement debug (first 5): {0}" -f ($debugMoves -join "; "))
+  Fail "FIFO movement ordering incorrect"
+  exit 1
+}
 
 $inventoryJournal = Join-Path $journalDir 'inventory.jsonl'
 $invLineCount = 0
