@@ -230,11 +230,28 @@ $journalDir = Get-JournalDir
 # -----------------------------
 Step "1. Items Definition"
 Info "Creating basic items..."
-$itemA = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-A-$($RunLabel)" }
-$itemB = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-B-$($RunLabel)" }
-$itemC = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-C-$($RunLabel)" }
-$itemD = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-D-$($RunLabel)" }
+$itemA = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-A-$($RunLabel)"; uom = "ea"; dimension = "count" }
+$itemB = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-B-$($RunLabel)"; uom = "ea"; dimension = "count" }
+$itemC = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-C-$($RunLabel)"; uom = "ea"; dimension = "count" }
+$itemD = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-D-$($RunLabel)"; uom = "ea"; dimension = "count" }
 if ( ($itemA.id -as [int]) -gt 0 -and ($itemB.id -as [int]) -gt 0 -and ($itemC.id -as [int]) -gt 0 -and ($itemD.id -as [int]) -gt 0 ) { Pass "Created items A, B, C, D successfully" } else { Fail "Item creation failed"; exit 1 }
+
+foreach ($created in @($itemA, $itemB, $itemC, $itemD)) {
+  $itemId = $created.id
+  $itemUom = [string]$created.uom
+  if ($itemUom -ne "ea") {
+    Fail ("Created item {0} has unexpected uom='{1}' and dimension='{2}'" -f $itemId, $itemUom, [string]$created.dimension)
+    exit 1
+  }
+  if ($created.PSObject.Properties.Name -contains "dimension") {
+    $itemDimension = [string]$created.dimension
+    if ($itemDimension -ne "count") {
+      Fail ("Created item {0} has unexpected dimension='{1}' and uom='{2}'" -f $itemId, $itemDimension, $itemUom)
+      exit 1
+    }
+  }
+}
+Pass "Created items returned expected uom=ea (and dimension=count when present)"
 
 # --------------------------------------
 # 2) Contacts CRUD
@@ -287,6 +304,14 @@ $consume = Invoke-Json POST ($BaseUrl + "/app/stock/out") @{ item_id = $itemD.id
 if ($consume.ok) { Pass "Stock out succeeded" } else { Fail "Stock out failed"; exit 1 }
 
 $dMoves = Get-MovementsByItem -ItemId $itemD.id -Limit 50
+if ($dMoves.Count -gt 0 -and ($dMoves[0].PSObject.Properties.Name -contains "uom")) {
+  $distinctMoveUoms = @($dMoves | ForEach-Object { [string]$_.uom } | Sort-Object -Unique)
+  if ($distinctMoveUoms.Count -ne 1 -or $distinctMoveUoms[0] -ne "ea") {
+    Fail ("Item D movements returned unexpected uom values: {0}" -f ($distinctMoveUoms -join ", "))
+    exit 1
+  }
+  Pass "Item D movement uom is consistently ea"
+}
 $net = [decimal]0
 foreach ($m in $dMoves) { $net += ParseDec([string]$m.quantity_decimal) }
 $rounded = [decimal]::Round($net, 2, [System.MidpointRounding]::AwayFromZero)
