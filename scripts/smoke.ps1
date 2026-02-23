@@ -49,8 +49,9 @@ function Info       { param([string]$m) Write-Host ("  [INFO] {0}" -f $m) -Foreg
 function Pass       { param([string]$m) Write-Host ("  [PASS] {0}" -f $m) -ForegroundColor Green }
 function Fail       { param([string]$m) Write-Host ("  [FAIL] {0}" -f $m) -ForegroundColor Red }
 function Step       { param([string]$m) Write-Host ""; Write-Host $m -ForegroundColor Cyan }
+function ParseDec([string]$s) { return [decimal]::Parse($s, [System.Globalization.CultureInfo]::InvariantCulture) }
 function RoundHalfUpCents([decimal]$v) { return [int][decimal]::Round($v, 0, [System.MidpointRounding]::AwayFromZero) }
-function LedgerHistoryUrl([int]$Limit) { return "$BaseUrl/app/ledger/history?limit=$Limit&include_base=1" }
+function LedgerHistoryUrl([int]$Limit) { return "$BaseUrl/app/ledger/history?limit=$Limit" }
 
 # A single session object to persist cookies (from /session/token)
 $script:Session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
@@ -271,7 +272,7 @@ $afterNegId = Get-LatestMovementId
 if ($neg) { Pass "Negative adjust (-4) on Item A accepted" } else { Fail "Negative adjust failed"; exit 1 }
 if ($afterNegId -gt $afterPosId) { Pass "Movement recorded for negative adjust" } else { Fail "Movement count did not advance for negative adjust"; exit 1 }
 
-$negTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemB.id; qty_change = -999 } }
+$negTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/adjust") @{ item_id = $itemB.id; qty_change = -1000000 } }
 if (-not $negTry.ok -and $negTry.err.Exception.Response.StatusCode.value__ -eq 400) { Pass "Oversized negative adjust rejected (400)" } else { Fail "Oversized negative adjust should be 400"; exit 1 }
 
 # --------------------------------------
@@ -286,11 +287,10 @@ $consume = Invoke-Json POST ($BaseUrl + "/app/stock/out") @{ item_id = $itemD.id
 if ($consume.ok) { Pass "Stock out succeeded" } else { Fail "Stock out failed"; exit 1 }
 
 $dMoves = Get-MovementsByItem -ItemId $itemD.id -Limit 50
-$net = 0
-foreach ($m in $dMoves) { $net += [double]$m.qty_change }
-# PS 5.1-safe rounding + tolerance
-$rounded = [Math]::Round([double]$net, 2)
-if ([Math]::Abs($rounded - 3.0) -lt 0.001) { Pass "Remaining qty expected (3 units)" } else { Fail ("Unexpected remaining qty for Item D: {0} (rounded={1})" -f $net, $rounded); exit 1 }
+$net = [decimal]0
+foreach ($m in $dMoves) { $net += ParseDec([string]$m.quantity_decimal) }
+$rounded = [decimal]::Round($net, 2, [System.MidpointRounding]::AwayFromZero)
+if ($rounded -eq [decimal]3) { Pass "Remaining qty expected (3 units)" } else { Fail ("Unexpected remaining qty for Item D: {0} (rounded={1})" -f $net, $rounded); exit 1 }
 
 $orderedDMoves = @($dMoves | Sort-Object id)
 if ($orderedDMoves.Count -ge 2 -and $orderedDMoves[0].source_kind -eq "purchase" -and $orderedDMoves[1].source_kind -eq "consume") { Pass "FIFO ordering honored (purchase then consume)" } else { Fail "FIFO movement ordering incorrect"; exit 1 }
@@ -381,7 +381,7 @@ Pass "Run completed successfully"
 
 Info "Validation checks..."
 $badRun = Try-Invoke {
-  Invoke-Json POST ($BaseUrl + "/app/manufacture") @{ recipe_id = $rec.id; quantity_decimal = "999"; uom = "ea" }
+  Invoke-Json POST ($BaseUrl + "/app/manufacture") @{ recipe_id = $rec.id; quantity_decimal = "1000000"; uom = "ea" }
 }
 $badStatus = 0
 if ($badRun.ok) { $badStatus = 200 }
@@ -425,7 +425,7 @@ $adhocShort = Try-Invoke {
   Invoke-Json POST ($BaseUrl + "/app/manufacture") @{
     output_item_id = $itemC.id
     quantity_decimal = "1"
-    uom = "ea"; components = @(@{ item_id = $itemB.id; quantity_decimal = "999"; uom = "ea" })
+    uom = "ea"; components = @(@{ item_id = $itemB.id; quantity_decimal = "1000000"; uom = "ea" })
   }
 }
 $adhocStatus = 0
@@ -485,7 +485,7 @@ if ($emptyStatus -eq 400) { Pass "Ad-hoc with empty components[] rejected (400)"
 # 5.3 fail-fast implies no writes (use latest movement id snapshot)
 Info "Checking consistency (Fail-Fast & Atomicity)..."
 $mvIdBefore = Get-LatestMovementId
-$ff = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/manufacture") @{ recipe_id = $rec.id; quantity_decimal = "99999"; uom = "ea" } }
+$ff = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/manufacture") @{ recipe_id = $rec.id; quantity_decimal = "1000000"; uom = "ea" } }
 if (-not $ff.ok -and $ff.err.Exception.Response.StatusCode.value__ -eq 400) {
   $mvIdAfter = Get-LatestMovementId
   if ($mvIdAfter -eq $mvIdBefore) { Pass "Fail-fast produced no new movements" } else { Fail ("Fail-fast wrote movements (before={0}, after={1})" -f $mvIdBefore, $mvIdAfter); exit 1 }
@@ -495,8 +495,8 @@ if (-not $ff.ok -and $ff.err.Exception.Response.StatusCode.value__ -eq 400) {
 $ok2 = Invoke-Json POST ($BaseUrl + "/app/manufacture") @{ recipe_id = $rec.id; quantity_decimal = "2"; uom = "ea"; notes="atomic-check" }
 if ($ok2.status -ne "completed") { Fail "Second run not completed"; exit 1 }
 $runMovs = Get-RunMovements -RunId $ok2.run_id -Limit 200
-$consumes = @($runMovs | Where-Object { [double]$_.qty_change -lt 0 })
-$outputs  = @($runMovs | Where-Object { [double]$_.qty_change -gt 0 })
+$consumes = @($runMovs | Where-Object { (ParseDec([string]$_.quantity_decimal)) -lt 0 })
+$outputs  = @($runMovs | Where-Object { (ParseDec([string]$_.quantity_decimal)) -gt 0 })
 if ($consumes.Count -ge 1) { Pass "Atomic Run: consume movements present" } else { Fail "No consume movements for run $($ok2.run_id)"; exit 1 }
 if ($outputs.Count -eq 1)  { Pass "Atomic Run: exactly one output movement" } else { Fail "Expected exactly one output movement"; exit 1 }
 
@@ -505,15 +505,14 @@ Info "Checking Unit Cost & Oversold invariants..."
 $ok3 = Invoke-Json POST ($BaseUrl + "/app/manufacture") @{ recipe_id = $rec.id; quantity_decimal = "2"; uom = "ea"; notes="cost-check" }
 if ($ok3.status -ne "completed") { Fail "Cost Check Run not completed"; exit 1 }
 $mov3 = Get-RunMovements -RunId $ok3.run_id -Limit 200
-$consumed = @($mov3 | Where-Object { [double]$_.qty_change -lt 0 })
-$output   = @($mov3 | Where-Object { [double]$_.qty_change -gt 0 })
+$consumed = @($mov3 | Where-Object { (ParseDec([string]$_.quantity_decimal)) -lt 0 })
+$output   = @($mov3 | Where-Object { (ParseDec([string]$_.quantity_decimal)) -gt 0 })
 if ($output.Count -ne 1) { Fail "Cost check: expected one output movement"; exit 1 }
 
 [int64]$totalCents = 0
 foreach ($m in $consumed) {
-  $qtyAbs = [decimal]([math]::Abs([double]$m.qty_change))
-  $unit   = [decimal]([int]$m.unit_cost_cents)
-  $totalCents += [int64]($qtyAbs * $unit)
+  $qtyAbs = [decimal]([math]::Abs([double](ParseDec([string]$m.quantity_decimal))))
+  $totalCents += [int64]($qtyAbs * [decimal]([int]$m.unit_cost_cents))
 }
 $expectedUnit = RoundHalfUpCents([decimal]($totalCents / 2))
 if ([int]$output[0].unit_cost_cents -eq [int]$expectedUnit) {
