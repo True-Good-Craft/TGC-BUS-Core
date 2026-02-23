@@ -50,6 +50,7 @@ function Pass       { param([string]$m) Write-Host ("  [PASS] {0}" -f $m) -Foreg
 function Fail       { param([string]$m) Write-Host ("  [FAIL] {0}" -f $m) -ForegroundColor Red }
 function Step       { param([string]$m) Write-Host ""; Write-Host $m -ForegroundColor Cyan }
 function RoundHalfUpCents([decimal]$v) { return [int][decimal]::Round($v, 0, [System.MidpointRounding]::AwayFromZero) }
+function LedgerHistoryUrl([int]$Limit) { return "$BaseUrl/app/ledger/history?limit=$Limit&include_base=1" }
 
 # A single session object to persist cookies (from /session/token)
 $script:Session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
@@ -195,14 +196,14 @@ try {
 # ---------------------------------------
 function Get-LatestMovementId {
   # Returns the highest movement id currently observed
-  $r = Invoke-Json GET ($BaseUrl + "/app/ledger/history?limit=1") $null
+  $r = Invoke-Json GET (LedgerHistoryUrl -Limit 1) $null
   if ($r -and $r.movements -and $r.movements.Count -gt 0) { return [int]$r.movements[0].id }
   return 0
 }
 
 function Get-RunMovements {
   param([int]$RunId, [int]$Limit = 200)
-  $r = Invoke-Json GET ($BaseUrl + "/app/ledger/history?limit=$Limit") $null
+  $r = Invoke-Json GET (LedgerHistoryUrl -Limit $Limit) $null
   if (-not $r -or -not $r.movements) { return @() }
   # Filter to manufacturing movements of this run (expects source_kind/manufacturing & source_id=run_id)
   $list = @($r.movements | Where-Object { $_.source_kind -eq "manufacturing" -and $_.source_id -eq "$RunId" })
@@ -211,7 +212,7 @@ function Get-RunMovements {
 
 function Get-MovementsByItem {
   param([int]$ItemId, [int]$Limit = 200)
-  $resp = Invoke-Json GET ($BaseUrl + "/app/ledger/history?limit=$Limit") $null
+  $resp = Invoke-Json GET (LedgerHistoryUrl -Limit $Limit) $null
   if (-not $resp -or -not $resp.movements) { return @() }
   return @($resp.movements | Where-Object { $_.item_id -eq $ItemId })
 }
@@ -307,7 +308,9 @@ Info "Creating and updating recipes..."
 $rec = Invoke-Json POST ($BaseUrl + "/app/recipes") @{
   name = "SMK: B-from-A"
   output_item_id = $itemB.id
-  items = @(@{ item_id = $itemA.id; qty_required = 3; optional = $false })
+  quantity_decimal = "1"
+  uom = "ea"
+  items = @(@{ item_id = $itemA.id; quantity_decimal = "3"; uom = "ea"; optional = $false })
 }
 if (($rec.id -as [int]) -gt 0) { Pass "Recipe created via POST" } else { Fail "Recipe create failed"; exit 1 }
 
@@ -315,11 +318,13 @@ $recPut = Invoke-Json PUT ($BaseUrl + "/app/recipes/$($rec.id)") @{
   id = $rec.id
   name = "SMK: B-from-A (v2)"
   output_item_id = $itemB.id
+  quantity_decimal = "1"
+  uom = "ea"
   is_archived = $false
   notes = "smoke"
   items = @(
-    @{ item_id = $itemA.id; qty_required = 3; optional = $false },
-    @{ item_id = $itemC.id; qty_required = 1; optional = $true }
+    @{ item_id = $itemA.id; quantity_decimal = "3"; uom = "ea"; optional = $false },
+    @{ item_id = $itemC.id; quantity_decimal = "1"; uom = "ea"; optional = $true }
   )
 }
 # If the PUT returns plain 2xx without { ok: true }, accept as success
@@ -349,18 +354,16 @@ catch {
   try { $parsed = $raw | ConvertFrom-Json } catch {}
 
   if ($null -ne $parsed -and $parsed.detail -and $parsed.detail.error -eq 'insufficient_stock') {
-    foreach ($s in $parsed.detail.shortages) {
-      $needed = [math]::Ceiling([double]$s.required - [double]$s.available)
-      if ($needed -gt 0) {
-        $adjBody = @{ item_id = [int]$s.component; qty_change = [double]$needed; reason = "smoke-topup" }
-        Invoke-RestMethod -Method Post -Uri "$BaseUrl/app/adjust" `
-          -Body ($adjBody | ConvertTo-Json -Depth 8) -ContentType "application/json" -WebSession $script:Session | Out-Null
+    $shortageSummary = ""
+    if ($parsed.detail.shortages) {
+      $parts = @()
+      foreach ($s in $parsed.detail.shortages) {
+        $parts += ("item={0} required={1} available={2}" -f $s.component, $s.required, $s.available)
       }
+      $shortageSummary = ($parts -join "; ")
     }
-
-    $okRun = Invoke-RestMethod -Method Post -Uri "$BaseUrl/app/manufacture" `
-               -Body ($body | ConvertTo-Json -Depth 8) -ContentType "application/json" -WebSession $script:Session
-    Write-Host ("  [OK] Manufacturing run_id={0} (after top-up)" -f $okRun.run_id)
+    Fail ("Standard run insufficient_stock (no auto-recovery): {0}" -f $shortageSummary)
+    exit 1
   }
   else {
     throw
@@ -686,7 +689,7 @@ $itemSnapshot = Invoke-Json GET ($BaseUrl + "/app/items") $null
 $negOnHand = @($itemSnapshot | Where-Object { [double]$_.qty_stored -lt 0 })
 if ($negOnHand.Count -eq 0) { Pass "No negative on-hand quantities" } else { Fail "Found negative on-hand quantities"; exit 1 }
 
-$movementSnapshot = Invoke-Json GET ($BaseUrl + "/app/ledger/history?limit=200") $null
+$movementSnapshot = Invoke-Json GET (LedgerHistoryUrl -Limit 200) $null
 $overs = @($movementSnapshot.movements | Where-Object { [int]$_.is_oversold -ne 0 })
 $mfgOvers = @($overs | Where-Object { $_.source_kind -eq "manufacturing" })
 if ($mfgOvers.Count -eq 0 -and $overs.Count -eq 0) { Pass "No oversold flags present" } elseif ($mfgOvers.Count -gt 0) { Fail "Oversold flags present on manufacturing entries"; exit 1 } else { Fail "Unexpected oversold flags present"; exit 1 }
