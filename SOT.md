@@ -193,6 +193,9 @@
 * Routes MUST NOT directly mutate inventory quantities, allocate FIFO, update `qty_stored`, or append journal entries.
 
 
+* Inventory mutations are centralized in `core/services/stock_mutation.py` (routes must not call ledger primitives).
+
+
 
 ### Service Boundary Contract
 
@@ -229,11 +232,10 @@
 **Manufacturing:** `POST /app/manufacture`.
 
 
-* 
-**General Setup:** `GET /app/system/state` (First-run detection), `GET /app/update/check` (One-shot fetch), `POST /app/config`.
-
-
 * UI MUST use only these canonical paths. `GET /app/ledger/history` is the canonical read surface for movement history.
+
+
+* Legacy endpoints may exist but are non-authoritative and must wrap canonical handlers per the Phase 1 delta.
 
 
 
@@ -397,5 +399,98 @@ The following are strictly considered regressions or architectural drift and MUS
 
 * 
 **Architecture:** Business logic inside legacy wrappers, duplicate endpoints lacking deprecation headers, bypassing the canonical service boundary, or using ambiguous quantity variable names (like `qty` or `amount` instead of `qty_base`/`qty_human`).
+
+
+---
+
+## 12. Changelog
+
+### v0.11.0 — 2026-02-22 — Phase 1 Architectural Authority Lock
+
+* Canonical /app endpoint surface enforced (stock/in, stock/out, purchase, ledger/history, manufacture).
+
+
+* Legacy endpoints converted to wrapper-only with X-BUS-Deprecation.
+
+
+* Canonical quantity contract enforced: quantity_decimal + uom; legacy qty keys rejected.
+
+
+* Inventory mutation centralized in core/services/stock_mutation.py.
+
+
+* Drift-guard tests added to prevent route-level mutation primitives and UOM guessing regressions.
+
+
+# SoT DELTA — Phase 1 Architectural Authority Lock — POST-WORK VERIFIED
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Phase 1 Architectural Authority Lock (Canonical Surface + Wrapper Discipline + Single Mutation Authority)
+DATE: 2026-02-22
+SCOPE: canonical endpoints, legacy wrapper policy, quantity contract enforcement, mutation authority, drift-guard tests
+COMMIT: d736b12
+BRANCH: work
+[/DELTA HEADER]
+
+## (1) CANONICAL PUBLIC API SURFACE (AUTHORITATIVE)
+- POST /app/stock/in
+- POST /app/stock/out
+- POST /app/purchase
+- GET  /app/ledger/history
+- POST /app/manufacture
+
+## (2) LEGACY ENDPOINT POLICY (BINDING)
+- Legacy endpoints may exist only as thin wrappers.
+- Wrappers MAY ONLY: translate payload keys, cast types, delegate to canonical handler, set X-BUS-Deprecation, return result unmodified.
+- Wrappers MUST NOT: normalize quantities, call multipliers, query DB beyond read-only default-uom lookup, call FIFO/ledger primitives, or mutate DB.
+
+## (3) CANONICAL QUANTITY CONTRACT (BINDING)
+Canonical endpoints accept only:
+- quantity_decimal: string
+- uom: string
+Forbidden legacy keys (reject with 400):
+- qty
+- qty_base
+- quantity_int
+- quantity
+
+## (4) SINGLE MUTATION AUTHORITY (BINDING)
+- All inventory mutation must flow through: core/services/stock_mutation.py
+- Route modules must not call: add_batch, fifo_consume, append_inventory (directly).
+
+## (5) REQUIRED RESPONSE HEADER (LEGACY WRAPPERS)
+- Legacy wrappers MUST emit: X-BUS-Deprecation: <canonical path>
+
+## (6) DRIFT-GUARD TESTS (NORMATIVE PROTECTION CLAUSE)
+- Drift guard tests exist to prevent regression:
+  - forbids mutation primitives in core/api/routes/*
+  - forbids UOM guessing patterns in core/api/routes/*
+- These tests are considered part of the contract enforcement (future changes must update SoT + tests together).
+
+## (7) EVIDENCE (PASTE VERBATIM OUTPUTS)
+
+```text
+TARGET CHECKS:
+POST   /app/stock/in => PRESENT
+POST   /app/stock/out => PRESENT
+POST   /app/purchase => PRESENT
+GET    /app/ledger/history => PRESENT
+POST   /app/manufacture => PRESENT
+```
+
+```text
+
+```
+
+```text
+core/api/routes/ledger_api.py:263:    payload.setdefault("uom", "mc")
+core/api/routes/manufacturing.py:264:    payload.setdefault("uom", "ea")
+```
+
+```text
+.......................................   [100%]
+70 passed, 2 skipped in 23.96s
+```
 
 
