@@ -3,6 +3,7 @@
 
 import { apiGet, ensureToken } from '../api.js';
 import { RecipesAPI } from '../api/recipes.js';
+import * as canonical from '../api/canonical.js';
 import { fromBaseQty, fmtQty, dimensionForUnit } from '../lib/units.js';
 
 (function injectRunsCssOnce() {
@@ -281,9 +282,11 @@ async function renderNewRunForm(parent) {
         throw new Error('Select a valid recipe.');
       }
 
+      const outputUom = _state.selectedRecipe?.output_item?.uom || _state.selectedRecipe?.output_item?.display_unit || 'ea';
       const payload = {
         recipe_id: recipeId,
-        output_qty: 1
+        quantity_decimal: '1',
+        uom: outputUom,
       };
 
       const recipeName = (
@@ -293,14 +296,14 @@ async function renderNewRunForm(parent) {
         document.querySelector('#run-recipe option:checked')?.textContent ||
         ''
       );
-      const ok = window.confirm(_runConfirmText({ recipeName, outputQty: 1, adhoc: false }));
+      const ok = window.confirm(_runConfirmText({ recipeName, outputQty: `${payload.quantity_decimal} ${payload.uom}`, adhoc: false }));
       if (!ok) return;
 
       runBtn.disabled = true;
       runBtn.textContent = 'Processing...';
       statusMsg.textContent = '';
 
-      await RecipesAPI.run(payload);
+      await canonical.manufactureRecipe(payload);
 
       statusMsg.textContent = 'Run Complete!';
       statusMsg.style.color = '#4caf50';
