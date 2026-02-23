@@ -4,6 +4,7 @@
 import { ensureToken } from '../api.js';
 import { RecipesAPI } from '../api/recipes.js';
 import * as canonical from '../api/canonical.js';
+import { fromBaseQty, fmtQty, dimensionForUnit } from '../lib/units.js';
 
 (function injectRunsCssOnce() {
   if (document.getElementById('mf-runs-css')) return;
@@ -222,6 +223,11 @@ async function renderNewRunForm(parent) {
       if (!Number.isInteger(recipeId) || recipeId <= 0) throw new Error('Select a valid recipe.');
 
       const outputUom = _state.selectedRecipe?.uom || _state.selectedRecipe?.output_item?.uom || 'ea';
+      if (!Number.isInteger(recipeId) || recipeId <= 0) {
+        throw new Error('Select a valid recipe.');
+      }
+
+      const outputUom = _state.selectedRecipe?.output_item?.uom || _state.selectedRecipe?.output_item?.display_unit || 'ea';
       const payload = {
         recipe_id: recipeId,
         quantity_decimal: '1',
@@ -229,6 +235,13 @@ async function renderNewRunForm(parent) {
       };
 
       const recipeName = _state.selectedRecipe.name || document.querySelector('#run-recipe option:checked')?.textContent || '';
+      const recipeName = (
+        _state.selectedRecipe.name ||
+        _state.selectedRecipe.title ||
+        _state.selectedRecipe.label ||
+        document.querySelector('#run-recipe option:checked')?.textContent ||
+        ''
+      );
       const ok = window.confirm(_runConfirmText({ recipeName, outputQty: `${payload.quantity_decimal} ${payload.uom}`, adhoc: false }));
       if (!ok) return;
 

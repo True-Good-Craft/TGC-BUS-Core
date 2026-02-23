@@ -4,6 +4,7 @@
 import { apiGetJson, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
 import * as canonical from '../api/canonical.js';
 import { fromBaseUnitPrice, fmtMoney } from '../lib/units.js';
+import { fromBaseQty, fromBaseUnitPrice, fmtQty, fmtMoney } from '../lib/units.js';
 import { unitOptionsList, dimensionForUnit, DIM_DEFAULTS_IMPERIAL, DIM_DEFAULTS_METRIC } from '../lib/units.js';
 
 const UNIT_OPTIONS = {
