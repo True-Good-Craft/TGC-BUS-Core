@@ -629,3 +629,60 @@ docs/phase2b-postwork-sot
 ## (4) NOTES / FOLLOW-UPS (NON-BLOCKING)
 - Finance COGS cost authority is Phase 2C.
 - Optional tightening later: make _basis_uom_for_item treat multiplier==0 as invalid (fallback to default_unit_for).
+
+### v0.11.0 — 2026-02-22 — Phase 2C Finance COGS Authority
+- /app/finance/profit COGS uses base→human conversion once (Decimal), no float()
+- COGS line cost uses unit_cost_cents × human_qty (never × base qty)
+- Regression test locks human-unit COGS for count items (mc/ea)
+
+# SoT DELTA — Finance Cost Authority — Phase 2C — POST-WORK VERIFIED
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Finance Cost Authority — Phase 2C (COGS Human-Unit Discipline) — POST-WORK VERIFIED
+DATE: 2026-02-22
+SCOPE: /app/finance/profit COGS math, base→human conversion once, float ban, regression test lock
+COMMIT: a1fb6db
+BRANCH: docs/phase2c-postwork-sot
+[/DELTA HEADER]
+
+## (1) IMPLEMENTED CHANGES (CLAIMS)
+- Finance COGS now treats unit_cost_cents as cents per human unit (basis_uom).
+- Each movement’s base qty is converted to human qty exactly once using uom_multiplier.
+- Line cost is computed as: round_half_up_cents(Decimal(unit_cost_cents) * human_qty).
+- COGS is the sum of line costs (human-unit authority).
+- No float() usage exists in the finance COGS path.
+- Added regression test locking human-unit COGS for count items (mc/ea multiplier).
+
+## (2) FORBIDDEN PATTERNS (NOW ENFORCED)
+- No unit_cost_cents * qty_base multiplication for COGS.
+- No float() in finance COGS computation.
+
+## (3) EVIDENCE (PASTE VERBATIM OUTPUTS)
+
+```text
+docs/phase2c-postwork-sot
+a1fb6db
+```
+
+```text
+...............................
+......................................... [ 97%]
+..                                                                       [100%]
+74 passed, 2 skipped in 39.11s
+```
+
+```text
+
+```
+
+```text
+
+```
+
+```text
+194:def test_profit_cogs_uses_human_unit_cost_not_base_qty(bus_client):
+```
+
+## (4) NOTES / FOLLOW-UPS (NON-BLOCKING)
+- Optional: unify round_half_up_cents helper with manufacturing/shared utility to avoid duplication.

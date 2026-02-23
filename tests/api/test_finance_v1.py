@@ -189,3 +189,42 @@ def test_profit_window_exclusive_upper_bound(bus_client):
     assert pr.status_code == 200, pr.text
     j = pr.json()
     assert int(j["gross_sales_cents"]) == 111
+
+
+def test_profit_cogs_uses_human_unit_cost_not_base_qty(bus_client):
+    client = bus_client["client"]
+
+    item_id = _create_count_item(client, "HumanCogsCount", price=1.00)
+
+    purchase = client.post(
+        "/app/purchase",
+        json={
+            "item_id": int(item_id),
+            "quantity_decimal": "10000",
+            "uom": "mc",
+            "unit_cost_cents": 5,
+            "source_id": "seed-human-cogs",
+        },
+    )
+    assert purchase.status_code == 200, purchase.text
+
+    sold = client.post(
+        "/app/stock/out",
+        json={
+            "item_id": int(item_id),
+            "quantity_decimal": "2000",
+            "uom": "mc",
+            "reason": "sold",
+            "note": "human cogs regression",
+            "record_cash_event": True,
+            "sell_unit_price_cents": 25,
+        },
+    )
+    assert sold.status_code == 200, sold.text
+
+    day = datetime.utcnow().date().strftime("%Y-%m-%d")
+    profit = client.get(f"/app/finance/profit?from={day}&to={day}")
+    assert profit.status_code == 200, profit.text
+    payload = profit.json()
+
+    assert int(payload["cogs_cents"]) == 10

@@ -11,11 +11,36 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
-from core.appdb.models import CashEvent, ItemMovement
+from core.appdb.models import CashEvent, Item, ItemMovement
+from core.metrics.metric import default_unit_for, uom_multiplier
 from core.services.stock_mutation import perform_stock_in_base
 
 
 router = APIRouter(prefix="/finance", tags=["finance"])
+
+
+def round_half_up_cents(x: Decimal) -> int:
+    return int(x.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _basis_uom_for_item(item: Item) -> str:
+    basis_uom = item.uom or default_unit_for(item.dimension)
+    if uom_multiplier(item.dimension, basis_uom) <= 0:
+        basis_uom = default_unit_for(item.dimension)
+    return basis_uom
+
+
+def _human_qty_from_base(qty_base: int, item: Item) -> Decimal:
+    basis_uom = _basis_uom_for_item(item)
+    mult = uom_multiplier(item.dimension, basis_uom)
+    if mult <= 0:
+        raise HTTPException(status_code=400, detail="invalid_uom_multiplier")
+    return Decimal(qty_base) / Decimal(mult)
+
+
+def _line_cost_cents(unit_cost_cents: int, qty_base: int, item: Item) -> int:
+    human_qty = _human_qty_from_base(qty_base, item)
+    return round_half_up_cents(Decimal(unit_cost_cents) * human_qty)
 
 
 class ExpenseIn(BaseModel):
@@ -163,6 +188,7 @@ def finance_profit(
 
     cogs_cents = 0
     if sale_source_ids:
+        item_cache: dict[int, Item] = {}
         moves = (
             db.query(ItemMovement)
             .filter(ItemMovement.source_id.in_(list(sale_source_ids)))
@@ -170,8 +196,16 @@ def finance_profit(
             .all()
         )
         for m in moves:
-            qty = abs(int(m.qty_change))
-            cogs_cents += qty * int(m.unit_cost_cents)
+            qty_base = abs(int(m.qty_change))
+            item_id = int(m.item_id)
+            item = item_cache.get(item_id)
+            if item is None:
+                item = db.get(Item, item_id)
+                if item is None:
+                    raise HTTPException(status_code=400, detail="item_not_found")
+                item_cache[item_id] = item
+            line_cost = _line_cost_cents(int(m.unit_cost_cents or 0), qty_base, item)
+            cogs_cents += line_cost
 
     gross_profit_cents = net_sales_cents - cogs_cents
 
