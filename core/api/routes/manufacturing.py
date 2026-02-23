@@ -14,9 +14,10 @@ from sqlalchemy.orm import Session
 from core.api.schemas.manufacturing import ManufacturingRunRequest, parse_run_request
 from core.appdb.engine import get_session
 from core.appdb.ledger import InsufficientStock
-from core.appdb.models import Recipe
+from core.appdb.models import Item, Recipe
 from core.config.writes import require_writes
 from core.manufacturing.service import execute_run_txn, format_shortages, validate_run
+from core.metrics.metric import default_unit_for, normalize_quantity_to_base_int
 from core.policy.guard import require_owner_commit
 from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
@@ -93,8 +94,8 @@ def _map_shortages(shortages: Iterable[dict]) -> list[dict]:
     return [
         {
             "component": int(s.get("item_id")) if s.get("item_id") is not None else None,
-            "required": float(s.get("required", 0.0)),
-            "available": float(s.get("available", s.get("on_hand", 0.0))),
+            "required": int(s.get("required", 0)),
+            "available": int(s.get("available", s.get("on_hand", 0))),
         }
         for s in shortages
     ]
@@ -114,10 +115,20 @@ def _record_failed_run(
 ):
     from core.appdb.models_recipes import ManufacturingRun
 
+    item = db.get(Item, int(output_item_id or getattr(body, "output_item_id", 0) or 0))
+    dimension = getattr(item, "dimension", None) or "count"
+    output_qty_base = int(
+        normalize_quantity_to_base_int(
+            quantity_decimal=str(getattr(body, "quantity_decimal", "0")),
+            uom=str(getattr(body, "uom", "ea")),
+            dimension=dimension,
+        )
+    )
+
     run = ManufacturingRun(
         recipe_id=getattr(body, "recipe_id", None),
         output_item_id=output_item_id or getattr(body, "output_item_id", None),
-        output_qty=getattr(body, "output_qty", 0.0),
+        output_qty=output_qty_base,
         status="failed_insufficient_stock",
         notes=getattr(body, "notes", None),
         meta=json.dumps({"shortages": shortages}),
@@ -168,10 +179,6 @@ async def canonical_manufacture(
     if "uom" not in payload:
         raise HTTPException(status_code=400, detail="uom_required")
 
-    # Manufacturing service currently expects HUMAN_QTY (float output_qty and component qty_required).
-    payload["output_qty"] = float(payload.pop("quantity_decimal"))
-    payload.pop("uom", None)
-
     body: ManufacturingRunRequest = parse_run_request(payload)
     return await _execute_manufacture(body, db)
 
@@ -193,11 +200,11 @@ async def _execute_manufacture(body: ManufacturingRunRequest, db: Session):
         output_item_id = recipe.output_item_id
 
     try:
-        output_item_id, required, k, shortages = validate_run(db, body)
+        output_item_id, required_components, output_qty_base, shortages = validate_run(db, body)
         if shortages:
             run = _record_failed_run(db, body, output_item_id, shortages)
             raise HTTPException(status_code=400, detail=_shortage_detail(shortages, run.id))
-        result = execute_run_txn(db, body, output_item_id, required, k)
+        result = execute_run_txn(db, body, output_item_id, required_components, output_qty_base)
         recipe_name = _resolve_recipe_name(db, getattr(body, "recipe_id", None))
         try:
             append_mfg_journal(
@@ -206,7 +213,7 @@ async def _execute_manufacture(body: ManufacturingRunRequest, db: Session):
                     "recipe_id": int(body.recipe_id) if getattr(body, "recipe_id", None) is not None else None,
                     "recipe_name": recipe_name,
                     "output_item_id": int(output_item_id) if output_item_id is not None else None,
-                    "output_qty": int(body.output_qty),
+                    "output_qty_base": int(output_qty_base),
                 }
             )
         except Exception:
@@ -261,7 +268,14 @@ async def run_manufacturing_wrapper(
         payload["quantity_decimal"] = str(payload.pop("quantity"))
     elif "quantity" in payload:
         payload.pop("quantity")
-    payload.setdefault("uom", "ea")
+    if "uom" not in payload:
+        item_id = payload.get("output_item_id")
+        if item_id is None and payload.get("recipe_id") is not None:
+            recipe = db.get(Recipe, int(payload["recipe_id"]))
+            item_id = getattr(recipe, "output_item_id", None)
+        item = db.get(Item, int(item_id)) if item_id is not None else None
+        dimension = getattr(item, "dimension", None) or "count"
+        payload["uom"] = default_unit_for(dimension)
     body = await canonical_manufacture(req=req, raw_body=payload, db=db, _writes=_writes, _token=_token, _state=_state)
     return JSONResponse(content=body, headers={"X-BUS-Deprecation": "/app/manufacture"})
 

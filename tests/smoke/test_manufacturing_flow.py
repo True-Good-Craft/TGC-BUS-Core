@@ -37,7 +37,7 @@ def manufacturing_failfast_env(monkeypatch: pytest.MonkeyPatch, request: pytest.
         db.add_all([output_item, input_item])
         db.flush()
 
-        recipe = env["recipes"].Recipe(name="Widget", output_item_id=output_item.id, output_qty=1.0)
+        recipe = env["recipes"].Recipe(name="Widget", output_item_id=output_item.id, output_qty=1)
         db.add(recipe)
         db.flush()
 
@@ -45,7 +45,7 @@ def manufacturing_failfast_env(monkeypatch: pytest.MonkeyPatch, request: pytest.
             env["recipes"].RecipeItem(
                 recipe_id=recipe.id,
                 item_id=input_item.id,
-                qty_required=5.0,
+                qty_required=5,
                 is_optional=False,
             )
         )
@@ -67,7 +67,7 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
         db.add_all([output_item, input_item])
         db.flush()
 
-        recipe = env["recipes"].Recipe(name="Widget", output_item_id=output_item.id, output_qty=1.0)
+        recipe = env["recipes"].Recipe(name="Widget", output_item_id=output_item.id, output_qty=1)
         db.add(recipe)
         db.flush()
 
@@ -75,7 +75,7 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
             env["recipes"].RecipeItem(
                 recipe_id=recipe.id,
                 item_id=input_item.id,
-                qty_required=3.0,
+                qty_required=3,
                 is_optional=False,
             )
         )
@@ -84,8 +84,8 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
             [
                 env["models"].ItemBatch(
                     item_id=input_item.id,
-                    qty_initial=4.0,
-                    qty_remaining=4.0,
+                    qty_initial=4,
+                    qty_remaining=4,
                     unit_cost_cents=10,
                     source_kind="seed",
                     source_id=None,
@@ -93,8 +93,8 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
                 ),
                 env["models"].ItemBatch(
                     item_id=input_item.id,
-                    qty_initial=4.0,
-                    qty_remaining=4.0,
+                    qty_initial=4,
+                    qty_remaining=4,
                     unit_cost_cents=20,
                     source_kind="seed",
                     source_id=None,
@@ -136,8 +136,8 @@ def test_fail_fast_has_zero_new_movements_and_batches(manufacturing_failfast_env
     assert detail["shortages"] == [
         {
             "component": manufacturing_failfast_env["input_item_id"],
-            "required": 5.0,
-            "available": 0.0,
+            "required": 5,
+            "available": 0,
         }
     ]
     assert detail["run_id"]
@@ -183,11 +183,11 @@ def test_success_has_expected_negative_moves_and_one_output_positive(manufacturi
         positives = [m for m in movements if m.qty_change > 0]
 
         assert sorted([(m.batch_id, m.qty_change, m.unit_cost_cents) for m in negatives]) == [
-            (1, -4.0, 10),
-            (2, -2.0, 20),
+            (1, -4, 10),
+            (2, -2, 20),
         ]
         assert len(positives) == 1
-        assert positives[0].qty_change == pytest.approx(2.0)
+        assert positives[0].qty_change == 2
         assert positives[0].batch_id == meta["output_batch_id"]
         assert all(not movement.is_oversold for movement in movements)
         assert meta["cost_inputs_cents"] == 80
