@@ -20,7 +20,7 @@ from core.api.schemas.manufacturing import (
 from core.appdb.ledger import InsufficientStock, on_hand_qty
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.models_recipes import Recipe, RecipeItem
-from core.metrics.metric import normalize_quantity_to_base_int
+from core.metrics.metric import default_unit_for, normalize_quantity_to_base_int, uom_multiplier
 from core.money import round_half_up_cents
 
 
@@ -116,6 +116,32 @@ def _scale_ratio(output_qty_base: int, recipe_output_qty_base: int) -> Decimal:
     if int(recipe_output_qty_base) <= 0:
         raise ValueError("recipe_output_qty_base_must_be_positive")
     return Decimal(int(output_qty_base)) / Decimal(int(recipe_output_qty_base))
+
+
+def _basis_uom_for_item(item: Item) -> str:
+    dimension = getattr(item, "dimension", None) or "count"
+    item_uom = getattr(item, "uom", None)
+    try:
+        uom_multiplier(dimension, str(item_uom))
+        return str(item_uom)
+    except Exception:
+        return default_unit_for(dimension)
+
+
+def _human_qty_from_base(qty_base: int, dimension: str, basis_uom: str) -> Decimal:
+    mult = uom_multiplier(dimension, basis_uom)
+    if int(mult) <= 0:
+        raise ValueError("invalid_uom_multiplier")
+    return Decimal(int(qty_base)) / Decimal(int(mult))
+
+
+def _cost_cents_for_base_qty(unit_cost_cents: int, qty_base: int, item: Item) -> int:
+    human_qty = _human_qty_from_base(
+        qty_base=qty_base,
+        dimension=getattr(item, "dimension", None) or "count",
+        basis_uom=_basis_uom_for_item(item),
+    )
+    return round_half_up_cents(Decimal(int(unit_cost_cents)) * human_qty)
 
 
 def validate_run(
@@ -221,6 +247,7 @@ def execute_run_txn(
             )
 
     cost_inputs_cents = 0
+    item_cache: dict[int, Item] = {}
     for alloc in allocations:
         mv = ItemMovement(
             item_id=alloc["item_id"],
@@ -232,10 +259,28 @@ def execute_run_txn(
             is_oversold=False,
         )
         session.add(mv)
-        unit_cost = int(alloc["unit_cost_cents"] or 0)
-        cost_inputs_cents += int(round(float(alloc["qty"]) * unit_cost))
+        alloc_item_id = int(alloc["item_id"])
+        item = item_cache.get(alloc_item_id)
+        if item is None:
+            item = session.get(Item, alloc_item_id)
+            if item is None:
+                raise HTTPException(status_code=404, detail=f"item_not_found:{alloc_item_id}")
+            item_cache[alloc_item_id] = item
+        alloc_qty_base = int(alloc["qty"])
+        unit_cost_cents = int(alloc["unit_cost_cents"] or 0)
+        cost_inputs_cents += _cost_cents_for_base_qty(unit_cost_cents, alloc_qty_base, item)
 
-    per_output_cents = round_half_up_cents(cost_inputs_cents / float(output_qty_base))
+    output_item = session.get(Item, output_item_id)
+    if output_item is None:
+        raise HTTPException(status_code=404, detail=f"item_not_found:{output_item_id}")
+    output_human_qty = _human_qty_from_base(
+        output_qty_base,
+        getattr(output_item, "dimension", None) or "count",
+        _basis_uom_for_item(output_item),
+    )
+    if output_human_qty <= 0:
+        raise HTTPException(status_code=400, detail="invalid_output_qty")
+    per_output_cents = round_half_up_cents(Decimal(cost_inputs_cents) / output_human_qty)
     output_batch = ItemBatch(
         item_id=output_item_id,
         qty_initial=int(output_qty_base),
@@ -279,7 +324,6 @@ def execute_run_txn(
         if item:
             item.qty_stored = int(item.qty_stored or 0) - int(qty_base)
 
-    output_item = session.get(Item, output_item_id)
     if output_item:
         output_item.qty_stored = int(output_item.qty_stored or 0) + int(output_qty_base)
 
