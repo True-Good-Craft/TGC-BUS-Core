@@ -2,8 +2,9 @@
 // Inventory card with smart input parsing.
 
 import { apiGetJson, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
-import { fromBaseQty, fromBaseUnitPrice, fmtQty, fmtMoney } from '../lib/units.js';
-import { METRIC, unitOptionsList, dimensionForUnit, toMetricBase, DIM_DEFAULTS_IMPERIAL, DIM_DEFAULTS_METRIC, norm } from '../lib/units.js';
+import * as canonical from '../api/canonical.js';
+import { fromBaseUnitPrice, fmtMoney } from '../lib/units.js';
+import { unitOptionsList, dimensionForUnit, DIM_DEFAULTS_IMPERIAL, DIM_DEFAULTS_METRIC } from '../lib/units.js';
 
 const UNIT_OPTIONS = {
   length: ['mm', 'cm', 'm'],
@@ -11,15 +12,6 @@ const UNIT_OPTIONS = {
   volume: ['mm3', 'cm3', 'm3', 'ml', 'l'],
   weight: ['mg', 'g', 'kg'],
   count: ['ea'],
-};
-
-const BASE_UNIT_LABEL = {
-  length: 'mm',
-  area: 'mm²',
-  volume: 'mm³',
-  weight: 'mg',
-  // Count items are base-1 each
-  count: 'ea',
 };
 
 const UNIT_LABEL = {
@@ -40,14 +32,6 @@ const UNIT_LABEL = {
   ea: 'ea',
 };
 
-const MULT = {
-  length: { mm: 1, cm: 10, m: 1000 },
-  area: { mm2: 1, cm2: 100, m2: 1_000_000 },
-  volume: { mm3: 1, cm3: 1_000, m3: 1_000_000_000, ml: 1_000, l: 1_000_000 },
-  weight: { mg: 1, g: 1_000, kg: 1_000_000 },
-  // Backend uses base = 1 for count (ea)
-  count: { ea: 1 },
-};
 
 // Keep delegated handler binding stable across route changes
 let _rootEl = null;
@@ -72,6 +56,12 @@ function el(tag, attrs = {}, children = []) {
     node.append(child);
   });
   return node;
+}
+
+function decimalString(v) {
+  const s = String(v ?? '').trim().replace(/,/g, '');
+  if (s === '' || s === '.' || s === '-.') return '0';
+  return s.startsWith('.') ? `0${s}` : s;
 }
 
 let reloadInventory = null;
@@ -142,20 +132,17 @@ function toast(message, tone = 'ok') {
   }, 2000);
 }
 
-// Compute list quantity from base every time to avoid legacy server scaling (ea=0.001).
 function formatOnHandDisplay(item) {
-  const base =
-    (typeof item?.stock_on_hand_int === 'number') ? item.stock_on_hand_int :
-    (typeof item?.quantity_int === 'number') ? item.quantity_int : 0;
-  const unit =
-    item?.display_unit ||
-    (item?.dimension === 'area' ? 'm2' :
-     item?.dimension === 'length' ? 'm' :
-     item?.dimension === 'volume' ? 'l' :
-     (item?.dimension === 'mass' || item?.dimension === 'weight') ? 'g' : 'ea');
-  const dim = dimensionForUnit(unit) || item?.dimension || 'count';
-  const val = fromBaseQty(base, unit, dim);
-  return `${fmtQty(val)} ${unit}`;
+  if (item?.stock_on_hand_display) {
+    return String(item.stock_on_hand_display);
+  }
+  if (item?.quantity_decimal != null && item?.uom) {
+    return `${item.quantity_decimal} ${item.uom}`;
+  }
+  if (item?.quantity_display?.value != null && item?.quantity_display?.unit) {
+    return `${item.quantity_display.value} ${item.quantity_display.unit}`;
+  }
+  return '—';
 }
 
 function renderTable(state) {
@@ -228,6 +215,7 @@ export async function _mountInventory(container) {
       const opt = document.createElement('option');
       opt.value = it.id;
       opt.textContent = it.name || `Item #${it.id}`;
+      opt.dataset.uom = it.uom || it.display_unit || 'ea';
       itemSelect.appendChild(opt);
     });
     if (prefill?.item_id) itemSelect.value = String(prefill.item_id);
@@ -237,13 +225,13 @@ export async function _mountInventory(container) {
     const qtyRow = document.createElement('div');
     qtyRow.className = 'field-row';
     const qtyLabel = document.createElement('label');
-    qtyLabel.textContent = 'Quantity (units)';
+    qtyLabel.textContent = 'Quantity';
     const qtyWrap = document.createElement('div');
     qtyWrap.className = 'field-input';
     const qtyInput = document.createElement('input');
     qtyInput.type = 'number';
-    qtyInput.min = '1';
-    qtyInput.step = '1';
+    qtyInput.min = '0.001';
+    qtyInput.step = '0.001';
     qtyInput.value = prefill?.qty ? String(prefill.qty) : '1';
     qtyWrap.appendChild(qtyInput);
     qtyRow.append(qtyLabel, qtyWrap);
@@ -339,25 +327,31 @@ export async function _mountInventory(container) {
       errorBanner.textContent = '';
 
       const itemId = Number(itemSelect.value);
-      const qtyVal = Math.trunc(Number(qtyInput.value));
+      const qtyVal = String(decimalString(qtyInput.value));
       const reason = String(reasonSelect.value || 'sold');
       const note = noteInput.value ? noteInput.value : null;
 
-      if (!Number.isInteger(itemId) || !Number.isInteger(qtyVal) || qtyVal <= 0) {
-        errorBanner.textContent = 'Select an item and enter a positive integer quantity.';
+      if (!Number.isInteger(itemId) || Number(qtyVal) <= 0) {
+        errorBanner.textContent = 'Select an item and enter a positive quantity.';
         errorBanner.hidden = false;
         return;
       }
 
       try {
         await ensureToken();
-        const payload = { item_id: itemId, qty: qtyVal, reason, note };
+        const payload = {
+          item_id: itemId,
+          quantity_decimal: qtyVal,
+          uom: itemSelect.options[itemSelect.selectedIndex]?.dataset?.uom || 'ea',
+          reason,
+          note,
+        };
         if (reason === 'sold') {
           payload.record_cash_event = true;
           const dollars = Number(priceInput.value ?? 0);
           payload.sell_unit_price_cents = Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
         }
-        await apiPost('/app/stock/out', payload);
+        await canonical.stockOut(payload);
         close();
         await reloadInventory?.();
         alert('Stock out recorded.');
@@ -406,6 +400,7 @@ export async function _mountInventory(container) {
       const opt = document.createElement('option');
       opt.value = it.id;
       opt.textContent = it.name || `Item #${it.id}`;
+      opt.dataset.uom = it.uom || it.display_unit || 'ea';
       itemSelect.appendChild(opt);
     });
     itemWrap.appendChild(itemSelect);
@@ -414,14 +409,14 @@ export async function _mountInventory(container) {
     const qtyRow = document.createElement('div');
     qtyRow.className = 'field-row';
     const qtyLabel = document.createElement('label');
-    qtyLabel.textContent = 'Quantity (base units)';
+    qtyLabel.textContent = 'Quantity';
     const qtyWrap = document.createElement('div');
     qtyWrap.className = 'field-input';
     const qtyInput = document.createElement('input');
     qtyInput.type = 'number';
-    qtyInput.min = '1';
-    qtyInput.step = '1';
-    qtyInput.value = '1000';
+    qtyInput.min = '0.001';
+    qtyInput.step = '0.001';
+    qtyInput.value = '1';
     qtyWrap.appendChild(qtyInput);
     qtyRow.append(qtyLabel, qtyWrap);
 
@@ -517,13 +512,13 @@ export async function _mountInventory(container) {
       errorBanner.textContent = '';
 
       const itemId = Number(itemSelect.value);
-      const qtyBase = Math.trunc(Number(qtyInput.value));
+      const quantityDecimal = String(decimalString(qtyInput.value));
       const refundDollars = Number(amountInput.value);
       const restockInventory = Boolean(restockInput.checked);
       const relatedSourceId = relatedInput.value.trim();
 
-      if (!Number.isInteger(itemId) || !Number.isInteger(qtyBase) || qtyBase <= 0) {
-        errorBanner.textContent = 'Select an item and enter a positive integer quantity.';
+      if (!Number.isInteger(itemId) || Number(quantityDecimal) <= 0) {
+        errorBanner.textContent = 'Select an item and enter a positive quantity.';
         errorBanner.hidden = false;
         return;
       }
@@ -545,7 +540,8 @@ export async function _mountInventory(container) {
         await ensureToken();
         const payload = {
           item_id: itemId,
-          qty_base: qtyBase,
+          quantity_decimal: quantityDecimal,
+          uom: itemSelect.options[itemSelect.selectedIndex]?.dataset?.uom || 'ea',
           refund_amount_cents: Math.round(refundDollars * 100),
           restock_inventory: restockInventory,
           related_source_id: relatedSourceId || null,
@@ -732,8 +728,6 @@ let _detailsObserverBound = false;
 function enhanceDetailsPanel(panel) {
   if (!panel || _processedDetailsPanels.has(panel)) return;
   const unit = panel.dataset.displayUnit || 'ea';
-  const dimRaw = panel.dataset.dimension || 'count';
-  const dim = dimRaw === 'weight' ? 'mass' : dimRaw;
 
   // Hide duplicate Price/Location rows (label + value)
   panel.querySelectorAll('.kv').forEach((kv) => {
@@ -753,10 +747,8 @@ function enhanceDetailsPanel(panel) {
     const baseRemain = parseInt(m[1], 10);
     const baseOrig = parseInt(m[2], 10);
     if (Number.isNaN(baseRemain) || Number.isNaN(baseOrig)) continue;
-    const remain = fmtQty(fromBaseQty(baseRemain, unit, dim));
-    const orig = fmtQty(fromBaseQty(baseOrig, unit, dim));
-    n.textContent = `${remain} / ${orig} ${unit}`;
-    n.title = `${baseRemain.toLocaleString()} / ${baseOrig.toLocaleString()} (base)`;
+    n.textContent = `${baseRemain} / ${baseOrig} ${unit}`;
+    n.title = `${baseRemain.toLocaleString()} / ${baseOrig.toLocaleString()}`;
     break;
   }
 
@@ -1101,16 +1093,6 @@ export function openItemModal(item = null) {
     return dimensionForUnit(unitSelect.value || costUnitSelect.value) || 'count';
   }
 
-  function unitFactor(dim, unit) {
-    const tbl = METRIC[dim] || {};
-    return tbl[norm(unit)] || 1;
-  }
-
-  function decimalString(v) {
-    const s = String(v ?? '').trim().replace(/,/g, '');
-    if (s === '' || s === '.' || s === '-.') return '0';
-    return s.startsWith('.') ? `0${s}` : s;
-  }
 
   function serverErrorMessage(err) {
     if (err?.detail?.error === 'validation_error') {
@@ -1128,33 +1110,18 @@ export function openItemModal(item = null) {
     }
     const unit = unitSelect.value;
     const priceUnitSel = lockCostUnit.checked ? unit : (costUnitSelect.value || unit);
-    const dim = currentDimension();
     const val = qtyInput.value;
-    if (!dim || !unit || val === '') {
+    if (!unit || val === '') {
       qtyPreview.textContent = '';
       return;
     }
-    const qtyNum = Number(decimalString(val || 0));
-    const priceNum = Number(decimalString(costInput?.value || 0));
     const qtyShow = decimalString(val || 0);
     const priceShow = decimalString(costInput?.value || 0);
-    const converted = toMetricBase({
-      dimension: dim,
-      qty: qtyNum,
-      qtyUnit: unit,
-      unitPrice: priceNum,
-      priceUnit: priceUnitSel,
-    });
-    const baseLabel = BASE_UNIT_LABEL[dim] || 'base';
-    const qtyBase = converted.qtyBase ?? Math.round(qtyNum * unitFactor(dim, unit));
-    const priceBase = converted.pricePerBase ?? (priceNum / unitFactor(dim, priceUnitSel));
-    if (converted.sendUnits) {
-      const priceNote = priceUnitSel === unit ? priceShow : `${priceShow} (per ${priceUnitSel})`;
-      qtyPreview.textContent = `Will send: ${qtyShow} ${unit} @ ${priceNote} / ${unit} (stores ${qtyBase} ${baseLabel})`;
-    } else {
-      const priceBaseStr = decimalString(priceBase);
-      qtyPreview.textContent = `Will send (converted): ${qtyBase} ${baseLabel} @ ${priceBaseStr} / ${baseLabel} from ${unit}`;
+    if (priceUnitSel !== unit) {
+      qtyPreview.textContent = 'Cost unit must match item unit for opening batch.';
+      return;
     }
+    qtyPreview.textContent = `Will send: ${qtyShow} ${unit} @ ${priceShow} / ${unit}`;
   }
 
   function syncUnitState() {
@@ -1470,18 +1437,18 @@ export function openItemModal(item = null) {
         return;
       }
 
+      const qtyDecimal = decimalString(stockQtyInput.value);
+      const unitCost = stockCostInput.value === '' ? undefined : Math.round(Number(stockCostInput.value) * 100);
       const payload = {
         item_id: item.id,
         uom: stockUnitSelect.value,
-        quantity_decimal: decimalString(stockQtyInput.value),
-        unit_cost_decimal: stockCostInput.value === '' ? undefined : decimalString(stockCostInput.value),
+        quantity_decimal: qtyDecimal,
+        unit_cost_cents: Number.isFinite(unitCost) ? unitCost : undefined,
       };
 
       try {
         await ensureToken();
-        console.debug('POST /ledger/stock_in payload', payload);
-        delete payload.unit;
-        await apiPost('/ledger/stock_in', payload, { headers: { 'Content-Type': 'application/json' } });
+        await canonical.stockIn(payload);
         closeStockInModal();
         await reloadInventory?.();
       } catch (err) {
@@ -1571,36 +1538,27 @@ export function openItemModal(item = null) {
           return;
         }
 
-        const priceNum = Number(costInput?.value || 0);
-        const qtyConversion = toMetricBase({
-          dimension: dimensionVal,
-          qty: Number(qtyVal),
-          qtyUnit: unitVal,
-          unitPrice: priceNum,
-          priceUnit: priceUnitSel,
-        });
-        const basePrice = qtyConversion.pricePerBase ?? (priceNum / unitFactor(dimensionVal, priceUnitSel));
-        const baseUnitEntry = Object.entries(METRIC[dimensionVal] || {}).find(([, v]) => v === 1);
-        const baseUnit = baseUnitEntry ? baseUnitEntry[0] : unitVal;
+        if (priceUnitSel !== unitVal) {
+          const msg = 'Opening batch cost unit must match item unit.';
+          if (errorBanner) {
+            errorBanner.textContent = msg;
+            errorBanner.hidden = false;
+          }
+          markInvalid(costUnitSelect);
+          return;
+        }
 
+        const unitCostCents = Math.round(Number(costInput?.value || 0) * 100);
         const stockPayload = {
           item_id: savedItem?.id,
           uom: unitVal,
           quantity_decimal: decimalString(qtyVal),
-          unit_cost_decimal: decimalString((basePrice ?? 0) * unitFactor(dimensionVal, unitVal)),
+          unit_cost_cents: Number.isFinite(unitCostCents) ? unitCostCents : undefined,
         };
-
-        if (!qtyConversion.sendUnits) {
-          stockPayload.uom = baseUnit;
-          stockPayload.quantity_decimal = decimalString(qtyConversion.qtyBase ?? qtyVal);
-          stockPayload.unit_cost_decimal = decimalString(basePrice ?? 0);
-        }
 
         try {
           await ensureToken();
-          console.debug('POST /ledger/stock_in payload', stockPayload);
-          delete stockPayload.unit;
-          await apiPost('/ledger/stock_in', stockPayload, { headers: { 'Content-Type': 'application/json' } });
+          await canonical.stockIn(stockPayload);
         } catch (err) {
           const msg = serverErrorMessage(err);
           if (errorBanner) {

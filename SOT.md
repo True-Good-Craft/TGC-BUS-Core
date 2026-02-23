@@ -742,3 +742,157 @@ POST   /app/manufacture => PRESENT
 
 ## (3) NOTES / FOLLOW-UPS (NON-BLOCKING)
 - PowerShell runner exists for Windows-local full smoke execution; CI may rely on python smoke evidence.
+
+# SoT DELTA — UI Contract Expansion — v2 Quantity Everywhere (Recipes + Refund + Ledger Human Fields) — AUTHORIZATION DELTA (EVIDENCE FILLED)
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: UI Contract Expansion — v2 Quantity Everywhere (Recipes + Refund + Ledger Human Fields) — AUTHORIZATION DELTA (EVIDENCE FILLED)
+DATE: 2026-02-23
+SCOPE: evidence placeholders completed from Phase 2D + UI Phase B results
+[/DELTA HEADER]
+
+## EVIDENCE
+
+### pytest outputs
+```text
+$ pytest -q tests/api/test_finance_v1.py
+......                                                                   [100%]
+6 passed in 7.72s
+```
+
+```text
+$ pytest -q tests/api/test_recipes_v2_contract.py
+..                                                                       [100%]
+2 passed in 3.33s
+```
+
+```text
+$ pytest -q tests/api/test_ledger_history_v2_response.py
+..                                                                       [100%]
+2 passed in 3.23s
+```
+
+### JSON excerpts (runtime contract checks)
+```json
+{
+  "refund_legacy": {
+    "status": 400,
+    "body": {
+      "detail": {
+        "error": "legacy_quantity_keys_forbidden",
+        "keys": [
+          "qty_base"
+        ],
+        "message": null
+      }
+    }
+  },
+  "recipes_v2": {
+    "status": 200,
+    "body": {
+      "quantity_decimal": "1",
+      "uom": "ea",
+      "items": [
+        {
+          "quantity_decimal": "2",
+          "uom": "ea"
+        }
+      ]
+    }
+  }
+}
+```
+
+### ledger/history response-shape lock from tests
+```text
+$ sed -n '34,63p' tests/api/test_ledger_history_v2_response.py
+    history = client.get(f"/app/ledger/history?item_id={item_id}&limit=10")
+    assert history.status_code == 200, history.text
+    payload = history.json()
+    assert payload["movements"]
+    movement = payload["movements"][0]
+    assert "quantity_decimal" in movement
+    assert "uom" in movement
+    assert "qty_change" not in movement
+
+    history = client.get(f"/app/ledger/history?item_id={item_id}&limit=10&include_base=1")
+    assert history.status_code == 200, history.text
+    payload = history.json()
+    assert payload["movements"]
+    movement = payload["movements"][0]
+    assert "quantity_decimal" in movement
+    assert "uom" in movement
+    assert "qty_change" in movement
+```
+
+# SoT DELTA — Final Seal (Phase 2D + UI Phase B)
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Seal — Phase 2D v2 Contracts Implemented + UI Phase B Full Purge Verified
+DATE: 2026-02-23
+SCOPE: evidence + verification locks only
+[/DELTA HEADER]
+
+## (1) Objective
+Seal the Phase 2D backend contract expansion and UI Phase B full purge with final verification evidence suitable for release readiness.
+
+## (2) What was sealed
+- recipes v2 contract
+- finance refund v2 contract
+- ledger history v2 response (human fields, base hidden by default)
+- UI full purge (no legacy keys anywhere in audit scope, no conversion signatures)
+
+## (3) Verification evidence blocks (raw outputs)
+
+### ui_contract_audit PASS output
+```text
+$ ./scripts/ui_contract_audit.sh
+UI contract audit: PASS
+  forbidden endpoints: 0
+  forbidden payload keys: 0
+  multiplier/base logic: 0
+  finance legacy fields: 0
+  canonical containment violations: 0
+  report: reports/ui_contract_audit.md
+```
+
+### node --check outputs
+```text
+$ node --check core/ui/js/cards/recipes.js
+$ node --check core/ui/js/cards/manufacturing.js
+$ node --check core/ui/js/cards/inventory.js
+```
+
+### pytest outputs
+```text
+$ pytest -q tests/api/test_finance_v1.py
+......                                                                   [100%]
+6 passed in 7.72s
+
+$ pytest -q tests/api/test_recipes_v2_contract.py
+..                                                                       [100%]
+2 passed in 3.33s
+
+$ pytest -q tests/api/test_ledger_history_v2_response.py
+..                                                                       [100%]
+2 passed in 3.23s
+```
+
+### smoke harness run #1 output (fresh DB via pytest tmp_path fixture)
+```text
+$ pytest -q tests/smoke/test_manufacturing_flow.py
+..                                                                       [100%]
+2 passed in 3.31s
+```
+
+### smoke harness run #2 output (fresh DB via pytest tmp_path fixture)
+```text
+$ pytest -q tests/smoke/test_manufacturing_flow.py
+..                                                                       [100%]
+2 passed in 3.23s
+```
+
+## (4) Acceptance statement
+DONE = TRUE

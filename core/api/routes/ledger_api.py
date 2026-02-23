@@ -9,13 +9,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import asc, func
 from sqlalchemy.orm import Session
 
 from core.api.utils.devguard import require_dev
+from core.api.utils.quantity_guard import reject_legacy_qty_keys
 from core.appdb.engine import get_session
 from core.appdb.ledger import InsufficientStock
 from core.appdb.models import Item, ItemBatch, ItemMovement
@@ -122,14 +123,6 @@ class AdjustmentInput(BaseModel):
         return value
 
 
-def _reject_legacy_qty_keys(payload: dict) -> None:
-    bad = [k for k in ("qty", "qty_base", "quantity_int", "quantity") if k in payload]
-    if bad:
-        raise HTTPException(status_code=400, detail={"error": "legacy_quantity_keys_forbidden", "keys": bad})
-
-
-
-
 def _default_uom_for_item(db: Session, item_id: int) -> str:
     item = db.get(Item, int(item_id))
     if not item:
@@ -148,7 +141,7 @@ def _to_base_qty_for_item(db: Session, item_id: int, quantity_decimal: str, uom:
 
 @public_router.post("/purchase")
 def canonical_purchase(raw: dict = Body(...), db: Session = Depends(get_session)):
-    _reject_legacy_qty_keys(raw)
+    reject_legacy_qty_keys(raw)
     body = PurchaseCanonicalIn(**raw)
     qty_base = _to_base_qty_for_item(db, body.item_id, body.quantity_decimal, body.uom)
     return perform_purchase_base(
@@ -228,7 +221,7 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
 
 @public_router.post("/stock/out")
 def canonical_stock_out(raw: dict = Body(...), db: Session = Depends(get_session)):
-    _reject_legacy_qty_keys(raw)
+    reject_legacy_qty_keys(raw)
     body = StockOutCanonicalIn(**raw)
     qty_base = _to_base_qty_for_item(db, body.item_id, body.quantity_decimal, body.uom)
     try:
@@ -287,29 +280,60 @@ def valuation(item_id: Optional[int] = None, db: Session = Depends(get_session))
     return {"totals": [{"item_id": r.item_id, "total_value_cents": int(r.total or 0)} for r in rows]}
 
 
+def _decimal_string(value: Decimal) -> str:
+    text = format(value.normalize(), "f")
+    if text in {"-0", "-0.0", "-0.00"}:
+        return "0"
+    return text
+
+
 @public_router.get("/ledger/history")
-def canonical_history(item_id: Optional[int] = None, limit: int = 100, db: Session = Depends(get_session)):
+def canonical_history(
+    item_id: Optional[int] = None,
+    limit: int = 100,
+    include_base: bool = Query(False),
+    db: Session = Depends(get_session),
+):
     q = db.query(ItemMovement)
     if item_id is not None:
         q = q.filter(ItemMovement.item_id == int(item_id))
     rows = q.order_by(ItemMovement.id.desc()).limit(int(limit)).all()
 
-    return {
-        "movements": [
-            {
-                "id": int(m.id),
-                "item_id": int(m.item_id),
-                "batch_id": int(m.batch_id) if m.batch_id is not None else None,
-                "qty_change": int(m.qty_change),
-                "unit_cost_cents": int(m.unit_cost_cents or 0),
-                "source_kind": m.source_kind,
-                "source_id": m.source_id,
-                "is_oversold": bool(m.is_oversold),
-                "created_at": getattr(m.created_at, "isoformat", lambda: None)(),
-            }
-            for m in rows
-        ]
-    }
+    expose_base = bool(include_base) or os.environ.get("BUS_DEV") == "1"
+    item_cache: dict[int, Item | None] = {}
+    movements = []
+    for m in rows:
+        item = item_cache.get(int(m.item_id))
+        if int(m.item_id) not in item_cache:
+            item = db.get(Item, int(m.item_id))
+            item_cache[int(m.item_id)] = item
+        if item:
+            uom = _norm_unit(item.uom or default_unit_for(item.dimension))
+            if not UNIT_MULTIPLIER.get(item.dimension, {}).get(uom):
+                uom = default_unit_for(item.dimension)
+            qty_decimal = from_base(abs(int(m.qty_change)), uom, item.dimension)
+        else:
+            uom = "mc"
+            qty_decimal = Decimal(abs(int(m.qty_change)))
+
+        signed_qty = -qty_decimal if int(m.qty_change) < 0 else qty_decimal
+        entry = {
+            "id": int(m.id),
+            "item_id": int(m.item_id),
+            "batch_id": int(m.batch_id) if m.batch_id is not None else None,
+            "quantity_decimal": _decimal_string(signed_qty),
+            "uom": uom,
+            "unit_cost_cents": int(m.unit_cost_cents or 0),
+            "source_kind": m.source_kind,
+            "source_id": m.source_id,
+            "is_oversold": bool(m.is_oversold),
+            "created_at": getattr(m.created_at, "isoformat", lambda: None)(),
+        }
+        if expose_base:
+            entry["qty_change"] = int(m.qty_change)
+        movements.append(entry)
+
+    return {"movements": movements}
 
 
 @router.get("/movements")
@@ -340,7 +364,7 @@ def ledger_debug(item_id: int | None = None):
 
 @public_router.post("/stock/in")
 def canonical_stock_in(raw: dict = Body(...), db: Session = Depends(get_session)):
-    _reject_legacy_qty_keys(raw)
+    reject_legacy_qty_keys(raw)
     body = StockInCanonicalIn(**raw)
     qty_base = _to_base_qty_for_item(db, body.item_id, body.quantity_decimal, body.uom)
     return perform_stock_in_base(

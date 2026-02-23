@@ -100,7 +100,8 @@ def test_refund_requires_cost_when_restock_true_and_no_related_source_id(bus_cli
         json={
             "item_id": item_id,
             "refund_amount_cents": 100,
-            "qty_base": 1000,
+            "quantity_decimal": "1",
+            "uom": "ea",
             "restock_inventory": True,
             "related_source_id": None,
             "restock_unit_cost_cents": None,
@@ -120,7 +121,8 @@ def test_refund_without_restock_records_cash_event_only(bus_client):
         json={
             "item_id": item_id,
             "refund_amount_cents": 250,
-            "qty_base": 1000,
+            "quantity_decimal": "1",
+            "uom": "ea",
             "restock_inventory": False,
             "related_source_id": None,
             "restock_unit_cost_cents": None,
@@ -135,6 +137,25 @@ def test_refund_without_restock_records_cash_event_only(bus_client):
     assert len(cash_events) == 1
     assert int(cash_events[0].amount_cents) == -250
     assert movements == []
+
+
+def test_refund_rejects_legacy_qty_base(bus_client):
+    client = bus_client["client"]
+    item_id = _create_count_item(client, "RefundLegacyReject", price=1.00)
+
+    resp = client.post(
+        "/app/finance/refund",
+        json={
+            "item_id": item_id,
+            "refund_amount_cents": 100,
+            "qty_base": 1000,
+            "restock_inventory": False,
+        },
+    )
+    assert resp.status_code == 400, resp.text
+    payload = resp.json()
+    assert payload["detail"]["error"] == "legacy_quantity_keys_forbidden"
+    assert "qty_base" in payload["detail"]["keys"]
 
 
 def test_profit_window_exclusive_upper_bound(bus_client):

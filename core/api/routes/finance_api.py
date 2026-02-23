@@ -6,13 +6,15 @@ from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
 from core.appdb.models import CashEvent, Item, ItemMovement
+from core.api.utils.quantity_guard import reject_legacy_qty_keys
 from core.metrics.metric import default_unit_for, uom_multiplier
+from core.metrics.metric import normalize_quantity_to_base_int
 from core.services.stock_mutation import perform_stock_in_base
 
 
@@ -73,7 +75,8 @@ def finance_expense(body: ExpenseIn, db: Session = Depends(get_session)):
 class RefundIn(BaseModel):
     item_id: int
     refund_amount_cents: int = Field(gt=0)
-    qty_base: int = Field(gt=0)
+    quantity_decimal: str
+    uom: str
     restock_inventory: bool
     related_source_id: Optional[str] = None
     restock_unit_cost_cents: Optional[int] = None
@@ -83,9 +86,11 @@ class RefundIn(BaseModel):
 
 
 @router.post("/refund")
-def finance_refund(body: RefundIn, db: Session = Depends(get_session)):
+def finance_refund(raw: dict = Body(...), db: Session = Depends(get_session)):
+    reject_legacy_qty_keys(raw)
+    body = RefundIn(**raw)
+
     item_id = int(body.item_id)
-    qty_base = int(body.qty_base)
     refund_amount_cents = int(body.refund_amount_cents)
 
     if body.restock_inventory is True and (not body.related_source_id) and body.restock_unit_cost_cents is None:
@@ -95,6 +100,17 @@ def finance_refund(body: RefundIn, db: Session = Depends(get_session)):
 
     # Atomicity (REFUND): cash_events insert + optional stock-in movement must be a single transaction.
     with db.begin():
+        item = db.get(Item, item_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="item_not_found")
+        qty_base = normalize_quantity_to_base_int(
+            quantity_decimal=body.quantity_decimal,
+            uom=body.uom,
+            dimension=item.dimension,
+        )
+        if qty_base <= 0:
+            raise HTTPException(status_code=400, detail="quantity_decimal must be > 0")
+
         db.add(
             CashEvent(
                 kind="refund",
