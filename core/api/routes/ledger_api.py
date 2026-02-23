@@ -260,7 +260,8 @@ def stock_out_wrapper(raw: dict = Body(...), db: Session = Depends(get_session))
     qty = payload.pop("qty", None)
     if qty is not None:
         payload["quantity_decimal"] = str(qty)
-    payload.setdefault("uom", "mc")
+    if "uom" not in payload:
+        payload["uom"] = _default_uom_for_item(db, int(payload["item_id"]))
     body = canonical_stock_out(payload, db)
     return JSONResponse(content=body, headers={"X-BUS-Deprecation": "/app/stock/out"})
 

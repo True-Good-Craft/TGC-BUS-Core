@@ -92,3 +92,15 @@ def test_route_modules_forbid_mutation_primitives():
             if token in text:
                 offenders.append(f"{py_file}:{token}")
     assert not offenders, f"Forbidden mutation primitives found: {offenders}"
+
+
+def test_route_modules_forbid_uom_guessing():
+    route_dir = Path("core/api/routes")
+    bad_tokens = ('setdefault("uom"', 'uom = "mc"', 'uom = "ea"')
+    offenders = []
+    for py_file in route_dir.glob("*.py"):
+        text = py_file.read_text(encoding="utf-8", errors="replace")
+        for token in bad_tokens:
+            if token in text:
+                offenders.append(f"{py_file}:{token}")
+    assert not offenders, f"Forbidden UOM guessing found: {offenders}"
