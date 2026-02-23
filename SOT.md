@@ -494,3 +494,81 @@ core/api/routes/manufacturing.py:264:    payload.setdefault("uom", "ea")
 ```
 
 
+
+# SoT DELTA — Manufacturing Base-Unit Convergence — Phase 2A — POST-WORK VERIFIED
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Manufacturing Base-Unit Convergence — Phase 2A (Storage & Validation Authority) — POST-WORK VERIFIED
+DATE: 2026-02-22
+SCOPE: manufacturing validate_run determinism, base-int scaling, base-int persistence, journal base-int quantities
+COMMIT: 9ab8b10
+BRANCH: docs/phase2a-postwork-sot
+[/DELTA HEADER]
+
+## (1) IMPLEMENTED CHANGES (CLAIMS)
+- validate_run converts requested output (quantity_decimal+uom) to output_qty_base (int) and uses base-int comparisons only.
+- Recipe scaling uses Decimal ratio and quantizes required_base exactly once with ROUND_HALF_UP.
+- Shortage calculation uses: max(required_base - on_hand_base, 0) (int-only).
+- execute_run_txn consumes component qty as base ints and produces output qty as base ints.
+- manufacturing_runs.output_qty persists base-int output quantity (output_qty_base).
+- Manufacturing journal records quantities as base ints only (output_qty_base and consumed_qty_base).
+- Canonical API remains human-only; no base quantities exposed in JSON responses.
+- Cost math is unchanged in Phase 2A (explicitly deferred to Phase 2B).
+
+## (2) INVARIANTS SATISFIED
+- No epsilon comparisons exist in manufacturing code (1e-9 removed).
+- No float math participates in validate_run scaling or shortage comparisons.
+- No ambiguous unit variables (base vars are suffixed *_base).
+
+## (3) EVIDENCE (PASTE VERBATIM OUTPUTS)
+
+```text
+docs/phase2a-postwork-sot
+9ab8b10
+```
+
+```text
+........................................................................ [100%]
+72 passed, 2 skipped in 25.34s
+```
+
+```text
+
+```
+
+```text
+[db] BUS_DB (APPDATA) -> /root/.buscore/app/app.db
+TARGET CHECKS:
+POST   /app/stock/in => PRESENT
+POST   /app/stock/out => PRESENT
+POST   /app/purchase => PRESENT
+GET    /app/ledger/history => PRESENT
+POST   /app/manufacture => PRESENT
+```
+
+```text
+115:def _scale_ratio(output_qty_base: int, recipe_output_qty_base: int) -> Decimal:
+116:    if int(recipe_output_qty_base) <= 0:
+117:        raise ValueError("recipe_output_qty_base_must_be_positive")
+118:    return Decimal(int(output_qty_base)) / Decimal(int(recipe_output_qty_base))
+132:        output_qty_base = _to_base_qty_for_item(session, output_item_id, body.quantity_decimal, body.uom)
+133:        recipe_output_qty_base = int(recipe.output_qty or 0)
+135:            scale = _scale_ratio(output_qty_base, recipe_output_qty_base)
+158:        output_qty_base = _to_base_qty_for_item(session, output_item_id, body.quantity_decimal, body.uom)
+184:    return output_item_id, required, output_qty_base, format_shortages(shortages)
+193:    output_qty_base: int,
+200:        output_qty=int(output_qty_base),
+238:    per_output_cents = round_half_up_cents(cost_inputs_cents / float(output_qty_base))
+241:        qty_initial=int(output_qty_base),
+242:        qty_remaining=int(output_qty_base),
+258:                "out_qty_base": int(output_qty_base),
+269:            qty_change=int(output_qty_base),
+284:        output_item.qty_stored = int(output_item.qty_stored or 0) + int(output_qty_base)
+290:            "output_qty_base": int(output_qty_base),
+302:        "output_qty_base": int(output_qty_base),
+```
+
+## (4) NOTES / KNOWN FOLLOW-UPS (NON-BLOCKING)
+- Cost authority corrections (per_output_unit_cost_cents derived from human qty) are Phase 2B.
+- Finance COGS authority corrections are Phase 2C.
