@@ -3,7 +3,6 @@
 
 import { apiGetJson, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
 import * as canonical from '../api/canonical.js';
-import { fromBaseUnitPrice, fmtMoney } from '../lib/units.js';
 import { fromBaseQty, fromBaseUnitPrice, fmtQty, fmtMoney } from '../lib/units.js';
 import { unitOptionsList, dimensionForUnit, DIM_DEFAULTS_IMPERIAL, DIM_DEFAULTS_METRIC } from '../lib/units.js';
 
@@ -173,8 +172,31 @@ async function adjustQuantity(itemId) {
   if (deltaStr === null) return;
   const delta = Number(deltaStr);
   if (!Number.isFinite(delta)) return alert('Enter a valid number');
+  if (delta === 0) return;
+  const items = window.__inventory_items || [];
+  const it = items.find(x => String(x?.id) === String(itemId));
+  const uom = (it?.uom || it?.display_unit || it?.unit || '').trim();
+  if (!uom) {
+    alert('Item unit (uom) is missing; cannot adjust quantity.');
+    return;
+  }
   await ensureToken();
-  await apiPost('/app/inventory/run', { inputs: {}, outputs: { [itemId]: delta } });
+  if (delta > 0) {
+    await canonical.stockIn({
+      item_id: itemId,
+      quantity_decimal: decimalString(String(delta)),
+      uom: uom
+    });
+  }
+  if (delta < 0) {
+    await canonical.stockOut({
+      item_id: itemId,
+      quantity_decimal: decimalString(String(Math.abs(delta))),
+      uom: uom,
+      reason: 'other',
+      record_cash_event: false
+    });
+  }
 }
 
 export async function _mountInventory(container) {
@@ -340,10 +362,17 @@ export async function _mountInventory(container) {
 
       try {
         await ensureToken();
+        const opt = itemSelect.options[itemSelect.selectedIndex];
+        const uom = (opt?.dataset?.uom || opt?.dataset?.display_unit || opt?.dataset?.unit || '').trim();
+        if (!uom) {
+          errorBanner.textContent = 'Item unit (uom) is missing; cannot stock out.';
+          errorBanner.hidden = false;
+          return;
+        }
         const payload = {
           item_id: itemId,
           quantity_decimal: qtyVal,
-          uom: itemSelect.options[itemSelect.selectedIndex]?.dataset?.uom || 'ea',
+          uom: uom,
           reason,
           note,
         };
@@ -539,10 +568,17 @@ export async function _mountInventory(container) {
 
       try {
         await ensureToken();
+        const opt = itemSelect.options[itemSelect.selectedIndex];
+        const uom = (opt?.dataset?.uom || opt?.dataset?.display_unit || opt?.dataset?.unit || '').trim();
+        if (!uom) {
+          errorBanner.textContent = 'Item unit (uom) is missing; cannot refund.';
+          errorBanner.hidden = false;
+          return;
+        }
         const payload = {
           item_id: itemId,
           quantity_decimal: quantityDecimal,
-          uom: itemSelect.options[itemSelect.selectedIndex]?.dataset?.uom || 'ea',
+          uom: uom,
           refund_amount_cents: Math.round(refundDollars * 100),
           restock_inventory: restockInventory,
           related_source_id: relatedSourceId || null,
@@ -663,7 +699,13 @@ export async function _mountInventory(container) {
     const batchRows = (detail.batches_summary && detail.batches_summary.length)
       ? detail.batches_summary.map((b) => el('tr', {}, [
           el('td', { text: b.entered ? new Date(b.entered).toLocaleDateString() : '—' }),
-          el('td', { text: `${b.remaining_int} / ${b.original_int}` }),
+          el('td', { text: (
+            (b?.quantity_display?.value != null && b?.quantity_display?.uom)
+              ? `${b.quantity_display.value} ${b.quantity_display.uom}`
+              : (b?.remaining_display?.value != null && b?.original_display?.value != null)
+                ? `${b.remaining_display.value} / ${b.original_display.value}${b?.remaining_display?.uom ? ` ${b.remaining_display.uom}` : ''}`
+                : ''
+          ) }),
           el('td', { text: b.unit_cost_display || '—' }),
         ]))
       : [el('tr', {}, [el('td', { class: 'c', colspan: '3', text: 'No batches' })])];
@@ -739,19 +781,6 @@ function enhanceDetailsPanel(panel) {
   });
 
   const nodes = panel.querySelectorAll('td, .td, .value, div, span, .v');
-
-  // Convert first "X / Y" to display unit and add tooltip
-  for (const n of nodes) {
-    const s = (n.textContent || '').trim().replace(/,/g, '');
-    const m = s.match(/^(-?\d+)\s*\/\s*(-?\d+)$/);
-    if (!m) continue;
-    const baseRemain = parseInt(m[1], 10);
-    const baseOrig = parseInt(m[2], 10);
-    if (Number.isNaN(baseRemain) || Number.isNaN(baseOrig)) continue;
-    n.textContent = `${baseRemain} / ${baseOrig} ${unit}`;
-    n.title = `${baseRemain.toLocaleString()} / ${baseOrig.toLocaleString()}`;
-    break;
-  }
 
   // Normalize money per unit
   for (const n of nodes) {
@@ -1166,7 +1195,7 @@ export function openItemModal(item = null) {
     qtyChip.textContent = unitSelect.value;
     costUnitSelect.value = unitSelect.value;
     costUnitSelect.disabled = lockCostUnit.checked;
-    const qtyVal = item?.quantity_display?.value ?? (item?.qty ?? '');
+    const qtyVal = item?.quantity_display?.value ?? '';
     if (qtyVal !== undefined && qtyVal !== null) qtyInput.value = qtyVal;
     if (isProductInput) {
       isProductInput.checked = !!item?.is_product;

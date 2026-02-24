@@ -222,19 +222,25 @@ async function renderNewRunForm(parent) {
       const recipeId = Number(_state.selectedRecipe.id);
       if (!Number.isInteger(recipeId) || recipeId <= 0) throw new Error('Select a valid recipe.');
 
-      const outputUom = _state.selectedRecipe?.uom || _state.selectedRecipe?.output_item?.uom || 'ea';
-      if (!Number.isInteger(recipeId) || recipeId <= 0) {
-        throw new Error('Select a valid recipe.');
+      const outputUom = String(
+        _state.selectedRecipe?.uom ||
+        _state.selectedRecipe?.output_item?.uom ||
+        _state.selectedRecipe?.output_item?.display_unit ||
+        ''
+      ).trim();
+      if (!outputUom) {
+        statusMsg.textContent = 'Missing output unit (uom). Cannot run manufacturing.';
+        statusMsg.style.color = '#ff4444';
+        runBtn.disabled = false;
+        runBtn.textContent = 'Run Production';
+        return;
       }
-
-      const outputUom = _state.selectedRecipe?.output_item?.uom || _state.selectedRecipe?.output_item?.display_unit || 'ea';
       const payload = {
         recipe_id: recipeId,
         quantity_decimal: '1',
         uom: outputUom,
       };
 
-      const recipeName = _state.selectedRecipe.name || document.querySelector('#run-recipe option:checked')?.textContent || '';
       const recipeName = (
         _state.selectedRecipe.name ||
         _state.selectedRecipe.title ||

@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-import { ensureToken } from '../api.js';
+import { ensureToken, rawFetch } from '../api.js';
 
 export function mountBackup(container) {
   if (container) {
@@ -40,7 +40,7 @@ export function mountBackupExport() {
     try {
       const token = await ensureToken();
       const tryDownload = async (url, filename) => {
-        const res = await fetch(url, {
+        const res = await rawFetch(url, {
           headers: { 'X-Session-Token': token },
         });
         if (!res.ok) return false;
