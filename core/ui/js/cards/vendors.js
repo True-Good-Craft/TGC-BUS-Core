@@ -281,7 +281,7 @@ export function mountContacts(host) {
     b.addEventListener('click', () => {
       state.filterRole = f.key;
       setActive();
-      loadData();
+      void loadData();
     });
     filtersRow.appendChild(b);
   });
@@ -303,7 +303,7 @@ export function mountContacts(host) {
   searchField.style.maxWidth = '280px';
   searchField.addEventListener('input', () => {
     state.search = searchField.value.trim();
-    loadData();
+    void loadData();
   });
 
   searchWrap.appendChild(searchField);
@@ -505,6 +505,24 @@ export function mountContacts(host) {
         throw err;
       }
     }
+  }
+
+  function handleContactsDeepLink() {
+    const r = window.BUS_ROUTE;
+    if (!r || r.base !== '#/contacts' || !r.id) return;
+
+    const id = String(r.id);
+    const it = (state.list || []).find((x) => String(x?.id) === id);
+
+    if (it) {
+      state.expandedId = it.id;
+      render();
+    } else {
+      toast(`Contact not found: ${id}`, 'error');
+      window.location.hash = '#/contacts';
+    }
+
+    window.BUS_ROUTE = { ...r, id: null };
   }
 
   async function loadData() {
@@ -917,7 +935,11 @@ export function mountContacts(host) {
     window.__contactsModalListener = true;
   }
 
-  loadData();
+  (async () => {
+    await loadData();
+    handleContactsDeepLink();
+  })();
 }
+
 
 export default mountContacts;

@@ -35,6 +35,8 @@ const ROUTES = {
   '#/manufacturing': showManufacturing,
   '#/recipes': showRecipes,
   '#/contacts': showContacts,
+  '#/runs': showRuns,
+  '#/import': showImport,
   '#/settings': showSettings,
   '#/logs': showLogs,
   '#/home': showHome,
@@ -42,8 +44,25 @@ const ROUTES = {
   '': showInventory,
 };
 
-function getHash() {
-  return (window.location.hash || '#/home').replace(/\/+$/, '');
+function normalizeHash(rawHash) {
+  let hash = (rawHash || '#/home').trim();
+  if (!hash || hash === '#') return '#/home';
+  if (!hash.startsWith('#')) hash = `#${hash}`;
+  if (!hash.startsWith('#/')) hash = hash.replace(/^#/, '#/');
+  if (hash.length > 2) hash = hash.replace(/\/+$/, '');
+
+  if (hash === '#/admin') return '#/settings';
+  if (hash === '#/dashboard') return '#/home';
+  if (hash === '#/items') return '#/inventory';
+  if (hash === '#/vendors') return '#/contacts';
+
+  const itemsDetail = hash.match(/^#\/items\/([^/]+)$/);
+  if (itemsDetail) return `#/inventory/${itemsDetail[1]}`;
+
+  const vendorsDetail = hash.match(/^#\/vendors\/([^/]+)$/);
+  if (vendorsDetail) return `#/contacts/${vendorsDetail[1]}`;
+
+  return hash;
 }
 
 function normalizeRoute(hash) {
@@ -89,21 +108,38 @@ function clearCardHost() {
 
 async function onRouteChange() {
   await ensureToken();
-  const hash = getHash();
+  const raw = window.location.hash || '#/home';
+  const canonical = normalizeHash(raw);
 
-  if (hash === '#/admin') {
-    location.hash = '#/settings';
+  if (canonical !== raw) {
+    window.location.hash = canonical;
     return;
   }
 
-  const route = normalizeRoute(hash);
+  window.BUS_ROUTE = { path: canonical, base: canonical, id: null };
+
+  const detailMatch = canonical.match(/^#\/(inventory|contacts|recipes|runs)\/([^/]+)$/);
+  const baseHash = detailMatch ? `#/${detailMatch[1]}` : canonical;
+  const detailId = detailMatch ? decodeURIComponent(detailMatch[2]) : null;
+  const hash = canonical;
+
+  if (detailMatch) {
+    window.BUS_ROUTE = { path: canonical, base: baseHash, id: detailId };
+  }
+
+  const route = normalizeRoute(baseHash);
   setActiveNav(route);
 
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   clearCardHost();
 
-  const fn = ROUTES[hash] || ROUTES['#/home'];
-  await fn();
+  const fn = ROUTES[hash] || (detailMatch ? ROUTES[baseHash] : null);
+  if (fn) {
+    await fn();
+    return;
+  }
+
+  await showNotFound(canonical);
 }
 
 window.addEventListener('hashchange', () => {
@@ -248,3 +284,58 @@ async function showRecipes() {
   await mountRecipes();
 }
 
+function renderInlinePanel(title, message, badHash = null) {
+  const screen = document.querySelector('[data-role="home-screen"]');
+  if (!screen) return;
+  screen.classList.remove('hidden');
+  screen.innerHTML = `
+    <div class="card">
+      <h2>${title}</h2>
+      <p>${message}</p>
+      ${badHash ? `<p><code>${badHash}</code></p>` : ''}
+      <p><a href="#/home">Back to Home</a></p>
+    </div>
+  `;
+}
+
+async function showNotFound(badHash) {
+  unmountInventory();
+  unmountManufacturing();
+  unmountRecipes();
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  showScreen('home');
+  renderInlinePanel('404 — Not Found', 'The requested route does not exist.', badHash);
+}
+
+async function showRuns() {
+  unmountInventory();
+  unmountManufacturing();
+  unmountRecipes();
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  showScreen('home');
+  renderInlinePanel('Runs', 'Runs screen not implemented yet');
+}
+
+async function showImport() {
+  unmountInventory();
+  unmountManufacturing();
+  unmountRecipes();
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  showScreen('home');
+  renderInlinePanel('Import', 'Import screen not implemented yet');
+}
