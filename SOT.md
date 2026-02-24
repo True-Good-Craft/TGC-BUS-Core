@@ -896,3 +896,49 @@ $ pytest -q tests/smoke/test_manufacturing_flow.py
 
 ## (4) Acceptance statement
 DONE = TRUE
+
+# SoT DELTA — Smoke Harness Finalization — Phase 2D Compatible, Deterministic, PS 5.1 Clean
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Smoke Harness Finalization — Phase 2D Compatible, Deterministic, PS 5.1 Clean
+DATE: 2026-02-23
+SCOPE: smoke.ps1 cleanup + evidence
+[/DELTA HEADER]
+
+## (1) Objective
+Restore a wall-of-green deterministic smoke harness under Phase 2D contracts while removing investigation-only debug noise.
+
+## (2) What changed
+- Removed investigation-only debug noise from stock-in/ledger correlation path.
+- Kept correlation checks (batch_id/source_id) and changed diagnostics to failure-only output.
+- Kept ParseDec strict normalization and fail-loud behavior with no success-path diagnostics.
+- Fixed cleanup decimal absolute-value handling to PowerShell 5.1-compatible usage.
+
+## (3) Evidence blocks (raw outputs)
+
+### Smoke run #1 full output
+```text
+$ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1
+bash: command not found: powershell
+```
+
+### Smoke run #2 full output
+```text
+$ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1
+bash: command not found: powershell
+```
+
+### git diff summary
+```text
+$ git show --stat --oneline d4a29fb
+d4a29fb test(smoke): finalize harness output (remove debug spam), fix cleanup abs
+ scripts/smoke.ps1 | 54 +++++++-----------------------------------------------
+ 1 file changed, 7 insertions(+), 47 deletions(-)
+```
+
+```text
+$ git show --name-only --oneline d4a29fb
+d4a29fb test(smoke): finalize harness output (remove debug spam), fix cleanup abs
+scripts/smoke.ps1
+```
