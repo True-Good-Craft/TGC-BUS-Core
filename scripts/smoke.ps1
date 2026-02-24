@@ -49,7 +49,42 @@ function Info       { param([string]$m) Write-Host ("  [INFO] {0}" -f $m) -Foreg
 function Pass       { param([string]$m) Write-Host ("  [PASS] {0}" -f $m) -ForegroundColor Green }
 function Fail       { param([string]$m) Write-Host ("  [FAIL] {0}" -f $m) -ForegroundColor Red }
 function Step       { param([string]$m) Write-Host ""; Write-Host $m -ForegroundColor Cyan }
-function ParseDec([string]$s) { return [decimal]::Parse($s, [System.Globalization.CultureInfo]::InvariantCulture) }
+function ParseDec {
+  param(
+    [Parameter(Mandatory=$true)][AllowNull()][object]$Value,
+    [Parameter(Mandatory=$true)][string]$Label
+  )
+
+  if ($null -eq $Value) {
+    Fail ("ParseDec NULL ({0})" -f $Label)
+    exit 1
+  }
+
+  $s = [string]$Value
+
+  # normalize: trim + remove NBSP, normalize unicode minus to ASCII '-', normalize comma decimal to dot
+  $s = $s.Replace([char]0x00A0, ' ')  # NBSP -> space
+  $s = $s.Trim()
+  $s = $s.Replace([char]0x2212, '-')  # U+2212 minus
+  $s = $s.Replace([char]0x2013, '-')  # en dash
+  $s = $s.Replace([char]0x2014, '-')  # em dash
+  $s = $s.Replace(',', '.')           # comma decimal
+
+  if ([string]::IsNullOrWhiteSpace($s)) {
+    Fail ("ParseDec EMPTY ({0}) raw='{1}'" -f $Label, ([string]$Value))
+    exit 1
+  }
+
+  try {
+    return [decimal]::Parse($s, [System.Globalization.CultureInfo]::InvariantCulture)
+  } catch {
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($s)
+    $hex = ($bytes | ForEach-Object { $_.ToString("X2") }) -join " "
+    $codes = ($s.ToCharArray() | ForEach-Object { "U+{0:X4}" -f [int]$_ }) -join " "
+    Fail ("ParseDec FAIL ({0}) raw='{1}' norm='{2}' len={3} hex={4} codes={5}" -f $Label, ([string]$Value), $s, $s.Length, $hex, $codes)
+    exit 1
+  }
+}
 function RoundHalfUpCents([decimal]$v) { return [int][decimal]::Round($v, 0, [System.MidpointRounding]::AwayFromZero) }
 function LedgerHistoryUrl([int]$Limit) { return "$BaseUrl/app/ledger/history?limit=$Limit" }
 
@@ -342,7 +377,7 @@ $itemsBeforeStockIn = Invoke-Json GET ($BaseUrl + "/app/items") $null
 $itemABeforeRow = @($itemsBeforeStockIn | Where-Object { $_.id -eq $itemA.id } | Select-Object -First 1)
 $itemABeforeQtyStored = [decimal]0
 if ($itemABeforeRow.Count -gt 0 -and $null -ne $itemABeforeRow[0].qty_stored -and [string]$itemABeforeRow[0].qty_stored -ne "") {
-  $itemABeforeQtyStored = ParseDec([string]$itemABeforeRow[0].qty_stored)
+  $itemABeforeQtyStored = ParseDec $itemABeforeRow[0].qty_stored "step3:itemA.before.qty_stored"
 }
 
 $seedSid = ("smoke-{0}-seedA" -f $RunLabel)
@@ -386,7 +421,7 @@ $aRow = $allItems | Where-Object { $_.id -eq $itemA.id } | Select-Object -First 
 $itemAAfterQtyStored = [decimal]0
 if ($aRow) {
   if ($null -ne $aRow.qty_stored -and [string]$aRow.qty_stored -ne "") {
-    $itemAAfterQtyStored = ParseDec([string]$aRow.qty_stored)
+    $itemAAfterQtyStored = ParseDec $aRow.qty_stored "step3:itemA.after.qty_stored"
   }
   Info ("ItemA snapshot id={0} qty_stored={1} uom={2}" -f $aRow.id, $aRow.qty_stored, $aRow.uom)
 } else {
@@ -394,7 +429,7 @@ if ($aRow) {
 }
 
 if ($byBatch.Count -eq 0 -and $bySid.Count -eq 0) {
-  Fail "STOCK/IN OK but no ledger movement found by returned batch_id or source_id — backend stock/in write or ledger visibility issue."
+  Fail "STOCK/IN OK but no ledger movement found by returned batch_id or source_id - backend stock/in write or ledger visibility issue."
   exit 1
 }
 
@@ -403,13 +438,13 @@ if ($byBatch.Count -gt 0) { $match = $byBatch[0] }
 elseif ($bySid.Count -gt 0) { $match = $bySid[0] }
 
 if ($null -eq $match.quantity_decimal -or [string]$match.quantity_decimal -eq "") {
-  Fail "Ledger/history movement missing v2 fields (quantity_decimal/uom) — backend Phase 2D contract not active or regression."
+  Fail "Ledger/history movement missing v2 fields (quantity_decimal and uom) - backend contract regression"
   exit 1
 }
 
-$itemAQtyDec = ParseDec([string]$match.quantity_decimal)
+$itemAQtyDec = ParseDec $match.quantity_decimal "step3:seed.net"
 if ($itemAQtyDec -le 0) {
-  Fail "ItemA movement exists but not positive — sign bug or wrong movement selected; see printed summary."
+  Fail "ItemA movement exists but not positive - sign bug or wrong movement selected; see printed summary."
   exit 1
 }
 
@@ -419,7 +454,7 @@ if ($match.item_id -ne $itemA.id) {
 }
 
 if ($itemAAfterQtyStored -le $itemABeforeQtyStored) {
-  Fail "LEDGER wrote movement but item qty_stored unchanged — storage aggregation bug."
+  Fail "LEDGER wrote movement but item qty_stored unchanged - storage aggregation bug."
   exit 1
 }
 
@@ -441,13 +476,13 @@ $negTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/stock/out") @{ item_id
 if (-not $negTry.ok -and $negTry.err.Exception.Response.StatusCode.value__ -eq 400) { Pass "Oversized negative stock out rejected (400)" } else { Fail "Oversized negative stock out should be 400"; exit 1 }
 
 $itemAMoves = @(Get-MovementsByItem -ItemId $itemA.id -Limit 200)
-$itemAPositive = @($itemAMoves | Where-Object { (ParseDec([string]$_.quantity_decimal)) -gt 0 -and [string]$_.uom -eq "ea" })
-$itemANegative = @($itemAMoves | Where-Object { (ParseDec([string]$_.quantity_decimal)) -lt 0 -and [string]$_.uom -eq "ea" })
+$itemAPositive = @($itemAMoves | Where-Object { (ParseDec $_.quantity_decimal "step4:fifo.positive") -gt 0 -and [string]$_.uom -eq "ea" })
+$itemANegative = @($itemAMoves | Where-Object { (ParseDec $_.quantity_decimal "step4:fifo.negative") -lt 0 -and [string]$_.uom -eq "ea" })
 if ($itemAPositive.Count -ge 1) { Pass "Item A positive movement recorded in ea" } else { Fail "Missing Item A positive movement in ea"; exit 1 }
 if ($itemANegative.Count -ge 1) { Pass "Item A negative movement recorded in ea" } else { Fail "Missing Item A negative movement in ea"; exit 1 }
 
 $itemANet = [decimal]0
-foreach ($m in $itemAMoves) { $itemANet += ParseDec([string]$m.quantity_decimal) }
+foreach ($m in $itemAMoves) { $itemANet += ParseDec $m.quantity_decimal "step4:fifo.net" }
 $itemANetRounded = [decimal]::Round($itemANet, 2, [System.MidpointRounding]::AwayFromZero)
 if ($itemANetRounded -eq [decimal]26) {
   Pass "Item A net movement for Step 3 is 26 ea"
@@ -481,7 +516,7 @@ if ($dMoves.Count -gt 0 -and ($dMoves[0].PSObject.Properties.Name -contains "uom
   Pass "Item D movement uom is consistently ea"
 }
 $net = [decimal]0
-foreach ($m in $dMoves) { $net += ParseDec([string]$m.quantity_decimal) }
+foreach ($m in $dMoves) { $net += ParseDec $m.quantity_decimal "step4:fifo.net" }
 $rounded = [decimal]::Round($net, 2, [System.MidpointRounding]::AwayFromZero)
 if ($rounded -eq [decimal]3) { Pass "Remaining qty expected (3 units)" } else { Fail ("Unexpected remaining qty for Item D: {0} (rounded={1})" -f $net, $rounded); exit 1 }
 
@@ -495,8 +530,8 @@ if ($hasCreatedAt) {
 $firstIsPurchasePositive = $false
 $secondIsNegative = $false
 if ($orderedDMoves.Count -ge 2) {
-  $firstQty = ParseDec([string]$orderedDMoves[0].quantity_decimal)
-  $secondQty = ParseDec([string]$orderedDMoves[1].quantity_decimal)
+  $firstQty = ParseDec $orderedDMoves[0].quantity_decimal "step4:fifo.first"
+  $secondQty = ParseDec $orderedDMoves[1].quantity_decimal "step4:fifo.second"
   $firstIsPurchasePositive = ($orderedDMoves[0].source_kind -eq "purchase" -and $firstQty -gt 0)
   $secondIsNegative = ($secondQty -lt 0)
 }
@@ -714,8 +749,8 @@ if (-not $ff.ok -and $ff.err.Exception.Response.StatusCode.value__ -eq 400) {
 $ok2 = Invoke-Json POST ($BaseUrl + "/app/manufacture") @{ recipe_id = $rec.id; quantity_decimal = "2"; uom = "ea"; notes="atomic-check" }
 if ($ok2.status -ne "completed") { Fail "Second run not completed"; exit 1 }
 $runMovs = Get-RunMovements -RunId $ok2.run_id -Limit 200
-$consumes = @($runMovs | Where-Object { (ParseDec([string]$_.quantity_decimal)) -lt 0 })
-$outputs  = @($runMovs | Where-Object { (ParseDec([string]$_.quantity_decimal)) -gt 0 })
+$consumes = @($runMovs | Where-Object { (ParseDec $_.quantity_decimal "step7:atomic.consume") -lt 0 })
+$outputs  = @($runMovs | Where-Object { (ParseDec $_.quantity_decimal "step7:atomic.output") -gt 0 })
 if ($consumes.Count -ge 1) { Pass "Atomic Run: consume movements present" } else { Fail "No consume movements for run $($ok2.run_id)"; exit 1 }
 if ($outputs.Count -eq 1)  { Pass "Atomic Run: exactly one output movement" } else { Fail "Expected exactly one output movement"; exit 1 }
 
@@ -724,13 +759,13 @@ Info "Checking Unit Cost & Oversold invariants..."
 $ok3 = Invoke-Json POST ($BaseUrl + "/app/manufacture") @{ recipe_id = $rec.id; quantity_decimal = "2"; uom = "ea"; notes="cost-check" }
 if ($ok3.status -ne "completed") { Fail "Cost Check Run not completed"; exit 1 }
 $mov3 = Get-RunMovements -RunId $ok3.run_id -Limit 200
-$consumed = @($mov3 | Where-Object { (ParseDec([string]$_.quantity_decimal)) -lt 0 })
-$output   = @($mov3 | Where-Object { (ParseDec([string]$_.quantity_decimal)) -gt 0 })
+$consumed = @($mov3 | Where-Object { (ParseDec $_.quantity_decimal "step7:cost.consume") -lt 0 })
+$output   = @($mov3 | Where-Object { (ParseDec $_.quantity_decimal "step7:cost.output") -gt 0 })
 if ($output.Count -ne 1) { Fail "Cost check: expected one output movement"; exit 1 }
 
 [int64]$totalCents = 0
 foreach ($m in $consumed) {
-  $qtyAbs = [decimal]([math]::Abs([double](ParseDec([string]$m.quantity_decimal))))
+  $qtyAbs = [decimal]([math]::Abs([double](ParseDec $m.quantity_decimal "step7:cost.qtyabs")))
   $totalCents += [int64]($qtyAbs * [decimal]([int]$m.unit_cost_cents))
 }
 $expectedUnit = RoundHalfUpCents([decimal]($totalCents / 2))
