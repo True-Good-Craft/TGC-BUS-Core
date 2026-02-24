@@ -18,6 +18,7 @@
 // along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
 import { ensureToken } from "./js/token.js";
+import { rawFetch } from "./js/api.js";
 import { mountBackupExport } from "./js/cards/backup.js";
 import mountVendors from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
@@ -126,50 +127,12 @@ window.BUS_UNITS = {
   }
 };
 
-// Wrap fetch to convert imperial -> metric for known endpoints when American mode is ON.
-(function wrapFetch(){
-  const $fetch = window.fetch.bind(window);
-  window.fetch = async function(input, init){
-    try {
-      if (!window.BUS_UNITS.american) return $fetch(input, init);
-      const url = (typeof input === 'string') ? input : input.url;
-      // Only touch known mutate endpoints
-      const targets = ['/app/purchase', '/app/adjust', '/app/consume', '/app/stock/out'];
-      if (!targets.some(t => url && url.includes(t))) return $fetch(input, init);
-      if (!init || !init.body || typeof init.body !== 'string') return $fetch(input, init);
-      let payload = JSON.parse(init.body);
-      // Heuristics: determine dimension
-      const dim = payload.dimension || payload.item_dimension || payload.dim || 'area'; // default harmlessly
-      const unit = payload.qty_unit || payload.unit || payload.unit_price_unit || DIM_DEFAULTS_IMPERIAL[dim];
-      const converted = toMetricBase({
-        dimension: dim,
-        qty: payload.qty ?? payload.quantity ?? payload.amount,
-        qtyUnit: unit,
-        unitPrice: payload.unit_price ?? payload.price,
-        priceUnit: payload.price_unit ?? unit
-      });
-      if (!converted.sendUnits) {
-        if (payload.qty != null)       payload.qty = converted.qtyBase;
-        if (payload.quantity != null)  payload.quantity = converted.qtyBase;
-        if (payload.amount != null)    payload.amount = converted.qtyBase;
-        if (payload.unit_price != null) payload.unit_price = converted.pricePerBase;
-        // remove *_unit to indicate base units
-        delete payload.qty_unit; delete payload.price_unit; delete payload.unit;
-      }
-      init = { ...init, body: JSON.stringify(payload) };
-    } catch (e) {
-      // fail open: do not block request
-    }
-    return $fetch(input, init);
-  };
-})();
-
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await ensureToken();
     // UI version stamp (from FastAPI OpenAPI info.version)
     try {
-      const res = await fetch('/openapi.json', { credentials: 'include' });
+      const res = await rawFetch('/openapi.json', { credentials: 'include' });
       const j = await res.json();
       const el = document.querySelector('[data-role="ui-version"]');
       if (el && j?.info?.version) el.textContent = j.info.version;
@@ -283,80 +246,5 @@ async function showRecipes() {
   unmountInventory();
   unmountManufacturing();
   await mountRecipes();
-}
-
-function initManufacturing() {
-  const form = document.querySelector('[data-role="mfg-run-form"]');
-  const btn = document.querySelector('[data-role="mfg-run-btn"]');
-  const notes = form?.querySelector('#mfg-notes');
-  const hint = document.querySelector('[data-role="mfg-hint"]');
-  if (!form || !btn) return;
-  if (form.dataset.mfgBound) return;
-  form.dataset.mfgBound = '1';
-
-  const originalText = btn.textContent || 'Run Manufacturing';
-  let locked = false;
-
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    if (locked) return;
-
-    btn.disabled = true;
-    btn.textContent = 'Running…';
-
-    try {
-      const body = {};
-      const note = notes?.value?.trim();
-      if (note) body.notes = note;
-      const token = await ensureToken();
-      const res = await fetch('/app/inventory/run', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Session-Token': token,
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (res.status === 501) {
-        alert('Manufacturing is unavailable.');
-        locked = true;
-        btn.disabled = true;
-        btn.textContent = 'Unavailable';
-        if (hint) {
-          hint.textContent = 'Manufacturing is unavailable.';
-          hint.classList.remove('hidden');
-        }
-        return;
-      }
-
-      if (res.status === 404) {
-        locked = true;
-        btn.textContent = 'Unavailable';
-        if (hint) {
-          hint.textContent = 'Manufacturing is unavailable.';
-          hint.classList.remove('hidden');
-        }
-        return;
-      }
-
-      if (!res.ok) throw new Error(String(res.status));
-      alert('Manufacturing run submitted.');
-      if (notes) notes.value = '';
-    } catch (err) {
-      console.error('mfg run failed', err);
-      alert('Could not run manufacturing.');
-    } finally {
-      if (locked) {
-        btn.disabled = true;
-      } else {
-        btn.disabled = false;
-        btn.textContent = originalText;
-      }
-      if (!locked && btn.textContent !== originalText) {
-        btn.textContent = originalText;
-      }
-    }
-  });
 }
 

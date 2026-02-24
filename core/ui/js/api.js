@@ -21,6 +21,8 @@ import { request, ensureToken } from './token.js';
 
 export { ensureToken };
 
+export function rawFetch(input, init) { return fetch(input, init); }
+
 const API_BASE_PRIMARY = '/app';
 
 function normalizePath(path) {

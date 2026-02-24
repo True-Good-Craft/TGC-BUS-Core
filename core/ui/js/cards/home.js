@@ -1,3 +1,4 @@
+import { rawFetch } from "../api.js";
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 /* Home card – redesigned hero + launchpad (scoped styles) */
 function mountHome() { return renderHome(); }
@@ -64,7 +65,7 @@ function ensureHomeStyles() {
 
 async function setVersionInto(el) {
   try {
-    const res = await fetch("/openapi.json", { credentials: "include" });
+    const res = await rawFetch("/openapi.json", { credentials: "include" });
     const j = await res.json();
     if (j?.info?.version) { el.textContent = j.info.version; return; }
   } catch {}
@@ -219,7 +220,7 @@ function renderHome() {
       return;
     }
     try {
-      const res = await fetch(`/app/finance/profit?from=${encodeURIComponent(f)}&to=${encodeURIComponent(t)}`, { credentials: "include" });
+      const res = await rawFetch(`/app/finance/profit?from=${encodeURIComponent(f)}&to=${encodeURIComponent(t)}`, { credentials: "include" });
       const j = await res.json();
       if (!res.ok) throw j;
       financeOut.innerHTML = `

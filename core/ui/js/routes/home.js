@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 /* core/ui/js/routes/home.js */
 import { registerRoute } from "../router.js";
+import { rawFetch } from "../api.js";
 
 function ensureHomeStyles() {
   const id = "bus-home-styles";
@@ -64,7 +65,7 @@ function ensureHomeStyles() {
 
 async function setVersionInto(el) {
   try {
-    const res = await fetch("/openapi.json", { credentials: "include" });
+    const res = await rawFetch("/openapi.json", { credentials: "include" });
     const j = await res.json();
     if (j?.info?.version) {
       el.textContent = j.info.version;
