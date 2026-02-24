@@ -100,6 +100,23 @@ async function fetchItems(state) {
   return state.items;
 }
 
+function handleInventoryDeepLink() {
+  const r = window.BUS_ROUTE;
+  if (!r || r.base !== '#/inventory' || !r.id) return;
+
+  const id = String(r.id);
+  const it = (window.__inventory_items || []).find((x) => String(x?.id) === id);
+
+  if (it) {
+    openItemModal(it);
+  } else {
+    alert(`Item not found: ${id}`);
+    window.location.hash = '#/inventory';
+  }
+
+  window.BUS_ROUTE = { ...r, id: null };
+}
+
 function formatMoney(n) {
   const v = Number(n ?? 0);
   return v.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
@@ -696,18 +713,37 @@ export async function _mountInventory(container) {
       kv('Location', detail.location || '—'),
     ].filter(Boolean);
 
+    const dimension = detail.dimension === 'weight' ? 'mass' : (detail.dimension || 'count');
+    const displayUnit = detail.display_unit || (dimension === 'area'
+      ? 'm2'
+      : dimension === 'length'
+        ? 'm'
+        : dimension === 'mass'
+          ? 'g'
+          : dimension === 'volume'
+            ? 'l'
+            : 'ea');
+
     const batchRows = (detail.batches_summary && detail.batches_summary.length)
-      ? detail.batches_summary.map((b) => el('tr', {}, [
-          el('td', { text: b.entered ? new Date(b.entered).toLocaleDateString() : '—' }),
-          el('td', { text: (
-            (b?.quantity_display?.value != null && b?.quantity_display?.uom)
-              ? `${b.quantity_display.value} ${b.quantity_display.uom}`
-              : (b?.remaining_display?.value != null && b?.original_display?.value != null)
-                ? `${b.remaining_display.value} / ${b.original_display.value}${b?.remaining_display?.uom ? ` ${b.remaining_display.uom}` : ''}`
-                : ''
-          ) }),
-          el('td', { text: b.unit_cost_display || '—' }),
-        ]))
+      ? detail.batches_summary.map((b) => {
+          const quantityDisplayUom = b?.quantity_display?.uom || b?.quantity_display?.unit || '';
+          const quantityDisplayText = b?.quantity_display?.value != null
+            ? `${b.quantity_display.value}${quantityDisplayUom ? ` ${quantityDisplayUom}` : ''}`.trim()
+            : null;
+          const remainingOriginalUom = b?.remaining_display?.uom || b?.remaining_display?.unit || b?.original_display?.uom || b?.original_display?.unit || '';
+          const remainingOriginalText = (b?.remaining_display?.value != null && b?.original_display?.value != null)
+            ? `${b.remaining_display.value} / ${b.original_display.value}${remainingOriginalUom ? ` ${remainingOriginalUom}` : ''}`
+            : null;
+          const numericRemainingText = (b?.qty_remaining != null && b?.qty_original != null)
+            ? `${b.qty_remaining} / ${b.qty_original}${displayUnit ? ` ${displayUnit}` : ''}`
+            : null;
+          const remainingText = quantityDisplayText || remainingOriginalText || numericRemainingText || '—';
+          return el('tr', {}, [
+            el('td', { text: b.entered ? new Date(b.entered).toLocaleDateString() : '—' }),
+            el('td', { text: remainingText }),
+            el('td', { text: b.unit_cost_display || '—' }),
+          ]);
+        })
       : [el('tr', {}, [el('td', { class: 'c', colspan: '3', text: 'No batches' })])];
 
     const batchTable = el('table', { class: 'subtable' }, [
@@ -720,17 +756,6 @@ export async function _mountInventory(container) {
       ]),
       el('tbody', {}, batchRows),
     ]);
-
-    const dimension = detail.dimension === 'weight' ? 'mass' : (detail.dimension || 'count');
-    const displayUnit = detail.display_unit || (dimension === 'area'
-      ? 'm2'
-      : dimension === 'length'
-        ? 'm'
-        : dimension === 'mass'
-          ? 'g'
-          : dimension === 'volume'
-            ? 'l'
-            : 'ea');
 
     const details = el('tr', { class: 'row-details' }, [
       el('td', { colspan: String(colCount) }, [
@@ -762,6 +787,7 @@ export async function _mountInventory(container) {
 
   bindDetailsObserver(container);
   await reloadInventory();
+  handleInventoryDeepLink();
 }
 
 // ---- Expanded row normalization (unit-aware, loop-safe) ----
@@ -1190,8 +1216,9 @@ export function openItemModal(item = null) {
       return defaults[dim] || defaults.count || 'ea';
     };
     const initialUnit = item?.display_unit || item?.uom || item?.unit || item?.quantity_display?.unit || defaultUnitGuess();
-    populateUnitOptions(unitSelect, initialUnit);
-    populateUnitOptions(costUnitSelect, initialUnit);
+    const initialDim = item?.dimension || dimensionForUnit(initialUnit) || 'count';
+    populateUnitOptions(unitSelect, initialUnit, isEdit ? initialDim : undefined);
+    populateUnitOptions(costUnitSelect, initialUnit, initialDim);
     qtyChip.textContent = unitSelect.value;
     costUnitSelect.value = unitSelect.value;
     costUnitSelect.disabled = lockCostUnit.checked;
@@ -1262,7 +1289,11 @@ export function openItemModal(item = null) {
   }, true);
   card.addEventListener('click', (e) => e.stopPropagation());
 
-  unitSelect.addEventListener('change', () => syncUnitState());
+  unitSelect.addEventListener('change', () => {
+    const costDim = isEdit ? (item?.dimension || currentDimension()) : (dimensionForUnit(unitSelect.value) || currentDimension());
+    populateUnitOptions(costUnitSelect, lockCostUnit.checked ? unitSelect.value : costUnitSelect.value, costDim);
+    syncUnitState();
+  });
   costUnitSelect.addEventListener('change', () => { if (!lockCostUnit.checked) updatePreview(); });
   lockCostUnit.addEventListener('change', () => {
     costUnitSelect.disabled = lockCostUnit.checked;
@@ -1275,8 +1306,10 @@ export function openItemModal(item = null) {
   if (addBatchBtn) addBatchBtn.addEventListener('click', () => openStockInModal());
 
   const onUnitsMode = () => {
-    populateUnitOptions(unitSelect, unitSelect.value);
-    populateUnitOptions(costUnitSelect, costUnitSelect.value);
+    const modeDim = isEdit ? (item?.dimension || currentDimension()) : undefined;
+    const costDim = isEdit ? (item?.dimension || currentDimension()) : (dimensionForUnit(unitSelect.value) || currentDimension());
+    populateUnitOptions(unitSelect, unitSelect.value, modeDim);
+    populateUnitOptions(costUnitSelect, costUnitSelect.value, costDim);
     syncUnitState();
   };
   document.addEventListener('bus:units-mode', onUnitsMode);
@@ -1310,9 +1343,15 @@ export function openItemModal(item = null) {
     return select;
   }
 
-  function populateUnitOptions(select, preset) {
+  function populateUnitOptions(select, preset, dimHint) {
     const american = !!(window.BUS_UNITS && window.BUS_UNITS.american);
-    const groups = unitOptionsList({ american });
+    const normalizeDimHint = (dim) => {
+      if (!dim) return null;
+      if (dim === 'mass' || dim === 'weight') return 'weight';
+      return dim;
+    };
+    const normalizedHint = normalizeDimHint(dimHint);
+    const groups = unitOptionsList({ american }).filter((group) => !normalizedHint || group.dim === normalizedHint);
     const current = preset || select.value;
     select.innerHTML = '';
     groups.forEach((group) => {
@@ -1329,7 +1368,7 @@ export function openItemModal(item = null) {
     if (current && select.querySelector(`option[value="${current}"]`)) {
       select.value = current;
     } else if (!select.value) {
-      const fallbackDim = dimensionForUnit(current) || 'count';
+      const fallbackDim = normalizeDimHint(dimensionForUnit(current)) || normalizedHint || 'count';
       const defaults = american ? DIM_DEFAULTS_IMPERIAL : DIM_DEFAULTS_METRIC;
       const target = defaults[fallbackDim] || defaults.count || 'ea';
       if (select.querySelector(`option[value="${target}"]`)) {
@@ -1523,7 +1562,16 @@ export function openItemModal(item = null) {
     const dimensionVal = currentDimension();
 
     if (!unitVal) return markInvalid(unitSelect);
-    if ((isEdit || addOpeningBatch) && qtyVal === '') return markInvalid(qtyInput);
+    if (addOpeningBatch && qtyVal === '') return markInvalid(qtyInput);
+
+    if (isEdit && qtyVal === '' && errorBanner) {
+      errorBanner.textContent = 'Quantity left blank — saving metadata only (quantity unchanged).';
+      errorBanner.hidden = false;
+    }
+    if (!isEdit && !addOpeningBatch && qtyVal === '' && errorBanner) {
+      errorBanner.textContent = 'Quantity is blank — item will start at 0 unless you add an opening batch.';
+      errorBanner.hidden = false;
+    }
 
     const priceVal = (() => {
       const parsed = priceInput ? parseFloat(priceInput.value) : parseFloat(fieldValue(fPrice));
@@ -1546,6 +1594,10 @@ export function openItemModal(item = null) {
       is_product: isProductInput.checked,
       quantity_decimal: isEdit ? qtyVal : '0',
     };
+
+    if (isEdit && qtyVal === '') {
+      delete payload.quantity_decimal;
+    }
 
     if (isProductInput.checked) {
       payload.price_decimal = priceInput?.value ?? String(priceVal ?? 0);

@@ -942,3 +942,58 @@ $ git show --name-only --oneline d4a29fb
 d4a29fb test(smoke): finalize harness output (remove debug spam), fix cleanup abs
 scripts/smoke.ps1
 ```
+
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: UI Phase B — Routing & Deep-link Completion + Inventory UX Polish + Audit Tooling Hardening
+DATE: 2026-02-24
+SCOPE: UI only (routing/entrypoint hardening, deep-link behavior, inventory UX), tooling only (audit scripts)
+BRANCH: systemnormalisation
+COMMIT: pending
+[/DELTA HEADER]
+
+## (1) OBJECTIVE
+Complete Phase B UI routing/deep-link contract and inventory UX polish while keeping backend/API contracts unchanged, and harden Phase A/B audit tooling to reduce false positives.
+
+## (2) COMPLETED WORK
+- index.html de-brained to redirect stub -> shell.html (no second SPA brain)
+- legacy router.js disabled by default (single router authority is app.js)
+- app.js routing contract:
+  - normalizeHash
+  - alias redirects (#/dashboard→#/home, #/items→#/inventory, #/vendors→#/contacts, param aliases)
+  - param matching for /<id> routes with BUS_ROUTE capture
+  - dedicated 404 with link to #/home
+  - placeholder routes for #/runs and #/import (if implemented)
+- Deep-link realization using BUS_ROUTE:
+  - Inventory (#/inventory/<id>): opens existing detail UI or not-found redirect
+  - Contacts (#/contacts/<id>): expands existing detail row or not-found redirect
+  - Recipes (#/recipes/<id>): opens existing detail UI or not-found redirect (this patch)
+- Inventory UX polish:
+  - dimension-safe UOM dropdown filtering
+  - remaining qty display in batch table (no legacy int fields; no parseInt reconstruction)
+  - metadata-only save allowed (quantity optional unless opening batch)
+  - warn-on-blank quantity behavior (not blocking)
+- Audit tooling polish:
+  - ui_contract_audit.sh hardened (path normalization + controlled exclusions)
+  - ui_phaseA_structural_guard.sh scoped to avoid token/units false positives; all guards PASS
+
+## (3) ACCEPTANCE (CHECKLIST)
+- Both scripts PASS:
+  - scripts/ui_contract_audit.sh
+  - scripts/ui_phaseA_structural_guard.sh (Guard 5 NOTE only acceptable)
+- Deep-links verified manually:
+  - #/inventory/<id>, #/contacts/<id>, #/recipes/<id> (happy + not-found)
+- Unknown route shows 404 and link back to #/home
+
+## (4) EVIDENCE PLACEHOLDERS (operator fills)
+- Paste outputs:
+  ```text
+  <output of scripts/ui_contract_audit.sh>
+  ```
+
+  ```text
+  <output of scripts/ui_phaseA_structural_guard.sh>
+  ```
+
+- Manual smoke checklist completion notes

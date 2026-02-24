@@ -9,6 +9,12 @@
 - Removed inventory UI fallback reliance on legacy `item?.qty` prefill.
 - Removed inventory batch-details dependence on legacy integer fields (`remaining_int`/`original_int`) and parse-int reconstruction.
 
+## Pre-Smoke Gate
+1. `./scripts/ui_contract_audit.sh`
+2. `./scripts/ui_phaseA_structural_guard.sh`
+- Both scripts must PASS before manual smoke.
+- If either FAILs, fix the reported violations; do not proceed.
+
 ## Manual Smoke Checklist
 - Inventory adjustments: run +5 and -2 paths.
 - Inventory stock-out: test `sold` and `other` reasons.
@@ -16,9 +22,7 @@
 - Manufacturing: test Run Production happy path and missing-uom guard behavior.
 - Navigation/reload sanity: bounce `#/home` ↔ `#/inventory` ↔ `#/manufacturing` and reload.
 
-## Audit Script Command
-- `./scripts/ui_contract_audit.sh`
-
 ## Known Non-Scope / Phase B
+- index.html is a redirect stub; legacy router.js is disabled by default; shell/app.js is routing authority.
 - Conversion wrapper logic remains in place by design for this phase.
 - Conversion purge/refinement is explicitly deferred to Phase B.

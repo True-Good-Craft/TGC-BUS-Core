@@ -76,6 +76,28 @@ function normalizeRecipe(data) {
 async function refreshData() {
   _items = await apiGet('/app/items');
   _recipes = await RecipesAPI.list();
+  window.__recipes = _recipes;
+}
+
+function handleRecipesDeepLink(listPanel, editorPanel) {
+  const r = window.BUS_ROUTE;
+  if (!r || r.base !== '#/recipes' || !r.id) return;
+  const id = String(r.id);
+
+  const list = window.__recipes || _recipes || [];
+  const it = (list || []).find((x) => String(x?.id) === id);
+
+  if (it) {
+    _activeId = it.id;
+    _draft = normalizeRecipe(it);
+    renderList(listPanel, editorPanel);
+    renderEditor(editorPanel, listPanel);
+  } else {
+    alert(`Recipe not found: ${id}`);
+    window.location.hash = '#/recipes';
+  }
+
+  window.BUS_ROUTE = { ...r, id: null };
 }
 
 export async function mountRecipes() {
@@ -100,6 +122,7 @@ export async function mountRecipes() {
 
   renderList(listPanel, editorPanel);
   renderEmpty(editorPanel);
+  handleRecipesDeepLink(listPanel, editorPanel);
 }
 
 export function unmountRecipes() {
