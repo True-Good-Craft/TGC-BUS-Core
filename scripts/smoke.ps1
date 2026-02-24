@@ -221,34 +221,6 @@ function Extract-Movements {
   return @()
 }
 
-function Print-MovementSummary {
-  param($label, $moves, [int]$max = 10)
-
-  Info $label
-  if ($moves.Count -eq 0) { Info "  (no movements)"; return }
-  $keys = $moves[0].PSObject.Properties.Name -join ","
-  Info ("  movement keys: {0}" -f $keys)
-  $n = [Math]::Min($max, $moves.Count)
-  for ($i = 0; $i -lt $n; $i++) {
-    $m = $moves[$i]
-    $id = $m.id
-    $iid = $m.item_id
-    $bid = $m.batch_id
-    $sk = $m.source_kind
-    $sid = $m.source_id
-    $qd = $m.quantity_decimal
-    $uom = $m.uom
-    $qc = $m.qty_change
-    Info ("  {0}: item_id={1} batch_id={2} kind={3} sid={4} qdec={5} uom={6} qty_change={7}" -f $id,$iid,$bid,$sk,$sid,$qd,$uom,$qc)
-  }
-  $distinct = @($moves | Where-Object { $_.item_id -ne $null } | Select-Object -ExpandProperty item_id -Unique)
-  if ($distinct.Count -gt 0) {
-    $take = $distinct
-    if ($take.Count -gt 20) { $take = $take[0..19] }
-    Info ("  distinct item_id (first 20): {0}" -f (($take | ForEach-Object { "$_" }) -join ","))
-  }
-}
-
 $script:RunLabel = (Get-Date -Format "yyyyMMddHHmmss")
 $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
 
@@ -381,8 +353,6 @@ if ($itemABeforeRow.Count -gt 0 -and $null -ne $itemABeforeRow[0].qty_stored -an
 }
 
 $seedSid = ("smoke-{0}-seedA" -f $RunLabel)
-Info ("Stock-in payload item_id={0} qdec={1} uom={2} unit_cost_cents={3} source_id={4}" -f $itemA.id, "30", "ea", 100, $seedSid)
-
 $pos = Try-Invoke {
   Invoke-Json POST ($BaseUrl + "/app/stock/in") @{
     item_id = $itemA.id
@@ -393,29 +363,14 @@ $pos = Try-Invoke {
   }
 }
 if ($pos.ok) { Pass "Positive stock in (+30) on Item A accepted" } else { Fail "Positive stock in failed"; exit 1 }
-Info ("Stock-in response: {0}" -f ($pos.resp | ConvertTo-Json -Compress))
 $seedBatchId = $pos.resp.batch_id
 
 $rawLedger = Invoke-Json GET (LedgerHistoryUrl -Limit 300) $null
 $moves = @(Extract-Movements $rawLedger)
-Print-MovementSummary "Ledger after stock/in (unfiltered)" $moves 10
 
 $byBatch = @()
 if ($seedBatchId) { $byBatch = @($moves | Where-Object { $_.batch_id -eq $seedBatchId }) }
 $bySid = @($moves | Where-Object { $_.source_id -eq $seedSid })
-Info ("Ledger match count by batch_id={0}: {1}" -f $seedBatchId, $byBatch.Count)
-Info ("Ledger match count by source_id={0}: {1}" -f $seedSid, $bySid.Count)
-
-function Print-OneMove($label,$m) {
-  Info ("{0}: id={1} item_id={2} batch_id={3} kind={4} sid={5} qdec={6} uom={7}" -f $label, $m.id, $m.item_id, $m.batch_id, $m.source_kind, $m.source_id, $m.quantity_decimal, $m.uom)
-}
-if ($byBatch.Count -gt 0) { Print-OneMove "First batch match" $byBatch[0] }
-if ($bySid.Count -gt 0)   { Print-OneMove "First sid match"   $bySid[0] }
-
-$rawLedgerA = Invoke-Json GET ("$BaseUrl/app/ledger/history?item_id=$($itemA.id)&limit=50") $null
-$movesA = @(Extract-Movements $rawLedgerA)
-Print-MovementSummary "Ledger after stock/in (server-side filtered itemA)" $movesA 10
-
 $allItems = Invoke-Json GET ($BaseUrl + "/app/items") $null
 $aRow = $allItems | Where-Object { $_.id -eq $itemA.id } | Select-Object -First 1
 $itemAAfterQtyStored = [decimal]0
@@ -430,6 +385,11 @@ if ($aRow) {
 
 if ($byBatch.Count -eq 0 -and $bySid.Count -eq 0) {
   Fail "STOCK/IN OK but no ledger movement found by returned batch_id or source_id - backend stock/in write or ledger visibility issue."
+  Info ("Correlation diagnostics: item_id={0} source_id={1} batch_id={2}" -f $itemA.id, $seedSid, $seedBatchId)
+  $diagRows = @($moves | Select-Object -First 10)
+  foreach ($d in $diagRows) {
+    Info ("  id={0} item_id={1} batch_id={2} source_kind={3} source_id={4} quantity_decimal={5} uom={6}" -f $d.id, $d.item_id, $d.batch_id, $d.source_kind, $d.source_id, $d.quantity_decimal, $d.uom)
+  }
   exit 1
 }
 
@@ -444,7 +404,7 @@ if ($null -eq $match.quantity_decimal -or [string]$match.quantity_decimal -eq ""
 
 $itemAQtyDec = ParseDec $match.quantity_decimal "step3:seed.net"
 if ($itemAQtyDec -le 0) {
-  Fail "ItemA movement exists but not positive - sign bug or wrong movement selected; see printed summary."
+  Fail "ItemA movement exists but not positive - sign bug or wrong movement selected."
   exit 1
 }
 
@@ -973,7 +933,7 @@ foreach ($itm in $targetItems) {
   if ($current) {
     [decimal]$onHandQty = [decimal]$current.qty_stored
     if ($onHandQty -ne [decimal]0) {
-      $absQty = [decimal]::Abs($onHandQty)
+      $absQty = [math]::Abs([decimal]$onHandQty)
       $qtyText = $absQty.ToString([System.Globalization.CultureInfo]::InvariantCulture)
       if ($onHandQty -gt [decimal]0) {
         $zeroTry = Try-Invoke {
