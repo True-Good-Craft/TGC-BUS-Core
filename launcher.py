@@ -116,11 +116,8 @@ def main():
     # Load Config
     cfg = load_config()
 
-    # Icon Fallback
-    try:
-        icon_img = Image.open("Flat-Dark.png")
-    except Exception:
-        icon_img = Image.new('RGB', (64, 64), color=(73, 109, 137))
+    logo_path = Path(__file__).resolve().parent / "core" / "ui" / "Logo.png"
+    icon_image = Image.open(logo_path)
 
     # Threaded Server
     app_instance, _ = build_app()
@@ -160,7 +157,7 @@ def main():
             pystray.MenuItem("Quit BUS Core", on_quit)
         )
 
-        icon = pystray.Icon("BUS Core", icon_img, "TGC BUS Core", menu)
+        icon = pystray.Icon("BUS Core", icon_image, "TGC BUS Core", menu)
         icon.run()
     except Exception:
         # Fallback if icon run fails
