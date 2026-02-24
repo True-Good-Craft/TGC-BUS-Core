@@ -290,6 +290,10 @@ $itemB = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-B-$($RunLabel
 $itemC = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-C-$($RunLabel)"; uom = "ea"; dimension = "count" }
 $itemD = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-D-$($RunLabel)"; uom = "ea"; dimension = "count" }
 if ( ($itemA.id -as [int]) -gt 0 -and ($itemB.id -as [int]) -gt 0 -and ($itemC.id -as [int]) -gt 0 -and ($itemD.id -as [int]) -gt 0 ) { Pass "Created items A, B, C, D successfully" } else { Fail "Item creation failed"; exit 1 }
+Info ("ItemA id={0} name={1} uom={2}" -f $itemA.id, $itemA.name, $itemA.uom)
+Info ("ItemB id={0} name={1} uom={2}" -f $itemB.id, $itemB.name, $itemB.uom)
+Info ("ItemC id={0} name={1} uom={2}" -f $itemC.id, $itemC.name, $itemC.uom)
+Info ("ItemD id={0} name={1} uom={2}" -f $itemD.id, $itemD.name, $itemD.uom)
 
 foreach ($created in @($itemA, $itemB, $itemC, $itemD)) {
   $itemId = $created.id
@@ -341,20 +345,37 @@ if ($itemABeforeRow.Count -gt 0 -and $null -ne $itemABeforeRow[0].qty_stored -an
   $itemABeforeQtyStored = ParseDec([string]$itemABeforeRow[0].qty_stored)
 }
 
+$seedSid = ("smoke-{0}-seedA" -f $RunLabel)
+Info ("Stock-in payload item_id={0} qdec={1} uom={2} unit_cost_cents={3} source_id={4}" -f $itemA.id, "30", "ea", 100, $seedSid)
+
 $pos = Try-Invoke {
   Invoke-Json POST ($BaseUrl + "/app/stock/in") @{
     item_id = $itemA.id
     quantity_decimal = "30"
     uom = "ea"
     unit_cost_cents = 100
-    source_id = "smoke-seed"
+    source_id = $seedSid
   }
 }
 if ($pos.ok) { Pass "Positive stock in (+30) on Item A accepted" } else { Fail "Positive stock in failed"; exit 1 }
+Info ("Stock-in response: {0}" -f ($pos.resp | ConvertTo-Json -Compress))
+$seedBatchId = $pos.resp.batch_id
 
-$rawLedger = Invoke-Json GET (LedgerHistoryUrl -Limit 200) $null
+$rawLedger = Invoke-Json GET (LedgerHistoryUrl -Limit 300) $null
 $moves = @(Extract-Movements $rawLedger)
 Print-MovementSummary "Ledger after stock/in (unfiltered)" $moves 10
+
+$byBatch = @()
+if ($seedBatchId) { $byBatch = @($moves | Where-Object { $_.batch_id -eq $seedBatchId }) }
+$bySid = @($moves | Where-Object { $_.source_id -eq $seedSid })
+Info ("Ledger match count by batch_id={0}: {1}" -f $seedBatchId, $byBatch.Count)
+Info ("Ledger match count by source_id={0}: {1}" -f $seedSid, $bySid.Count)
+
+function Print-OneMove($label,$m) {
+  Info ("{0}: id={1} item_id={2} batch_id={3} kind={4} sid={5} qdec={6} uom={7}" -f $label, $m.id, $m.item_id, $m.batch_id, $m.source_kind, $m.source_id, $m.quantity_decimal, $m.uom)
+}
+if ($byBatch.Count -gt 0) { Print-OneMove "First batch match" $byBatch[0] }
+if ($bySid.Count -gt 0)   { Print-OneMove "First sid match"   $bySid[0] }
 
 $rawLedgerA = Invoke-Json GET ("$BaseUrl/app/ledger/history?item_id=$($itemA.id)&limit=50") $null
 $movesA = @(Extract-Movements $rawLedgerA)
@@ -367,41 +388,42 @@ if ($aRow) {
   if ($null -ne $aRow.qty_stored -and [string]$aRow.qty_stored -ne "") {
     $itemAAfterQtyStored = ParseDec([string]$aRow.qty_stored)
   }
-  Info ("ItemA qty_stored={0} uom={1}" -f $aRow.qty_stored, $aRow.uom)
+  Info ("ItemA snapshot id={0} qty_stored={1} uom={2}" -f $aRow.id, $aRow.qty_stored, $aRow.uom)
 } else {
   Info "ItemA not found in /app/items snapshot"
 }
 
-$hasA = @($moves | Where-Object { $_.item_id -eq $itemA.id }).Count -gt 0
-if (-not $hasA) { $hasA = @($movesA).Count -gt 0 }
-$qtyStoredIncreased = $itemAAfterQtyStored -gt $itemABeforeQtyStored
-
-if (-not $hasA) {
-  if ($qtyStoredIncreased) {
-    Fail "Stock/in persisted qty_stored but ledger/history did not show movement for itemA — backend ledger/history or indexing bug."
-  } else {
-    Fail "Stock/in returned ok but neither qty_stored nor ledger movement changed — backend stock/in write bug."
-  }
+if ($byBatch.Count -eq 0 -and $bySid.Count -eq 0) {
+  Fail "STOCK/IN OK but no ledger movement found by returned batch_id or source_id — backend stock/in write or ledger visibility issue."
   exit 1
 }
 
-$itemAMovement = @($moves | Where-Object { $_.item_id -eq $itemA.id } | Select-Object -First 1)
-if ($itemAMovement.Count -eq 0) {
-  $itemAMovement = @($movesA | Select-Object -First 1)
-}
+$match = $null
+if ($byBatch.Count -gt 0) { $match = $byBatch[0] }
+elseif ($bySid.Count -gt 0) { $match = $bySid[0] }
 
-if ($itemAMovement.Count -eq 0 -or $null -eq $itemAMovement[0].quantity_decimal -or [string]$itemAMovement[0].quantity_decimal -eq "") {
+if ($null -eq $match.quantity_decimal -or [string]$match.quantity_decimal -eq "") {
   Fail "Ledger/history movement missing v2 fields (quantity_decimal/uom) — backend Phase 2D contract not active or regression."
   exit 1
 }
 
-$itemAQtyDec = ParseDec([string]$itemAMovement[0].quantity_decimal)
+$itemAQtyDec = ParseDec([string]$match.quantity_decimal)
 if ($itemAQtyDec -le 0) {
   Fail "ItemA movement exists but not positive — sign bug or wrong movement selected; see printed summary."
   exit 1
 }
 
-Pass "Stock in persistence sanity check found Item A positive movement in ea"
+if ($match.item_id -ne $itemA.id) {
+  Fail ("IDENTITY MISMATCH: stock/in request item_id={0} but ledger move item_id={1} (batch_id={2}, sid={3})" -f $itemA.id, $match.item_id, $seedBatchId, $seedSid)
+  exit 1
+}
+
+if ($itemAAfterQtyStored -le $itemABeforeQtyStored) {
+  Fail "LEDGER wrote movement but item qty_stored unchanged — storage aggregation bug."
+  exit 1
+}
+
+Pass "Stock-in correlated to ledger movement (id/batch/source) and item identity consistent"
 
 $neg = Try-Invoke {
   Invoke-Json POST ($BaseUrl + "/app/stock/out") @{
