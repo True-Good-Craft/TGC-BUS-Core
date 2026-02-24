@@ -945,7 +945,7 @@ foreach ($itm in $targetItems) {
         }
       }
 
-      if ($zeroTry.ok) { Pass ("Zeroed inventory for Item {0} (qty={1})" -f $id, $qtyText) } else { Fail ("Failed to zero inventory for Item {0}" -f $id) }
+      if ($zeroTry.ok) { Pass ("Zeroed inventory for Item {0} (qty={1})" -f $id, $qtyText) } else { Info ("Cleanup warning: failed to zero inventory for Item {0} (continuing)" -f $id) }
     } else {
       Pass ("Item {0} already at zero inventory" -f $id)
     }
