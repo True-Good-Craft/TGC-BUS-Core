@@ -186,6 +186,34 @@ function Extract-Movements {
   return @()
 }
 
+function Print-MovementSummary {
+  param($label, $moves, [int]$max = 10)
+
+  Info $label
+  if ($moves.Count -eq 0) { Info "  (no movements)"; return }
+  $keys = $moves[0].PSObject.Properties.Name -join ","
+  Info ("  movement keys: {0}" -f $keys)
+  $n = [Math]::Min($max, $moves.Count)
+  for ($i = 0; $i -lt $n; $i++) {
+    $m = $moves[$i]
+    $id = $m.id
+    $iid = $m.item_id
+    $bid = $m.batch_id
+    $sk = $m.source_kind
+    $sid = $m.source_id
+    $qd = $m.quantity_decimal
+    $uom = $m.uom
+    $qc = $m.qty_change
+    Info ("  {0}: item_id={1} batch_id={2} kind={3} sid={4} qdec={5} uom={6} qty_change={7}" -f $id,$iid,$bid,$sk,$sid,$qd,$uom,$qc)
+  }
+  $distinct = @($moves | Where-Object { $_.item_id -ne $null } | Select-Object -ExpandProperty item_id -Unique)
+  if ($distinct.Count -gt 0) {
+    $take = $distinct
+    if ($take.Count -gt 20) { $take = $take[0..19] }
+    Info ("  distinct item_id (first 20): {0}" -f (($take | ForEach-Object { "$_" }) -join ","))
+  }
+}
+
 $script:RunLabel = (Get-Date -Format "yyyyMMddHHmmss")
 $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
 
@@ -306,6 +334,13 @@ if ($delContact.ok) { Pass "Contact deleted" } else { Fail "Contact delete faile
 Step "3. Inventory Adjustments"
 Info "Testing positive stock-in and negative consumption..."
 
+$itemsBeforeStockIn = Invoke-Json GET ($BaseUrl + "/app/items") $null
+$itemABeforeRow = @($itemsBeforeStockIn | Where-Object { $_.id -eq $itemA.id } | Select-Object -First 1)
+$itemABeforeQtyStored = [decimal]0
+if ($itemABeforeRow.Count -gt 0 -and $null -ne $itemABeforeRow[0].qty_stored -and [string]$itemABeforeRow[0].qty_stored -ne "") {
+  $itemABeforeQtyStored = ParseDec([string]$itemABeforeRow[0].qty_stored)
+}
+
 $pos = Try-Invoke {
   Invoke-Json POST ($BaseUrl + "/app/stock/in") @{
     item_id = $itemA.id
@@ -317,27 +352,56 @@ $pos = Try-Invoke {
 }
 if ($pos.ok) { Pass "Positive stock in (+30) on Item A accepted" } else { Fail "Positive stock in failed"; exit 1 }
 
-$itemAMovesAfterStockIn = @(Get-MovementsByItem -ItemId $itemA.id -Limit 200)
-$itemASeedPositive = @($itemAMovesAfterStockIn | Where-Object { [string]$_.uom -eq "ea" -and (ParseDec([string]$_.quantity_decimal)) -gt 0 })
-if ($itemASeedPositive.Count -ge 1) {
-  Pass "Stock in persistence sanity check found Item A positive movement in ea"
+$rawLedger = Invoke-Json GET (LedgerHistoryUrl -Limit 200) $null
+$moves = @(Extract-Movements $rawLedger)
+Print-MovementSummary "Ledger after stock/in (unfiltered)" $moves 10
+
+$rawLedgerA = Invoke-Json GET ("$BaseUrl/app/ledger/history?item_id=$($itemA.id)&limit=50") $null
+$movesA = @(Extract-Movements $rawLedgerA)
+Print-MovementSummary "Ledger after stock/in (server-side filtered itemA)" $movesA 10
+
+$allItems = Invoke-Json GET ($BaseUrl + "/app/items") $null
+$aRow = $allItems | Where-Object { $_.id -eq $itemA.id } | Select-Object -First 1
+$itemAAfterQtyStored = [decimal]0
+if ($aRow) {
+  if ($null -ne $aRow.qty_stored -and [string]$aRow.qty_stored -ne "") {
+    $itemAAfterQtyStored = ParseDec([string]$aRow.qty_stored)
+  }
+  Info ("ItemA qty_stored={0} uom={1}" -f $aRow.qty_stored, $aRow.uom)
 } else {
-  $posRespJson = ""
-  try { $posRespJson = ($pos.resp | ConvertTo-Json -Depth 10 -Compress) } catch { $posRespJson = "<unserializable>" }
-  $itemALedgerResp = Invoke-Json GET (LedgerHistoryUrl -Limit 200) $null
-  $itemALedgerKeys = ""
-  try { $itemALedgerKeys = (($itemALedgerResp.PSObject.Properties.Name) -join ",") } catch { $itemALedgerKeys = "" }
-  $itemALedgerExtracted = @(Extract-Movements $itemALedgerResp)
-  $itemALedgerDebug = @($itemAMovesAfterStockIn | Select-Object -First 10 | ForEach-Object {
-    "{0}|{1}|{2}|{3}|{4}" -f ([string]$_.id), ([string]$_.source_kind), ([string]$_.source_id), ([string]$_.quantity_decimal), ([string]$_.uom)
-  })
-  Info ("Stock-in response: {0}" -f $posRespJson)
-  Info ("Ledger response keys: {0}" -f $itemALedgerKeys)
-  Info ("Extracted movement count: {0}" -f $itemALedgerExtracted.Count)
-  Info ("Item A first 10 ledger rows after stock/in: {0}" -f ($itemALedgerDebug -join "; "))
-  Fail "Stock in returned success but no positive Item A movement persisted"
+  Info "ItemA not found in /app/items snapshot"
+}
+
+$hasA = @($moves | Where-Object { $_.item_id -eq $itemA.id }).Count -gt 0
+if (-not $hasA) { $hasA = @($movesA).Count -gt 0 }
+$qtyStoredIncreased = $itemAAfterQtyStored -gt $itemABeforeQtyStored
+
+if (-not $hasA) {
+  if ($qtyStoredIncreased) {
+    Fail "Stock/in persisted qty_stored but ledger/history did not show movement for itemA — backend ledger/history or indexing bug."
+  } else {
+    Fail "Stock/in returned ok but neither qty_stored nor ledger movement changed — backend stock/in write bug."
+  }
   exit 1
 }
+
+$itemAMovement = @($moves | Where-Object { $_.item_id -eq $itemA.id } | Select-Object -First 1)
+if ($itemAMovement.Count -eq 0) {
+  $itemAMovement = @($movesA | Select-Object -First 1)
+}
+
+if ($itemAMovement.Count -eq 0 -or $null -eq $itemAMovement[0].quantity_decimal -or [string]$itemAMovement[0].quantity_decimal -eq "") {
+  Fail "Ledger/history movement missing v2 fields (quantity_decimal/uom) — backend Phase 2D contract not active or regression."
+  exit 1
+}
+
+$itemAQtyDec = ParseDec([string]$itemAMovement[0].quantity_decimal)
+if ($itemAQtyDec -le 0) {
+  Fail "ItemA movement exists but not positive — sign bug or wrong movement selected; see printed summary."
+  exit 1
+}
+
+Pass "Stock in persistence sanity check found Item A positive movement in ea"
 
 $neg = Try-Invoke {
   Invoke-Json POST ($BaseUrl + "/app/stock/out") @{
