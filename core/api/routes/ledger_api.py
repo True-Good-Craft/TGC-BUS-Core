@@ -313,7 +313,7 @@ def canonical_history(
                 uom = default_unit_for(item.dimension)
             qty_decimal = from_base(abs(int(m.qty_change)), uom, item.dimension)
         else:
-            uom = "mc"
+            uom = 'mc'
             qty_decimal = Decimal(abs(int(m.qty_change)))
 
         signed_qty = -qty_decimal if int(m.qty_change) < 0 else qty_decimal
