@@ -56,6 +56,7 @@ def perform_stock_in_base(
             "batch_id": int(batch_id) if batch_id is not None else None,
         }
     )
+    session.commit()
     return {"ok": True, "batch_id": int(batch_id) if batch_id is not None else None}
 
 
