@@ -33,10 +33,10 @@ def _purchase_count_stock(client: TestClient, item_id: int, qty_each: str, unit_
         "/app/purchase",
         json={
             "item_id": int(item_id),
-            "qty": qty_base,
+            "quantity_decimal": str(qty_base),
+            "uom": "mc",
             "unit_cost_cents": int(unit_cost_cents),
-            "meta": {},
-            "note": "seed",
+            "source_id": "seed",
         },
     )
     assert r.status_code == 200, r.text
@@ -55,7 +55,8 @@ def test_sale_records_cash_event_and_links_source_id(bus_client):
         "/app/stock/out",
         json={
             "item_id": item_id,
-            "qty": 2000,
+            "quantity_decimal": "2000",
+            "uom": "mc",
             "reason": "sold",
             "note": "sale",
             "record_cash_event": True,
@@ -99,7 +100,8 @@ def test_refund_requires_cost_when_restock_true_and_no_related_source_id(bus_cli
         json={
             "item_id": item_id,
             "refund_amount_cents": 100,
-            "qty_base": 1000,
+            "quantity_decimal": "1",
+            "uom": "ea",
             "restock_inventory": True,
             "related_source_id": None,
             "restock_unit_cost_cents": None,
@@ -119,7 +121,8 @@ def test_refund_without_restock_records_cash_event_only(bus_client):
         json={
             "item_id": item_id,
             "refund_amount_cents": 250,
-            "qty_base": 1000,
+            "quantity_decimal": "1",
+            "uom": "ea",
             "restock_inventory": False,
             "related_source_id": None,
             "restock_unit_cost_cents": None,
@@ -134,6 +137,25 @@ def test_refund_without_restock_records_cash_event_only(bus_client):
     assert len(cash_events) == 1
     assert int(cash_events[0].amount_cents) == -250
     assert movements == []
+
+
+def test_refund_rejects_legacy_qty_base(bus_client):
+    client = bus_client["client"]
+    item_id = _create_count_item(client, "RefundLegacyReject", price=1.00)
+
+    resp = client.post(
+        "/app/finance/refund",
+        json={
+            "item_id": item_id,
+            "refund_amount_cents": 100,
+            "qty_base": 1000,
+            "restock_inventory": False,
+        },
+    )
+    assert resp.status_code == 400, resp.text
+    payload = resp.json()
+    assert payload["detail"]["error"] == "legacy_quantity_keys_forbidden"
+    assert "qty_base" in payload["detail"]["keys"]
 
 
 def test_profit_window_exclusive_upper_bound(bus_client):
@@ -188,3 +210,42 @@ def test_profit_window_exclusive_upper_bound(bus_client):
     assert pr.status_code == 200, pr.text
     j = pr.json()
     assert int(j["gross_sales_cents"]) == 111
+
+
+def test_profit_cogs_uses_human_unit_cost_not_base_qty(bus_client):
+    client = bus_client["client"]
+
+    item_id = _create_count_item(client, "HumanCogsCount", price=1.00)
+
+    purchase = client.post(
+        "/app/purchase",
+        json={
+            "item_id": int(item_id),
+            "quantity_decimal": "10000",
+            "uom": "mc",
+            "unit_cost_cents": 5,
+            "source_id": "seed-human-cogs",
+        },
+    )
+    assert purchase.status_code == 200, purchase.text
+
+    sold = client.post(
+        "/app/stock/out",
+        json={
+            "item_id": int(item_id),
+            "quantity_decimal": "2000",
+            "uom": "mc",
+            "reason": "sold",
+            "note": "human cogs regression",
+            "record_cash_event": True,
+            "sell_unit_price_cents": 25,
+        },
+    )
+    assert sold.status_code == 200, sold.text
+
+    day = datetime.utcnow().date().strftime("%Y-%m-%d")
+    profit = client.get(f"/app/finance/profit?from={day}&to={day}")
+    assert profit.status_code == 200, profit.text
+    payload = profit.json()
+
+    assert int(payload["cogs_cents"]) == 10

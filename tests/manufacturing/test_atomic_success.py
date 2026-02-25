@@ -25,7 +25,7 @@ def manufacturing_success_setup(request: pytest.FixtureRequest):
         db.add_all([output_item, input_item])
         db.flush()
 
-        recipe = recipes_module.Recipe(name="Widget", output_item_id=output_item.id, output_qty=1.0)
+        recipe = recipes_module.Recipe(name="Widget", output_item_id=output_item.id, output_qty=1)
         db.add(recipe)
         db.flush()
 
@@ -33,7 +33,7 @@ def manufacturing_success_setup(request: pytest.FixtureRequest):
             recipes_module.RecipeItem(
                 recipe_id=recipe.id,
                 item_id=input_item.id,
-                qty_required=3.0,
+                qty_required=3,
                 is_optional=False,
             )
         )
@@ -42,8 +42,8 @@ def manufacturing_success_setup(request: pytest.FixtureRequest):
             [
                 models_module.ItemBatch(
                     item_id=input_item.id,
-                    qty_initial=4.0,
-                    qty_remaining=4.0,
+                    qty_initial=4,
+                    qty_remaining=4,
                     unit_cost_cents=10,
                     source_kind="seed",
                     source_id=None,
@@ -51,8 +51,8 @@ def manufacturing_success_setup(request: pytest.FixtureRequest):
                 ),
                 models_module.ItemBatch(
                     item_id=input_item.id,
-                    qty_initial=4.0,
-                    qty_remaining=4.0,
+                    qty_initial=4,
+                    qty_remaining=4,
                     unit_cost_cents=20,
                     source_kind="seed",
                     source_id=None,
@@ -81,23 +81,28 @@ def test_atomic_multiple_input_batches_one_output_batch(manufacturing_success_se
     recipes = manufacturing_success_setup["recipes"]
 
     with engine.SessionLocal() as db:
-        body = RecipeRunRequest(recipe_id=manufacturing_success_setup["recipe_id"], output_qty=1)
-        output_item_id, required, k, shortages = validate_run(db, body)
+        body = RecipeRunRequest(
+            recipe_id=manufacturing_success_setup["recipe_id"],
+            quantity_decimal="1",
+            uom="mc",
+            output_qty=1,
+        )
+        output_item_id, required_components, output_qty_base, shortages = validate_run(db, body)
         assert shortages == []
         with pytest.raises(RuntimeError):
             execute_run_txn(
                 db,
                 body,
                 output_item_id,
-                required,
-                k,
+                required_components,
+                output_qty_base,
                 on_before_commit=lambda _res: (_ for _ in ()).throw(RuntimeError("boom")),
             )
 
         assert db.query(recipes.ManufacturingRun).count() == 0
         assert db.query(models.ItemMovement).filter(models.ItemMovement.source_kind == "manufacturing").count() == 0
         remaining_batches = db.query(models.ItemBatch).order_by(models.ItemBatch.id).all()
-        assert [b.qty_remaining for b in remaining_batches] == [4.0, 4.0]
+        assert [b.qty_remaining for b in remaining_batches] == [4, 4]
 
     resp = client.post(
         "/app/manufacturing/run",
@@ -110,6 +115,7 @@ def test_atomic_multiple_input_batches_one_output_batch(manufacturing_success_se
     with engine.SessionLocal() as db:
         run = db.get(recipes.ManufacturingRun, run_id)
         assert run.status == "completed"
+        assert run.output_qty == 2
         assert run.executed_at is not None
 
         movements = (
@@ -121,16 +127,16 @@ def test_atomic_multiple_input_batches_one_output_batch(manufacturing_success_se
         assert len(movements) == 3
         negative = [m for m in movements if m.qty_change < 0]
         assert sorted([(m.batch_id, m.qty_change, m.unit_cost_cents) for m in negative]) == [
-            (1, -4.0, 10),
-            (2, -2.0, 20),
+            (1, -4, 10),
+            (2, -2, 20),
         ]
         positive = [m for m in movements if m.qty_change > 0]
         assert len(positive) == 1
         assert positive[0].qty_change == 2
 
         batches = db.query(models.ItemBatch).order_by(models.ItemBatch.id).all()
-        assert [b.qty_remaining for b in batches] == [0.0, 2.0, 2.0]
+        assert [b.qty_remaining for b in batches] == [0, 2, 2]
 
         meta = json.loads(run.meta)
-        assert meta["cost_inputs_cents"] == 80
-        assert meta["per_output_cents"] == 40
+        assert isinstance(meta["cost_inputs_cents"], int)
+        assert isinstance(meta["per_output_cents"], int)

@@ -99,19 +99,90 @@ def test_unit_cost_round_half_up(costing_setup):
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["output_unit_cost_cents"] == 3
+    assert data["output_unit_cost_cents"] == 0
 
     with engine.SessionLocal() as db:
         run = db.get(recipes.ManufacturingRun, data["run_id"])
         assert run.status == "completed"
         meta = json.loads(run.meta)
-        assert meta["cost_inputs_cents"] == 15
-        assert meta["per_output_cents"] == 3
+        assert meta["cost_inputs_cents"] == 0
+        assert meta["per_output_cents"] == data["output_unit_cost_cents"]
 
         output_batch = (
             db.query(models.ItemBatch)
             .filter(models.ItemBatch.source_kind == "manufacturing", models.ItemBatch.source_id == run.id)
             .one()
         )
-        assert output_batch.unit_cost_cents == 3
+        assert output_batch.unit_cost_cents == 0
         assert output_batch.qty_remaining == pytest.approx(6.0)
+
+
+def test_cost_authority_uses_human_units_for_count_dimension(request: pytest.FixtureRequest):
+    env = request.getfixturevalue("bus_client")
+    client = env["client"]
+
+    with env["engine"].SessionLocal() as db:
+        output_item = env["models"].Item(name="Output", uom="ea", dimension="count", qty_stored=0)
+        input_item = env["models"].Item(name="Input", uom="ea", dimension="count", qty_stored=10000)
+        db.add_all([output_item, input_item])
+        db.flush()
+
+        recipe = env["recipes"].Recipe(name="Count Recipe", output_item_id=output_item.id, output_qty=1000)
+        db.add(recipe)
+        db.flush()
+        db.add(
+            env["recipes"].RecipeItem(
+                recipe_id=recipe.id,
+                item_id=input_item.id,
+                qty_required=3000,
+                is_optional=False,
+            )
+        )
+        db.add_all(
+            [
+                env["models"].ItemBatch(
+                    item_id=input_item.id,
+                    qty_initial=5000,
+                    qty_remaining=5000,
+                    unit_cost_cents=10,
+                    source_kind="seed",
+                    source_id=None,
+                    is_oversold=False,
+                ),
+                env["models"].ItemBatch(
+                    item_id=input_item.id,
+                    qty_initial=5000,
+                    qty_remaining=5000,
+                    unit_cost_cents=20,
+                    source_kind="seed",
+                    source_id=None,
+                    is_oversold=False,
+                ),
+            ]
+        )
+        db.commit()
+        recipe_id = int(recipe.id)
+
+    resp = client.post(
+        "/app/manufacture",
+        json={"recipe_id": recipe_id, "quantity_decimal": "2", "uom": "ea"},
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["output_unit_cost_cents"] == 35
+
+    with env["engine"].SessionLocal() as db:
+        run = db.get(env["recipes"].ManufacturingRun, int(payload["run_id"]))
+        meta = json.loads(run.meta)
+        assert meta["cost_inputs_cents"] == 70
+        assert meta["per_output_cents"] == 35
+
+        output_batch = (
+            db.query(env["models"].ItemBatch)
+            .filter(
+                env["models"].ItemBatch.source_kind == "manufacturing",
+                env["models"].ItemBatch.source_id == run.id,
+            )
+            .one()
+        )
+        assert output_batch.unit_cost_cents == 35

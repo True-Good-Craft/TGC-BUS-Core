@@ -1,16 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { apiGet, ensureToken } from '../api.js';
 import { RecipesAPI } from '../api/recipes.js';
-import {
-  toMetricBase,
-  unitOptionsList,
-  dimensionForUnit,
-  norm,
-  METRIC,
-  IMPERIAL_TO_METRIC,
-  DIM_DEFAULTS_METRIC,
-} from '../lib/units.js';
-import { preferredUnitForDimension } from '../lib/unit-preferences.js';
 
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -30,37 +20,15 @@ let _items = [];
 let _recipes = [];
 let _activeId = null;
 let _draft = null;
-let _unitsModeListenerBound = false;
-
-function americanMode() {
-  return !!(window.BUS_UNITS && window.BUS_UNITS.american);
-}
-
-function normalizeDimension(dim) {
-  if (!dim) return null;
-  const d = String(dim).toLowerCase();
-  if (d === 'mass') return 'weight';
-  if (['length', 'area', 'volume', 'weight', 'count'].includes(d)) return d;
-  return null;
-}
 
 function findItem(itemId) {
   return _items.find((i) => String(i.id) === String(itemId));
 }
 
-function defaultUnitFor(itemOrDim) {
-  const dim = normalizeDimension(itemOrDim?.dimension || itemOrDim) || 'count';
-  return itemOrDim?.uom || itemOrDim?.unit || preferredUnitForDimension(dim);
-}
-
-function displayQtyFromBase(base, unit, dimension) {
-  const dim = normalizeDimension(dimension) || 'count';
-  const u = norm(unit);
-  const imperialFactor = IMPERIAL_TO_METRIC[dim]?.[u];
-  if (imperialFactor) return (Number(base) || 0) / imperialFactor;
-  const factor = METRIC[dim]?.[u] || 1;
-  if (!factor) return Number(base) || 0;
-  return (Number(base) || 0) / factor;
+function decimalString(v) {
+  const s = String(v ?? '').trim().replace(/,/g, '');
+  if (s === '' || s === '.' || s === '-.') return '0';
+  return s.startsWith('.') ? `0${s}` : s;
 }
 
 function newRecipeDraft() {
@@ -68,7 +36,8 @@ function newRecipeDraft() {
     id: null,
     name: '',
     output_item_id: null,
-    output_qty: 1,
+    quantity_decimal: '1',
+    uom: '',
     archived: false,
     notes: '',
     items: [],
@@ -78,9 +47,8 @@ function newRecipeDraft() {
 function blankRecipeItem(sort = 0) {
   return {
     item_id: null,
-    qty_required: '',
-    unit: null,
-    dimension: null,
+    quantity_decimal: '',
+    uom: '',
     optional: false,
     sort,
   };
@@ -91,32 +59,45 @@ function normalizeRecipe(data) {
     id: data.id,
     name: data.name || '',
     output_item_id: data.output_item_id ?? null,
-    output_qty: data.output_qty || 1,
+    quantity_decimal: data.quantity_decimal ? String(data.quantity_decimal) : '1',
+    uom: data.uom || '',
     archived: data.archived === true || data.is_archived === true,
     notes: data.notes || '',
-    items: (data.items || []).map((it, idx) => {
-      const meta = findItem(it.item_id) || it.item || {};
-      const dim = normalizeDimension(it.dimension || meta.dimension) || 'count';
-      const unit = defaultUnitFor(meta) || preferredUnitForDimension(dim);
-      const qtyBase = it.qty_required !== undefined && it.qty_required !== null ? Number(it.qty_required) : null;
-      const qtyDisplay = qtyBase !== null && Number.isFinite(qtyBase)
-        ? displayQtyFromBase(qtyBase, unit, dim)
-        : null;
-      return {
-        item_id: it.item_id ?? null,
-        qty_required: qtyDisplay ?? '',
-        unit,
-        dimension: dim,
-        optional: it.optional === true || it.is_optional === true,
-        sort: Number.isFinite(it.sort ?? it.sort_order) ? (it.sort ?? it.sort_order) : idx,
-      };
-    }),
+    items: (data.items || []).map((it, idx) => ({
+      item_id: it.item_id ?? null,
+      quantity_decimal: it.quantity_decimal != null ? String(it.quantity_decimal) : '',
+      uom: it.uom || (it.item?.uom || ''),
+      optional: it.optional === true || it.is_optional === true,
+      sort: Number.isFinite(it.sort ?? it.sort_order) ? (it.sort ?? it.sort_order) : idx,
+    })),
   };
 }
 
 async function refreshData() {
   _items = await apiGet('/app/items');
   _recipes = await RecipesAPI.list();
+  window.__recipes = _recipes;
+}
+
+function handleRecipesDeepLink(listPanel, editorPanel) {
+  const r = window.BUS_ROUTE;
+  if (!r || r.base !== '#/recipes' || !r.id) return;
+  const id = String(r.id);
+
+  const list = window.__recipes || _recipes || [];
+  const it = (list || []).find((x) => String(x?.id) === id);
+
+  if (it) {
+    _activeId = it.id;
+    _draft = normalizeRecipe(it);
+    renderList(listPanel, editorPanel);
+    renderEditor(editorPanel, listPanel);
+  } else {
+    alert(`Recipe not found: ${id}`);
+    window.location.hash = '#/recipes';
+  }
+
+  window.BUS_ROUTE = { ...r, id: null };
 }
 
 export async function mountRecipes() {
@@ -127,7 +108,7 @@ export async function mountRecipes() {
 
   try {
     await refreshData();
-  } catch (err) {
+  } catch {
     container.textContent = 'Failed to load recipes.';
     return;
   }
@@ -141,6 +122,7 @@ export async function mountRecipes() {
 
   renderList(listPanel, editorPanel);
   renderEmpty(editorPanel);
+  handleRecipesDeepLink(listPanel, editorPanel);
 }
 
 export function unmountRecipes() {
@@ -157,14 +139,18 @@ function renderList(container, editor) {
 
   const header = el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px' }, [
     el('h2', { text: 'Recipes', style: 'margin:0;' }),
-    el('button', { class: 'btn primary small', text: '+ New', style: 'border-radius:10px;padding:8px 12px;' })
+    el('button', { class: 'btn primary small', text: '+ New', style: 'border-radius:10px;padding:8px 12px;' }),
   ]);
-  header.lastChild.onclick = () => renderCreateForm(editor, container);
+  header.lastChild.onclick = () => {
+    _activeId = null;
+    _draft = newRecipeDraft();
+    renderEditor(editor, container);
+  };
 
   const search = el('input', {
     type: 'search',
     placeholder: 'Filter…',
-    style: 'width:100%;margin:6px 0 12px 0;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
+    style: 'width:100%;margin:6px 0 12px 0;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
   });
   const list = el('div', { style: 'display:flex;flex-direction:column;gap:8px' });
 
@@ -172,21 +158,17 @@ function renderList(container, editor) {
     list.innerHTML = '';
     const q = term.trim().toLowerCase();
     _recipes
-      .filter(r => !q || r.name.toLowerCase().includes(q))
-      .forEach(r => {
+      .filter((r) => !q || String(r.name || '').toLowerCase().includes(q))
+      .forEach((r) => {
         const row = el('div', {
           class: 'recipe-row',
-          style: 'padding:10px 12px;background:#23262b;border-radius:10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border:1px solid #2f3136;'
+          style: 'padding:10px 12px;background:#23262b;border-radius:10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border:1px solid #2f3136;',
         }, [
           el('span', { text: r.name, style: 'color:#e6e6e6' }),
-          el('span', { text: '→', style: 'color:#6b7280' })
+          el('span', { text: '→', style: 'color:#6b7280' }),
         ]);
-        if (r.id === _activeId) {
-          row.style.background = '#2f333b';
-        }
+        if (r.id === _activeId) row.style.background = '#2f333b';
         row.onclick = async () => {
-          container.querySelectorAll('.recipe-row').forEach(n => n.style.background = '#23262b');
-          row.style.background = '#2f333b';
           _activeId = r.id;
           _draft = normalizeRecipe(await RecipesAPI.get(r.id));
           renderEditor(editor, container);
@@ -205,35 +187,6 @@ function renderEmpty(editor) {
   editor.append(el('div', { style: 'color:#666;text-align:center;margin-top:50px' }, 'Select a recipe to edit.'));
 }
 
-function renderCreateForm(editor, leftPanel) {
-  _activeId = null;
-  _draft = newRecipeDraft();
-  editor.innerHTML = '';
-
-  const title = el('h2', { text: 'Create New Recipe', style: 'margin-top:0' });
-  const name = el('input', {
-    type: 'text',
-    placeholder: 'Recipe Name',
-    style: 'width:100%;margin-bottom:12px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
-  });
-  const save = el('button', { class: 'btn primary', text: 'Create', style: 'border-radius:10px;padding:10px 14px;' });
-  const status = el('div', { style: 'min-height:18px;font-size:13px;color:#aaa;margin-top:6px;' });
-
-  save.onclick = async () => {
-    const trimmed = name.value.trim();
-    if (!trimmed) {
-      status.textContent = 'Name is required.';
-      status.style.color = '#ff6666';
-      return;
-    }
-    _draft = newRecipeDraft();
-    _draft.name = trimmed;
-    renderEditor(editor, leftPanel);
-  };
-
-  editor.append(title, name, save, status);
-}
-
 function renderEditor(editor, leftPanel) {
   editor.innerHTML = '';
   if (!_draft) {
@@ -247,32 +200,46 @@ function renderEditor(editor, leftPanel) {
   const nameInput = el('input', {
     type: 'text',
     value: _draft.name,
-    style: 'flex:1;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
+    style: 'flex:1;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
   });
   nameInput.addEventListener('input', () => { _draft.name = nameInput.value; });
   nameRow.append(el('label', { text: 'Name', style: 'width:90px;color:#cdd1dc' }), nameInput);
-  // (reserved) Code field intentionally not rendered; kept for future features and omitted from payloads.
+
   const outputRow = el('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap' });
   const outSel = el('select', {
     id: 'recipe-output',
-    style: 'flex:1;min-width:200px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
+    style: 'flex:1;min-width:200px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
   });
   outSel.append(el('option', { value: '', disabled: 'true', selected: _draft.output_item_id == null ? 'selected' : undefined }, '— Output Item —'));
-  _items.forEach((i) => {
-    outSel.append(
-      el('option', { value: String(i.id) }, i.name)
-    );
-  });
-  if (_draft.output_item_id != null) {
-    outSel.value = String(_draft.output_item_id);
-  }
+  _items.forEach((i) => outSel.append(el('option', { value: String(i.id) }, i.name)));
+  if (_draft.output_item_id != null) outSel.value = String(_draft.output_item_id);
   outSel.addEventListener('change', () => {
     const parsed = parseInt(outSel.value, 10);
     _draft.output_item_id = Number.isFinite(parsed) ? parsed : null;
+    const outItem = findItem(_draft.output_item_id);
+    _draft.uom = outItem?.uom || _draft.uom;
+    outUomInput.value = _draft.uom || '';
   });
+
+  const outQtyInput = el('input', {
+    type: 'text',
+    value: _draft.quantity_decimal || '1',
+    style: 'width:120px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
+  });
+  outQtyInput.addEventListener('input', () => { _draft.quantity_decimal = outQtyInput.value; });
+
+  const outUomInput = el('input', {
+    type: 'text',
+    value: _draft.uom || '',
+    style: 'width:100px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
+  });
+  outUomInput.addEventListener('input', () => { _draft.uom = outUomInput.value; });
+
   outputRow.append(
-    el('label', { text: 'Output Item', style: 'width:90px;color:#cdd1dc' }),
+    el('label', { text: 'Output', style: 'width:90px;color:#cdd1dc' }),
     outSel,
+    outQtyInput,
+    outUomInput,
   );
 
   const flagsRow = el('div', { style: 'display:flex;gap:16px;align-items:center;margin-bottom:10px' });
@@ -284,209 +251,84 @@ function renderEditor(editor, leftPanel) {
   const notes = el('textarea', {
     value: _draft.notes || '',
     placeholder: 'Notes',
-    style: 'width:100%;min-height:80px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6;margin-bottom:10px;'
+    style: 'width:100%;min-height:80px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6;margin-bottom:10px;',
   });
   notes.addEventListener('input', () => { _draft.notes = notes.value; });
 
   const itemsBox = el('div', { style: 'background:#23262b;padding:14px;border-radius:10px;border:1px solid #2f3136;margin-bottom:12px' });
   const itemsHeader = el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px' }, [
     el('h4', { text: 'Input Items', style: 'margin:0;color:#e6e6e6' }),
-    el('button', { class: 'btn small', text: '+ Add', style: 'border-radius:10px;padding:8px 12px;' })
+    el('button', { class: 'btn small', text: '+ Add', style: 'border-radius:10px;padding:8px 12px;' }),
   ]);
 
   const table = el('table', { style: 'width:100%;border-collapse:collapse;background:#1e1f22;border:1px solid #2f3136;border-radius:10px;overflow:hidden;' });
   const thead = el('thead', { style: 'background:#202226' }, el('tr', {}, [
     el('th', { style: 'text-align:left;padding:10px;color:#e6e6e6' }, 'Item'),
-    el('th', { style: 'text-align:right;padding:10px;color:#e6e6e6' }, 'Qty + Unit'),
+    el('th', { style: 'text-align:right;padding:10px;color:#e6e6e6' }, 'Quantity'),
+    el('th', { style: 'text-align:right;padding:10px;color:#e6e6e6' }, 'UOM'),
     el('th', { style: 'text-align:center;padding:10px;color:#e6e6e6' }, 'Optional'),
-    el('th', { style: 'width:60px;text-align:right' }, '')
+    el('th', { style: 'width:60px;text-align:right' }, ''),
   ]));
   const tbody = el('tbody');
   table.append(thead, tbody);
-
-  function buildUnitSelectForDimension(dim, current) {
-    const select = el('select', {
-      class: 'input',
-      style: 'min-width:100px;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
-    });
-    unitOptionsList({ american: americanMode() }).forEach((g) => {
-      if (g.dim !== dim && g.dim !== 'count') return;
-      const og = document.createElement('optgroup');
-      og.label = g.label;
-      g.units.forEach((u) => {
-        const opt = document.createElement('option');
-        opt.value = u;
-        opt.textContent = u.replace('_', '-');
-        og.appendChild(opt);
-      });
-      select.appendChild(og);
-    });
-    if (current) select.value = current;
-    return select;
-  }
 
   function renderItemRows() {
     tbody.innerHTML = '';
     _draft.items.forEach((ri, idx) => {
       const row = el('tr', { style: 'border-bottom:1px solid #2f3136' });
+
       const itemSel = el('select', { style: 'width:100%;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
       itemSel.append(el('option', { value: '', selected: ri.item_id == null ? 'selected' : undefined }, '— Select —'));
-      _items.forEach(i => {
-        const opt = el('option', { value: i.id, selected: String(i.id) === String(ri.item_id) ? 'selected' : undefined }, i.name);
-        if (i.dimension) opt.dataset.dimension = i.dimension;
-        itemSel.append(opt);
+      _items.forEach((i) => itemSel.append(el('option', { value: String(i.id), selected: String(i.id) === String(ri.item_id) ? 'selected' : undefined }, i.name)));
+      itemSel.addEventListener('change', () => {
+        ri.item_id = itemSel.value ? Number(itemSel.value) : null;
+        const meta = findItem(ri.item_id);
+        if (meta?.uom) {
+          ri.uom = meta.uom;
+          uomInput.value = meta.uom;
+        }
       });
-      itemSel.value = ri.item_id == null ? '' : String(ri.item_id);
-
-      const itemMeta = findItem(ri.item_id) || {};
-      const dim = normalizeDimension(ri.dimension || itemMeta.dimension || dimensionForUnit(ri.unit)) || 'count';
-      ri.dimension = dim;
-      ri.unit = ri.unit || defaultUnitFor(itemMeta || dim);
 
       const qtyInput = el('input', {
-        type: 'number',
-        min: '0.0001',
-        step: '0.01',
-        value: ri.qty_required ?? '',
-        style: 'width:120px;text-align:right;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
+        type: 'text',
+        value: ri.quantity_decimal ?? '',
+        style: 'width:120px;text-align:right;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
       });
       qtyInput.addEventListener('input', () => {
-        const parsed = parseFloat(qtyInput.value);
-        ri.qty_required = Number.isFinite(parsed) ? parsed : null;
-        renderPreview();
+        ri.quantity_decimal = qtyInput.value;
       });
 
-      let unitSel = buildUnitSelectForDimension(dim, ri.unit);
-      unitSel.addEventListener('change', () => {
-        const prevDim = ri.dimension;
-        ri.unit = unitSel.value;
-        ri.dimension = normalizeDimension(dimensionForUnit(unitSel.value)) || ri.dimension;
-        renderPreview();
-        if (prevDim !== ri.dimension) setTimeout(renderItemRows, 0);
+      const uomInput = el('input', {
+        type: 'text',
+        value: ri.uom ?? '',
+        style: 'width:100px;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
+      });
+      uomInput.addEventListener('input', () => {
+        ri.uom = uomInput.value;
       });
 
-      itemSel.addEventListener('change', () => {
-        const prevDim = ri.dimension;
-        ri.item_id = itemSel.value ? Number(itemSel.value) : null;
-        const nextMeta = findItem(ri.item_id) || {};
-        const nextDim = normalizeDimension(nextMeta.dimension) || ri.dimension || 'count';
-        ri.dimension = nextDim;
-        const nextUnit = defaultUnitFor(nextMeta) || preferredUnitForDimension(nextDim);
-        ri.unit = nextUnit;
-        const replacement = buildUnitSelectForDimension(nextDim, nextUnit);
-        unitSel.replaceWith(replacement);
-        unitSel = replacement;
-        unitSel.addEventListener('change', () => {
-          ri.unit = unitSel.value;
-          ri.dimension = normalizeDimension(dimensionForUnit(unitSel.value)) || ri.dimension;
-          renderPreview();
-        });
-        renderPreview();
-        if (prevDim !== nextDim) setTimeout(renderItemRows, 0);
-      });
-
-      const qtyWrap = el('div', { style: 'display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;' });
-      qtyWrap.append(qtyInput, unitSel);
-
-      let helper = null;
-      if (ri.dimension === 'area') {
-        const lenInput = el('input', { type: 'number', min: '0', step: 'any', placeholder: 'L', style: 'width:90px;padding:6px 8px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-        const widInput = el('input', { type: 'number', min: '0', step: 'any', placeholder: 'W', style: 'width:90px;padding:6px 8px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-        const baseSel = el('select', { style: 'min-width:80px;padding:6px 8px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-        (americanMode() ? ['in', 'ft'] : ['cm', 'm']).forEach((u) => baseSel.append(el('option', { value: u, text: u })));
-        const applyBtn = el('button', { class: 'btn small', text: 'Apply', type: 'button', style: 'padding:6px 8px;border-radius:10px;' });
-        helper = el('div', { style: 'display:flex;gap:6px;align-items:center;margin-top:6px;justify-content:flex-end;flex-wrap:wrap;' }, [
-          el('span', { class: 'sub', text: 'L×W helper', style: 'opacity:0.8' }),
-          lenInput,
-          el('span', { text: '×', style: 'color:#9ca3af' }),
-          widInput,
-          baseSel,
-          applyBtn,
-        ]);
-        applyBtn.addEventListener('click', () => {
-          const L = parseFloat(lenInput.value || '0');
-          const W = parseFloat(widInput.value || '0');
-          if (!Number.isFinite(L) || !Number.isFinite(W) || L <= 0 || W <= 0) return;
-          const unit = baseSel.value || 'cm';
-          const area = L * W;
-          const areaUnit = unit === 'in' ? 'in2' : unit === 'ft' ? 'ft2' : unit === 'm' ? 'm2' : 'cm2';
-          qtyInput.value = area;
-          ri.qty_required = area;
-          ri.unit = areaUnit;
-          ri.dimension = 'area';
-          const replacement = buildUnitSelectForDimension('area', areaUnit);
-          unitSel.replaceWith(replacement);
-          unitSel = replacement;
-          unitSel.addEventListener('change', () => {
-            ri.unit = unitSel.value;
-            ri.dimension = normalizeDimension(dimensionForUnit(unitSel.value)) || 'area';
-            renderPreview();
-          });
-          renderPreview();
-        });
-      }
-
-      const optBox = el('input', { type: 'checkbox', checked: ri.optional === true ? 'checked' : undefined });
+      const optBox = el('input', { type: 'checkbox' });
       optBox.checked = ri.optional === true;
-      optBox.addEventListener('change', () => { ri.optional = optBox.checked; });
-
-      const delBtn = el('button', {
-        class: 'btn danger btn-icon',
-        type: 'button',
-        text: '×',
-        title: 'Remove input',
-        'aria-label': 'Remove input',
+      optBox.addEventListener('change', () => {
+        ri.optional = optBox.checked;
       });
-      delBtn.addEventListener('click', () => {
-        _draft.items = _draft.items.filter((_, i) => i !== idx);
+
+      const delBtn = el('button', { class: 'btn small', text: '✕', style: 'border-radius:10px;padding:6px 10px;' });
+      delBtn.onclick = () => {
+        _draft.items.splice(idx, 1);
+        _draft.items = _draft.items.map((it, sidx) => ({ ...it, sort: sidx }));
         renderItemRows();
-      });
-
-      const preview = el('div', { class: 'sub', style: 'margin-top:6px;color:#9ca3af;text-align:right;min-height:18px;' });
-
-      function renderPreview() {
-        const qtyVal = parseFloat(qtyInput.value || '0');
-        const unit = ri.unit || unitSel.value;
-        const dimNow = normalizeDimension(ri.dimension || dimensionForUnit(unit)) || 'count';
-        if (!ri.item_id || !Number.isFinite(qtyVal) || qtyVal <= 0) {
-          preview.textContent = '';
-          return;
-        }
-        const converted = toMetricBase({ dimension: dimNow, qty: qtyVal, qtyUnit: unit, unitPrice: 0, priceUnit: unit });
-        const baseQty = converted.qtyBase;
-        let text = baseQty != null ? `Base: ${baseQty.toLocaleString()} (${unit} → ${DIM_DEFAULTS_METRIC[dimNow] || 'base'})` : '';
-        const meta = findItem(ri.item_id);
-        const fifoCents = meta?.fifo_unit_cost_cents;
-        const priceUnit = meta?.stock_on_hand_display?.unit || meta?.uom || meta?.unit || unit;
-        if (fifoCents != null && baseQty != null) {
-          const pricePerUnit = fifoCents / 100;
-          const costConv = toMetricBase({ dimension: dimNow, qty: 1, qtyUnit: priceUnit, unitPrice: pricePerUnit, priceUnit });
-          const pricePerBase = costConv.pricePerBase ?? pricePerUnit;
-          const est = baseQty * pricePerBase;
-          if (Number.isFinite(est)) text += ` • est cost $${est.toFixed(2)}`;
-        }
-        preview.textContent = text;
-      }
-
-      const qtyCell = el('td', { style: 'padding:10px;text-align:right' });
-      qtyCell.append(qtyWrap);
-      if (helper) qtyCell.append(helper);
-      qtyCell.append(preview);
+      };
 
       row.append(
         el('td', { style: 'padding:10px' }, itemSel),
-        qtyCell,
+        el('td', { style: 'padding:10px;text-align:right' }, qtyInput),
+        el('td', { style: 'padding:10px;text-align:right' }, uomInput),
         el('td', { style: 'padding:10px;text-align:center' }, optBox),
-        el('td', { style: 'padding:10px;text-align:right' }, delBtn)
+        el('td', { style: 'padding:10px;text-align:right' }, delBtn),
       );
       tbody.append(row);
-      renderPreview();
     });
-  }
-
-  if (!_unitsModeListenerBound) {
-    document.addEventListener('bus:units-mode', () => renderItemRows());
-    _unitsModeListenerBound = true;
   }
 
   itemsHeader.lastChild.onclick = () => {
@@ -509,64 +351,42 @@ function renderEditor(editor, leftPanel) {
 
   function serializeDraft() {
     const nameVal = (_draft.name || '').trim();
-    const notesVal = (_draft.notes || '').trim();
-    const selectedOutput = (() => {
-      const sel = document.getElementById('recipe-output');
-      if (sel && sel.value) {
-        const parsed = parseInt(sel.value, 10);
-        _draft.output_item_id = Number.isFinite(parsed) ? parsed : null;
-      }
-      return _draft.output_item_id;
-    })();
+    const outItemId = Number(_draft.output_item_id);
+    const outQty = decimalString(_draft.quantity_decimal || '0');
+    const outUom = String(_draft.uom || '').trim();
 
     const cleanedItems = (_draft.items || [])
-      .map((it) => {
-        const meta = findItem(it.item_id) || {};
-        const dim = normalizeDimension(it.dimension || meta.dimension || dimensionForUnit(it.unit)) || 'count';
-        const unit = it.unit || defaultUnitFor(meta) || preferredUnitForDimension(dim);
-        const qtyVal = Number(it.qty_required);
-        const converted = toMetricBase({ dimension: dim, qty: qtyVal, qtyUnit: unit, unitPrice: 0, priceUnit: unit });
-        const qtyBase = converted?.qtyBase;
-        return {
-          item_id: it.item_id,
-          qty_required: qtyBase,
-          optional: it.optional === true || it.is_optional === true,
-          unit,
-          dimension: dim,
-        };
-      })
-      .filter(it => it.item_id && Number.isFinite(it.qty_required) && it.qty_required > 0);
+      .map((it, idx) => ({
+        item_id: Number(it.item_id),
+        quantity_decimal: decimalString(it.quantity_decimal || '0'),
+        uom: String(it.uom || '').trim(),
+        optional: it.optional === true,
+        sort: idx,
+      }))
+      .filter((it) => Number.isInteger(it.item_id) && it.item_id > 0 && Number(it.quantity_decimal) > 0 && it.uom);
 
     const errors = [];
     if (!nameVal) errors.push('Name is required.');
-    if (!selectedOutput) errors.push('Choose an output item.');
-    if (cleanedItems.length === 0) errors.push('Add at least one input item with quantity.');
-    if (errors.length) {
-      throw new Error(errors.join(' '));
-    }
+    if (!Number.isInteger(outItemId) || outItemId <= 0) errors.push('Choose an output item.');
+    if (!outUom) errors.push('Output UOM is required.');
+    if (Number(outQty) <= 0) errors.push('Output quantity must be positive.');
+    if (cleanedItems.length === 0) errors.push('Add at least one input item with quantity and uom.');
+    if (errors.length) throw new Error(errors.join(' '));
 
     return {
-      id: _draft.id,
       name: nameVal,
-      output_item_id: Number(selectedOutput),
-      output_qty: 1,
+      output_item_id: outItemId,
+      quantity_decimal: outQty,
+      uom: outUom,
       archived: !!_draft.archived,
-      notes: notesVal || null,
-      items: cleanedItems.map((it, idx) => ({
-        item_id: Number(it.item_id),
-        qty_required: Number(it.qty_required),
-        optional: it.optional === true,
-        sort: idx,
-      })),
+      notes: (_draft.notes || '').trim() || null,
+      items: cleanedItems,
     };
   }
 
   saveBtn.onclick = async () => {
     status.textContent = '';
     status.style.color = '#9ca3af';
-
-    const archivedValue = !!archivedToggle.checked;
-    _draft.archived = archivedValue;
     let payload;
     try {
       payload = serializeDraft();
@@ -578,10 +398,8 @@ function renderEditor(editor, leftPanel) {
 
     try {
       await ensureToken();
-      const saved = _draft.id
-        ? await RecipesAPI.update(_draft.id, payload)
-        : await RecipesAPI.create(payload);
-      _draft = normalizeRecipe(saved || await RecipesAPI.get(_draft.id));
+      const saved = _draft.id ? await RecipesAPI.update(_draft.id, payload) : await RecipesAPI.create(payload);
+      _draft = normalizeRecipe(saved || (_draft.id ? await RecipesAPI.get(_draft.id) : saved));
       _activeId = _draft.id;
       await refreshData();
       renderList(leftPanel, editor);
@@ -620,15 +438,6 @@ function renderEditor(editor, leftPanel) {
     }
   };
 
-  actions.append(status, el('div', { style: 'display:flex;gap:8px;align-items:center' }, [deleteBtn, saveBtn]));
-
-  editor.append(
-    el('h2', { text: 'Edit Recipe', style: 'margin-top:0' }),
-    nameRow,
-    outputRow,
-    flagsRow,
-    notes,
-    itemsBox,
-    actions,
-  );
+  actions.append(saveBtn, deleteBtn);
+  editor.append(nameRow, outputRow, flagsRow, notes, itemsBox, actions, status);
 }

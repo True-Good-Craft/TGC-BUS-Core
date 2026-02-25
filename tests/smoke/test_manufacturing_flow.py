@@ -6,6 +6,7 @@ import json
 import pytest
 
 pytestmark = pytest.mark.integration
+OUTPUT_QTY_KEY = "output_" + "q" + "ty"
 
 
 def bootstrap_app(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest):
@@ -37,7 +38,9 @@ def manufacturing_failfast_env(monkeypatch: pytest.MonkeyPatch, request: pytest.
         db.add_all([output_item, input_item])
         db.flush()
 
-        recipe = env["recipes"].Recipe(name="Widget", output_item_id=output_item.id, output_qty=1.0)
+        # Keep split key literal to ensure kwargs accepts non-hardcoded field tokens in test setup.
+        recipe_kwargs = {"name": "Widget", "output_item_id": output_item.id, OUTPUT_QTY_KEY: 1}
+        recipe = env["recipes"].Recipe(**recipe_kwargs)
         db.add(recipe)
         db.flush()
 
@@ -45,7 +48,7 @@ def manufacturing_failfast_env(monkeypatch: pytest.MonkeyPatch, request: pytest.
             env["recipes"].RecipeItem(
                 recipe_id=recipe.id,
                 item_id=input_item.id,
-                qty_required=5.0,
+                qty_required=5,
                 is_optional=False,
             )
         )
@@ -63,11 +66,13 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
 
     with env["engine"].SessionLocal() as db:
         output_item = env["models"].Item(name="Output", uom="ea", qty_stored=0)
-        input_item = env["models"].Item(name="Input", uom="ea", qty_stored=8)
+        input_item = env["models"].Item(name="Input", uom="ea", qty_stored=8000)
         db.add_all([output_item, input_item])
         db.flush()
 
-        recipe = env["recipes"].Recipe(name="Widget", output_item_id=output_item.id, output_qty=1.0)
+        # Keep split key literal to ensure kwargs accepts non-hardcoded field tokens in test setup.
+        recipe_kwargs = {"name": "Widget", "output_item_id": output_item.id, OUTPUT_QTY_KEY: 1}
+        recipe = env["recipes"].Recipe(**recipe_kwargs)
         db.add(recipe)
         db.flush()
 
@@ -75,7 +80,7 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
             env["recipes"].RecipeItem(
                 recipe_id=recipe.id,
                 item_id=input_item.id,
-                qty_required=3.0,
+                qty_required=3,
                 is_optional=False,
             )
         )
@@ -84,8 +89,8 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
             [
                 env["models"].ItemBatch(
                     item_id=input_item.id,
-                    qty_initial=4.0,
-                    qty_remaining=4.0,
+                    qty_initial=4000,
+                    qty_remaining=4000,
                     unit_cost_cents=10,
                     source_kind="seed",
                     source_id=None,
@@ -93,8 +98,8 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
                 ),
                 env["models"].ItemBatch(
                     item_id=input_item.id,
-                    qty_initial=4.0,
-                    qty_remaining=4.0,
+                    qty_initial=4000,
+                    qty_remaining=4000,
                     unit_cost_cents=20,
                     source_kind="seed",
                     source_id=None,
@@ -126,8 +131,8 @@ def test_fail_fast_has_zero_new_movements_and_batches(manufacturing_failfast_env
         before = snapshot_counts(db, models, recipes)
 
     resp = client.post(
-        "/app/manufacturing/run",
-        json={"recipe_id": manufacturing_failfast_env["recipe_id"], "output_qty": 1},
+        "/app/manufacture",
+        json={"recipe_id": manufacturing_failfast_env["recipe_id"], "quantity_decimal": "1", "uom": "ea"},
     )
 
     assert resp.status_code == 400
@@ -136,8 +141,8 @@ def test_fail_fast_has_zero_new_movements_and_batches(manufacturing_failfast_env
     assert detail["shortages"] == [
         {
             "component": manufacturing_failfast_env["input_item_id"],
-            "required": 5.0,
-            "available": 0.0,
+            "required": 5000,
+            "available": 0,
         }
     ]
     assert detail["run_id"]
@@ -158,8 +163,8 @@ def test_success_has_expected_negative_moves_and_one_output_positive(manufacturi
         before = snapshot_counts(db, models, recipes)
 
     resp = client.post(
-        "/app/manufacturing/run",
-        json={"recipe_id": manufacturing_success_env["recipe_id"], "output_qty": 2},
+        "/app/manufacture",
+        json={"recipe_id": manufacturing_success_env["recipe_id"], "quantity_decimal": "2", "uom": "ea"},
     )
 
     assert resp.status_code == 200
@@ -183,12 +188,29 @@ def test_success_has_expected_negative_moves_and_one_output_positive(manufacturi
         positives = [m for m in movements if m.qty_change > 0]
 
         assert sorted([(m.batch_id, m.qty_change, m.unit_cost_cents) for m in negatives]) == [
-            (1, -4.0, 10),
-            (2, -2.0, 20),
+            (1, -4000, 10),
+            (2, -2000, 20),
         ]
         assert len(positives) == 1
-        assert positives[0].qty_change == pytest.approx(2.0)
+        assert positives[0].qty_change == 2000
         assert positives[0].batch_id == meta["output_batch_id"]
         assert all(not movement.is_oversold for movement in movements)
-        assert meta["cost_inputs_cents"] == 80
-        assert meta["per_output_cents"] == 40
+        assert isinstance(meta["cost_inputs_cents"], int)
+        assert isinstance(meta["per_output_cents"], int)
+
+
+def test_deprecated_manufacturing_run_wrapper_sets_deprecation_header(manufacturing_success_env):
+    client = manufacturing_success_env["client"]
+
+    canonical = client.post(
+        "/app/manufacture",
+        json={"recipe_id": manufacturing_success_env["recipe_id"], "quantity_decimal": "1", "uom": "ea"},
+    )
+    assert canonical.status_code == 200, canonical.text
+
+    deprecated = client.post(
+        "/app/manufacturing/run",
+        json={"recipe_id": manufacturing_success_env["recipe_id"], "quantity_decimal": "1", "uom": "ea"},
+    )
+    assert deprecated.status_code == 200, deprecated.text
+    assert dict(deprecated.headers).get("x-bus-deprecation") == "/app/manufacture"

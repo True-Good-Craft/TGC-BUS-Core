@@ -21,8 +21,9 @@ import { request, ensureToken } from './token.js';
 
 export { ensureToken };
 
+export function rawFetch(input, init) { return fetch(input, init); }
+
 const API_BASE_PRIMARY = '/app';
-const API_BASE_LEGACY = '/api';
 
 function normalizePath(path) {
   if (/^https?:\/\//i.test(path)) return path;
@@ -32,29 +33,13 @@ function normalizePath(path) {
 function buildPrimary(path) {
   const normalized = normalizePath(path);
   if (normalized.startsWith(API_BASE_PRIMARY)) return normalized;
-  if (normalized.startsWith(API_BASE_LEGACY)) return normalized.replace(API_BASE_LEGACY, API_BASE_PRIMARY);
+  if (/^\/api\b/.test(normalized)) return normalized.replace(/^\/api\b/, API_BASE_PRIMARY);
   return `${API_BASE_PRIMARY}${normalized}`;
 }
 
-function buildLegacy(path) {
-  const normalized = normalizePath(path);
-  if (normalized.startsWith(API_BASE_LEGACY)) return normalized;
-  if (normalized.startsWith(API_BASE_PRIMARY)) return normalized.replace(API_BASE_PRIMARY, API_BASE_LEGACY);
-  return `${API_BASE_LEGACY}${normalized}`;
-}
-
-async function requestWithFallback(path, init) {
+async function requestCanonical(path, init) {
   const primaryPath = buildPrimary(path);
-  let response = await request(primaryPath, init);
-
-  if (response.status === 404) {
-    const legacyPath = buildLegacy(path);
-    if (legacyPath !== primaryPath) {
-      response = await request(legacyPath, init);
-    }
-  }
-
-  return response;
+  return request(primaryPath, init);
 }
 
 async function parseBody(response) {
@@ -94,7 +79,7 @@ async function handleResponse(response) {
 }
 
 export async function apiGet(url, init) {
-  const response = await requestWithFallback(url, { method: 'GET', ...(init || {}) });
+  const response = await requestCanonical(url, { method: 'GET', ...(init || {}) });
   return handleResponse(response);
 }
 
@@ -110,22 +95,22 @@ function createJsonInit(method, data, init) {
 }
 
 export async function apiPost(url, data, init) {
-  const response = await requestWithFallback(url, createJsonInit('POST', data, init));
+  const response = await requestCanonical(url, createJsonInit('POST', data, init));
   return handleResponse(response);
 }
 
 export async function apiPut(url, data, init) {
-  const response = await requestWithFallback(url, createJsonInit('PUT', data, init));
+  const response = await requestCanonical(url, createJsonInit('PUT', data, init));
   return handleResponse(response);
 }
 
 export async function apiPatch(url, data, init) {
-  const response = await requestWithFallback(url, createJsonInit('PATCH', data, init));
+  const response = await requestCanonical(url, createJsonInit('PATCH', data, init));
   return handleResponse(response);
 }
 
 export async function apiDelete(url, data, init) {
   const jsonInit = data === undefined ? { method: 'DELETE', ...(init || {}) } : createJsonInit('DELETE', data, init);
-  const response = await requestWithFallback(url, jsonInit);
+  const response = await requestCanonical(url, jsonInit);
   return handleResponse(response);
 }

@@ -21,7 +21,7 @@ def manufacturing_journal_setup(tmp_path, monkeypatch, request: pytest.FixtureRe
         db.add_all([output_item, input_item])
         db.flush()
 
-        recipe = recipes_module.Recipe(name="Widget", output_item_id=output_item.id, output_qty=1.0)
+        recipe = recipes_module.Recipe(name="Widget", output_item_id=output_item.id, output_qty=1)
         db.add(recipe)
         db.flush()
 
@@ -29,7 +29,7 @@ def manufacturing_journal_setup(tmp_path, monkeypatch, request: pytest.FixtureRe
             recipes_module.RecipeItem(
                 recipe_id=recipe.id,
                 item_id=input_item.id,
-                qty_required=1.0,
+                qty_required=1,
                 is_optional=False,
             )
         )
@@ -37,8 +37,8 @@ def manufacturing_journal_setup(tmp_path, monkeypatch, request: pytest.FixtureRe
         db.add(
             models_module.ItemBatch(
                 item_id=input_item.id,
-                qty_initial=2.0,
-                qty_remaining=2.0,
+                qty_initial=2,
+                qty_remaining=2,
                 unit_cost_cents=10,
                 source_kind="seed",
                 source_id=None,

@@ -21,7 +21,7 @@ def manufacturing_setup(monkeypatch: pytest.MonkeyPatch, request: pytest.Fixture
         db.add_all([output_item, input_item])
         db.flush()
 
-        recipe = recipes_module.Recipe(name="Widget", output_item_id=output_item.id, output_qty=1.0)
+        recipe = recipes_module.Recipe(name="Widget", output_item_id=output_item.id, output_qty=1)
         db.add(recipe)
         db.flush()
 
@@ -29,7 +29,7 @@ def manufacturing_setup(monkeypatch: pytest.MonkeyPatch, request: pytest.Fixture
             recipes_module.RecipeItem(
                 recipe_id=recipe.id,
                 item_id=input_item.id,
-                qty_required=5.0,
+                qty_required=5,
                 is_optional=False,
             )
         )
@@ -63,8 +63,8 @@ def test_shortage_returns_400_and_no_movements(manufacturing_setup):
     assert payload["shortages"] == [
         {
             "component": manufacturing_setup["input_item_id"],
-            "required": 5.0,
-            "available": 0.0,
+            "required": 5,
+            "available": 0,
         }
     ]
     assert payload["run_id"]

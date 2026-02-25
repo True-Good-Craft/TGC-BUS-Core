@@ -76,6 +76,17 @@ def default_unit_for(dimension: str) -> str:
     return BASE_UNIT_LABEL[_norm_dimension(dimension)]
 
 
+
+
+def normalize_quantity_to_base_int(quantity_decimal: str, uom: str, dimension: str) -> int:
+    q = Decimal(quantity_decimal)
+    multiplier = uom_multiplier(dimension, uom)
+    if multiplier == 0:
+        raise ValueError("unsupported_uom")
+    base = (q * Decimal(multiplier)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return int(base)
+
+
 def to_base_qty(value: int | float | Decimal, *, dimension: str, unit: str) -> int:
     """
     Convert a quantity expressed in 'unit' to an integer quantity in base units for 'dimension'.
@@ -185,6 +196,7 @@ __all__ = [
     "_norm_unit",
     "allowed_units_for",
     "uom_multiplier",
+    "normalize_quantity_to_base_int",
     "default_unit_for",
     "to_base_qty",
     "from_base_qty",
