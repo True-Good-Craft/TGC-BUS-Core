@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import json
-from contextlib import wraps
+from functools import wraps
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Callable, List, Tuple
