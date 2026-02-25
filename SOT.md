@@ -997,3 +997,68 @@ Complete Phase B UI routing/deep-link contract and inventory UX polish while kee
   ```
 
 - Manual smoke checklist completion notes
+
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Post-Stabilization Wrap — Transaction Boundary + SOLD Correlation + Smoke Verification
+DATE: 2026-02-25
+SCOPE: stabilization validation closure; correlation wiring fix; invariant tests; smoke evidence capture; doc alignment
+[/DELTA HEADER]
+
+(1) OBJECTIVE
+Close remaining pre-merge stabilization gates for PR #478 by:
+
+- Enforcing route-owned transaction boundaries (no commits/begins inside service mutation helpers).
+- Fixing inventory journal correlation integrity for stock-out SOLD path.
+- Recording canonical smoke harness execution as authoritative evidence (operator-provided log).
+- Confirming full pytest suite pass after stabilization changes.
+
+This delta is documentation/governance only and does not alter domain business logic.
+
+(2) BINDING INVARIANTS (RE-AFFIRMED)
+2.1 Transaction Ownership
+- Service/helper layers MUST NOT call commit() or own transaction boundaries (begin() / nested begin).
+- Routes/orchestration layers own commit/rollback/atomic blocks.
+
+2.2 Correlation Integrity — SOLD Stock-Out
+- For SOLD stock-out, define effective_source_id as the value actually used to correlate FIFO/movements and CashEvent.
+- Inventory journal source_id MUST equal effective_source_id.
+- If caller does not provide a ref/source_id, a generated UUID is the effective_source_id and MUST be reflected in journal entries.
+
+(3) CHANGES COMPLETED (STABILIZATION CLOSURE)
+3.1 Transaction ownership audit status
+- Service-layer audits for commit()/begin() within core/services show no matches in this pass.
+
+3.2 Journal correlation wiring status (SOLD path)
+- Correlation invariants are covered by tests asserting journal/source consistency against effective correlation id in both no-ref and provided-ref SOLD paths.
+
+3.3 Invariant tests present
+- test_stock_out_sold_without_ref_uses_generated_source_id_across_surfaces
+- test_stock_out_sold_with_ref_uses_provided_source_id_across_surfaces
+
+3.4 Handoff evidence pointer doc
+- Added release handoff evidence pointer document for PR #478.
+
+(4) EVIDENCE (REQUIRED FOR RELEASE READINESS)
+4.1 Pytest
+- Full suite status in this pass: 83 passed, 2 skipped.
+
+4.2 Service-layer commit/begin audit
+- rg -n "commit\(" core/services/ => no matches
+- rg -n "begin\(" core/services/ => no matches
+
+4.3 Canonical smoke harness execution
+- Canonical smoke entrypoint: scripts/smoke.ps1
+- Operator-run smoke log is authoritative evidence and must be attached to PR artifacts.
+- If cleanup warnings are present but smoke concludes PASS, classify as non-blocking unless elevated by Release Agent.
+
+(5) ACCEPTANCE CRITERIA (MERGE GATE)
+Validation-complete when all are true:
+- No service-layer commits/begins exist in stock mutation helper scope.
+- SOLD stock-out journal source_id equals effective correlation id used by FIFO/movements and CashEvent.
+- Correlation tests exist and pass.
+- Canonical smoke harness passes with real operator execution evidence attached.
+- Full pytest suite passes.
+- No merge/tag performed as part of validation closure.
+
