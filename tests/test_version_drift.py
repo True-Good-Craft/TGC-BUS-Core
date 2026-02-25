@@ -1,22 +1,33 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Drift guard: one canonical version source, no hardcoded semver in UI JS."""
 import re
+import tomllib
 from pathlib import Path
-
-import pytest
 
 from core.version import VERSION
 
-UI_JS_DIR = Path(__file__).parent.parent / "core" / "ui" / "js"
+REPO_ROOT = Path(__file__).parent.parent
+UI_JS_DIR = REPO_ROOT / "core" / "ui" / "js"
 # Pattern for semver literals like 0.10.5 or 0.11.0 — 3-part dotted numbers
 SEMVER_RE = re.compile(r"\b\d+\.\d+\.\d+\b")
 
 
-def test_canonical_version_is_0_11_0():
-    """core/version.py must declare the canonical version 0.11.0."""
-    assert VERSION == "0.11.0", (
-        f"core/version.py VERSION={VERSION!r}; expected '0.11.0'. "
-        "Update core/version.py to bump the version."
+def test_version_file_matches_canonical():
+    """Repo VERSION file must equal core.version.VERSION (the single source of truth)."""
+    declared = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    assert declared == VERSION, (
+        f"VERSION file={declared!r} does not match core/version.py VERSION={VERSION!r}. "
+        "Update the VERSION file to match core/version.py."
+    )
+
+
+def test_pyproject_version_matches_canonical():
+    """pyproject.toml [project] version must equal core.version.VERSION."""
+    data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    declared = data["project"]["version"]
+    assert declared == VERSION, (
+        f"pyproject.toml version={declared!r} does not match core/version.py VERSION={VERSION!r}. "
+        "Update pyproject.toml to match core/version.py."
     )
 
 
