@@ -117,7 +117,10 @@ def main():
     cfg = load_config()
 
     logo_path = Path(__file__).resolve().parent / "core" / "ui" / "Logo.png"
-    icon_image = Image.open(logo_path)
+    try:
+        icon_image = Image.open(logo_path)
+    except Exception:
+        icon_image = Image.new('RGB', (64, 64), color=(73, 109, 137))
 
     # Threaded Server
     app_instance, _ = build_app()
