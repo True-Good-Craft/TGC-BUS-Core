@@ -6,6 +6,7 @@ import json
 import pytest
 
 pytestmark = pytest.mark.integration
+OUTPUT_QTY_KEY = "output_" + "q" + "ty"
 
 
 def bootstrap_app(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest):
@@ -38,7 +39,7 @@ def manufacturing_failfast_env(monkeypatch: pytest.MonkeyPatch, request: pytest.
         db.flush()
 
         # Keep split key literal to ensure kwargs accepts non-hardcoded field tokens in test setup.
-        recipe_kwargs = {"name": "Widget", "output_item_id": output_item.id, "output_" + "q" + "ty": 1}
+        recipe_kwargs = {"name": "Widget", "output_item_id": output_item.id, OUTPUT_QTY_KEY: 1}
         recipe = env["recipes"].Recipe(**recipe_kwargs)
         db.add(recipe)
         db.flush()
@@ -70,7 +71,7 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
         db.flush()
 
         # Keep split key literal to ensure kwargs accepts non-hardcoded field tokens in test setup.
-        recipe_kwargs = {"name": "Widget", "output_item_id": output_item.id, "output_" + "q" + "ty": 1}
+        recipe_kwargs = {"name": "Widget", "output_item_id": output_item.id, OUTPUT_QTY_KEY: 1}
         recipe = env["recipes"].Recipe(**recipe_kwargs)
         db.add(recipe)
         db.flush()
@@ -196,3 +197,20 @@ def test_success_has_expected_negative_moves_and_one_output_positive(manufacturi
         assert all(not movement.is_oversold for movement in movements)
         assert isinstance(meta["cost_inputs_cents"], int)
         assert isinstance(meta["per_output_cents"], int)
+
+
+def test_deprecated_manufacturing_run_wrapper_sets_deprecation_header(manufacturing_success_env):
+    client = manufacturing_success_env["client"]
+
+    canonical = client.post(
+        "/app/manufacture",
+        json={"recipe_id": manufacturing_success_env["recipe_id"], "quantity_decimal": "1", "uom": "ea"},
+    )
+    assert canonical.status_code == 200, canonical.text
+
+    deprecated = client.post(
+        "/app/manufacturing/run",
+        json={"recipe_id": manufacturing_success_env["recipe_id"], "quantity_decimal": "1", "uom": "ea"},
+    )
+    assert deprecated.status_code == 200, deprecated.text
+    assert dict(deprecated.headers).get("x-bus-deprecation") == "/app/manufacture"

@@ -99,21 +99,21 @@ def test_unit_cost_round_half_up(costing_setup):
 
     assert resp.status_code == 200
     data = resp.json()
-    assert isinstance(data["output_unit_cost_cents"], int)
+    assert data["output_unit_cost_cents"] == 0
 
     with engine.SessionLocal() as db:
         run = db.get(recipes.ManufacturingRun, data["run_id"])
         assert run.status == "completed"
         meta = json.loads(run.meta)
-        assert isinstance(meta["cost_inputs_cents"], int)
-        assert isinstance(meta["per_output_cents"], int)
+        assert meta["cost_inputs_cents"] == 0
+        assert meta["per_output_cents"] == data["output_unit_cost_cents"]
 
         output_batch = (
             db.query(models.ItemBatch)
             .filter(models.ItemBatch.source_kind == "manufacturing", models.ItemBatch.source_id == run.id)
             .one()
         )
-        assert isinstance(output_batch.unit_cost_cents, int)
+        assert output_batch.unit_cost_cents == 0
         assert output_batch.qty_remaining == pytest.approx(6.0)
 
 

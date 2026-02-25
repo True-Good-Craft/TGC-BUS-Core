@@ -31,6 +31,7 @@ def _install_test_journal(monkeypatch, journal_path):
             f.write(json.dumps(entry) + "\n")
 
     monkeypatch.setattr("core.services.stock_mutation.append_inventory", _write)
+    monkeypatch.setattr("core.api.http.append_inventory", _write)
 
 
 
@@ -38,6 +39,7 @@ def _install_test_journal(monkeypatch, journal_path):
 def inventory_journal_setup(tmp_path, monkeypatch, request: pytest.FixtureRequest):
     journal_path = tmp_path / "journals" / "inventory.jsonl"
     monkeypatch.setenv("BUS_INVENTORY_JOURNAL", str(journal_path))
+    _install_test_journal(monkeypatch, journal_path)
     env = request.getfixturevalue("bus_client")
     engine_module = env["engine"]
     models_module = env["models"]
@@ -55,13 +57,11 @@ def inventory_journal_setup(tmp_path, monkeypatch, request: pytest.FixtureReques
     }
 
 
-def test_purchase_appends_journal(inventory_journal_setup, monkeypatch):
+def test_purchase_appends_journal(inventory_journal_setup):
     client = inventory_journal_setup["client"]
     engine = inventory_journal_setup["engine"]
     models = inventory_journal_setup["models"]
     journal_path = inventory_journal_setup["journal_path"]
-
-    _install_test_journal(monkeypatch, journal_path)
 
     resp = client.post(
         "/app/purchase",
@@ -93,7 +93,10 @@ def test_purchase_appends_journal(inventory_journal_setup, monkeypatch):
     assert entry["qty"] == pytest.approx(3)
     assert entry["unit_cost_cents"] == 125
     assert entry["item_id"] == inventory_journal_setup["item_id"]
-    assert entry["batch_id"] == resp.json().get("batch_ids")[0]
+    batch_ids = resp.json().get("batch_ids")
+    assert batch_ids
+    assert len(batch_ids) == 1
+    assert entry["batch_id"] == batch_ids[0]
 
 
 def test_journal_failure_does_not_block_adjustment(inventory_journal_setup, monkeypatch):
@@ -106,6 +109,7 @@ def test_journal_failure_does_not_block_adjustment(inventory_journal_setup, monk
         raise RuntimeError("fsync failed")
 
     monkeypatch.setattr("core.services.stock_mutation.append_inventory", boom)
+    monkeypatch.setattr("core.api.http.append_inventory", boom)
 
     resp = client.post(
         "/app/adjust",
