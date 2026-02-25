@@ -76,3 +76,22 @@ Release integrity > speed.
 If uncertain → request clarification.
 Never assume.
 Never fabricate verification.
+
+# POST-VERIFICATION ACTIONS
+
+If and only if all PRE-MERGE CHECKLIST items pass:
+
+1. Create a pull request targeting `main`
+2. Generate a complete PR description including:
+   - High-level summary of the release
+   - Domain-grouped changelog (Added / Changed / Fixed / Removed)
+   - SOT delta summary for this version
+   - Manufacturing normalization notes
+   - Ledger/stock correctness notes
+   - Smoke harness hardening notes
+   - UI Phase A/B notes
+   - Breaking changes
+   - Migration notes
+   - Release Verification block
+3. Ensure the PR title follows: `Release x.y.z – System Normalisation`
+4. Do not merge automatically. Wait for human approval.
