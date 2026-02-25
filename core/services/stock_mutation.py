@@ -112,7 +112,6 @@ def perform_stock_out_base(
             )
     else:
         moves = fifo_consume(session, item_int, qty, reason, ref)
-        session.commit()
 
     lines = [
         {
