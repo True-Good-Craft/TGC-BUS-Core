@@ -8,7 +8,7 @@ a = Analysis(
     [str(ROOT / 'launcher.py')],
     pathex=[str(ROOT)],
     binaries=[],
-    datas=[(str(ROOT / 'core' / 'ui'), 'core/ui'), (str(ROOT / 'Flat-Dark.png'), '.'), (str(ROOT / 'Glow-Hero.png'), '.')],
+    datas=[(str(ROOT / 'core' / 'ui'), 'core/ui')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
