@@ -49,25 +49,24 @@ logger = logging.getLogger(__name__)
 
 
 def _write_tray_failure_log(exc: Exception) -> Path:
-    """Persist tray startup failure details to disk."""
+    """Persist launcher failure details to disk."""
     _ensure_runtime_dirs()
-    log_path = LOGS / "tray_startup_error.log"
+    log_path = LOGS / "launcher.log"
     details = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    log_path.write_text(
-        f"[{timestamp}] Failed to initialize system tray.\n\n{details}",
-        encoding="utf-8",
-    )
+    with log_path.open("a", encoding="utf-8") as fh:
+        fh.write(f"[{timestamp}] Failed to initialize system tray.\n\n{details}\n")
     return log_path
 
 
-def _show_tray_failure_message(log_path: Path) -> None:
+def _show_tray_failure_message(exc: Exception, log_path: Path) -> None:
     """Show a fail-loud message box when tray creation fails on Windows."""
     if os.name != "nt":
         return
     try:
         message = (
             "TGC BUS Core could not start the system tray icon and will now exit.\n\n"
+            f"Error: {exc}\n\n"
             f"Details were written to:\n{log_path}"
         )
         ctypes.windll.user32.MessageBoxW(0, message, "TGC BUS Core Startup Error", 0x10)
@@ -144,7 +143,7 @@ def main():
     # "No command = no devmode" -> Defaults to False
     force_dev = args.dev or os.environ.get("BUS_DEV") == "1"
 
-    if force_dev:
+    if force_dev and not getattr(sys, "frozen", False):
         print("--- DEV MODE: Console Visible ---")
         os.environ["BUS_DEV"] = "1" # Enforce strict SOT rule
 
@@ -209,7 +208,7 @@ def main():
     if pystray is None:
         err = RuntimeError("pystray is unavailable in this environment")
         log_path = _write_tray_failure_log(err)
-        _show_tray_failure_message(log_path)
+        _show_tray_failure_message(err, log_path)
         sys.exit(1)
 
     def on_quit(icon, item):
@@ -232,7 +231,7 @@ def main():
         server.should_exit = True
         server.force_exit = True
         log_path = _write_tray_failure_log(exc)
-        _show_tray_failure_message(log_path)
+        _show_tray_failure_message(exc, log_path)
         sys.exit(1)
 
 if __name__ == "__main__":
