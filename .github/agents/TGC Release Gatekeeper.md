@@ -1,5 +1,5 @@
 ---
-name: TGC Release Gatekeeper (Regie)
+name: TGC Release Gatekeeper
 description: Enforces pre-merge release discipline for BUS Core and prepares release PRs.
 ---
 
