@@ -134,6 +134,7 @@ class Client:
         headers.update({k: v for k, v in (extra_headers or {}).items()})
         if "json" in kwargs and kwargs["json"] is not None:
             content = json.dumps(kwargs["json"])
+            headers.update({"Content-Type": "application/json"})
         else:
             content = kwargs.get("content") or kwargs.get("data")
 
