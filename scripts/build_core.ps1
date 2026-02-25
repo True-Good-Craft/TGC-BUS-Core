@@ -50,6 +50,11 @@ if (!(Test-Path $venvPy)) {
   throw "Missing venv at .venv. Create it once, then reuse.`nExpected: $venvPy"
 }
 
+$pyMM = (& $venvPy -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
+if ($pyMM -ne "3.11") {
+  throw "Build venv must be Python 3.11.x (got $pyMM). Recreate .venv with: py -3.11 -m venv .venv"
+}
+
 $isExplicitVersion = -not [string]::IsNullOrWhiteSpace($Version)
 if (-not $isExplicitVersion) {
   $Version = (& $venvPy -c "from core.version import VERSION; print(VERSION)").Trim()
