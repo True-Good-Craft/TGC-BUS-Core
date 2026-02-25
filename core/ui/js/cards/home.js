@@ -70,7 +70,8 @@ async function setVersionInto(el) {
     if (j?.info?.version) { el.textContent = j.info.version; return; }
   } catch {}
   const shell = document.querySelector('[data-role="ui-version"]');
-  if (shell && shell.textContent.trim()) el.textContent = shell.textContent.trim();
+  if (shell && shell.textContent.trim()) { el.textContent = shell.textContent.trim(); return; }
+  el.textContent = 'unknown';
 }
 
 function hostRoot() {

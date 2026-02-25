@@ -74,7 +74,8 @@ async function setVersionInto(el) {
   } catch {}
   // Fallback: try shell header version if present
   const shell = document.querySelector('[data-role="ui-version"]');
-  if (shell && shell.textContent.trim()) el.textContent = shell.textContent.trim();
+  if (shell && shell.textContent.trim()) { el.textContent = shell.textContent.trim(); return; }
+  el.textContent = 'unknown';
 }
 
 function renderHome(root) {

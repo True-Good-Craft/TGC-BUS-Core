@@ -167,12 +167,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     await ensureToken();
     // UI version stamp (from FastAPI OpenAPI info.version)
-    try {
-      const res = await rawFetch('/openapi.json', { credentials: 'include' });
-      const j = await res.json();
+    {
       const el = document.querySelector('[data-role="ui-version"]');
-      if (el && j?.info?.version) el.textContent = j.info.version;
-    } catch (_) { /* non-fatal */ }
+      if (el) {
+        try {
+          const res = await rawFetch('/openapi.json', { credentials: 'include' });
+          const j = await res.json();
+          el.textContent = j?.info?.version ?? 'unknown';
+        } catch (_) { el.textContent = 'unknown'; }
+      }
+    }
     console.log('BOOT OK');
   } catch (e) {
     console.error('BOOT FAIL', e);
