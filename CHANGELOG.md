@@ -8,7 +8,7 @@
 - **Canonical Unit Model**: All inventory quantities are now stored as integer base units (milli-count `mc` for count dimension; `1 ea = 1000 mc`). The canonical helper `normalize_quantity_to_base_int()` is the single authority for all unit conversions. Hardcoded multipliers outside this helper are non-compliant.
 - **Cost Authority Rule**: `unit_cost_cents` is always cost-per-human-unit (`item.uom`). Multiplying `unit_cost_cents` by base quantities directly is forbidden. General and manufacturing cost formulas now convert base→human before applying costs.
 - **Recipes v2 Contract**: Recipe payloads accept and respond with v2 fields; legacy `qty_base` keys are rejected.
-- **Ledger History v2 Response**: `/app/ledger/history` returns human-readable fields (`qty_human`, `uom`) by default; raw base fields hidden unless `?include_base=true`.
+- **Ledger History v2 Response**: `/app/ledger/history` returns human-readable fields (`quantity_decimal`, `uom`) by default; raw base fields hidden unless `?include_base=true`.
 - **Finance Refund v2 Contract**: Refund endpoint enforces v2 payload; legacy `qty_base` on refund is rejected.
 - **API Governance Document**: Added `API_CONTRACT.md` as the authoritative API contract reference.
 - **UI Deep-link Routing (Phase B)**:
@@ -28,16 +28,16 @@
 - SOT.md: sealed with Phase 0–1 authority locks and Phase 2A–2D verification evidence.
 
 ### Breaking Changes
-- **`qty_base` keys removed from Recipes, Ledger, and Finance (Refund) responses**. Consumers must migrate to `qty_human` + `uom` fields. See Migration Notes below.
+- **`qty_base` keys removed from Recipes, Ledger, and Finance (Refund) responses**. Consumers must migrate to `quantity_decimal` + `uom` fields. See Migration Notes below.
 - **Base unit for count is `mc` (milli-count), NOT `ea`**. Any code that assumed `ea` as storage base with multiplier=1 is non-compliant. Use `normalize_quantity_to_base_int()`.
-- **Manufacturing endpoint rejects legacy `quantity` key**. Use `quantity_human` + `uom` in all manufacture run payloads.
+- **Manufacturing endpoint rejects legacy `quantity` key**. Use `quantity_decimal` + `uom` in all manufacture run payloads.
 
 ### Migration Notes
-1. **Recipes payload**: Replace `qty_base: <int>` with `quantity_human: "<decimal>"` + `uom: "<uom>"` in recipe component definitions.
-2. **Ledger history clients**: Default response no longer includes `qty_change` (base int). Use `qty_human` + `uom`. Pass `?include_base=true` if base fields are required for internal audit.
-3. **Finance refund**: Remove `qty_base` from refund payloads. Use `quantity_human` + `uom`.
+1. **Recipes payload**: Replace `qty_base: <int>` with `quantity_decimal: "<decimal>"` + `uom: "<uom>"` in recipe component definitions.
+2. **Ledger history clients**: Default response no longer includes `qty_change` (base int). Use `quantity_decimal` + `uom`. Pass `?include_base=true` if base fields are required for internal audit.
+3. **Finance refund**: Remove `qty_base` from refund payloads. Use `quantity_decimal` + `uom`.
 4. **Count inventory**: Any client computing `qty * price` directly must call the backend cost API. Count items use `mc` base; 1 unit = 1000 mc in storage.
-5. **Manufacturing runs**: Replace `quantity` payload key with `quantity_human` (string decimal) + `uom`.
+5. **Manufacturing runs**: Replace `quantity` payload key with `quantity_decimal` (string decimal) + `uom`.
 
 ## [0.10.1] — 2026-02-10
 ### Added

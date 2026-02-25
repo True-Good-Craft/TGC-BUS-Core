@@ -56,7 +56,6 @@ def perform_stock_in_base(
             "batch_id": int(batch_id) if batch_id is not None else None,
         }
     )
-    session.commit()
     return {"ok": True, "batch_id": int(batch_id) if batch_id is not None else None}
 
 
@@ -72,6 +71,7 @@ def perform_stock_out_base(
     data = dict(meta or {})
     reason = str(data.get("reason") or "sold")
     note = data.get("note")
+    effective_source_id = ref
 
     if reason == "sold" and bool(data.get("record_cash_event", True)) is True:
         it = session.get(Item, item_int)
@@ -93,23 +93,22 @@ def perform_stock_out_base(
         amount_cents = int((Decimal(unit_price_cents) * qty_each).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
         source_id = ref or uuid.uuid4().hex
-        tx = session.begin_nested() if session.in_transaction() else session.begin()
-        with tx:
-            moves = fifo_consume(session, item_int, qty, reason, source_id)
-            session.add(
-                CashEvent(
-                    kind="sale",
-                    category=None,
-                    amount_cents=amount_cents,
-                    item_id=item_int,
-                    qty_base=qty,
-                    unit_price_cents=unit_price_cents,
-                    source_kind="sold",
-                    source_id=source_id,
-                    related_source_id=None,
-                    notes=note,
-                )
+        effective_source_id = source_id
+        moves = fifo_consume(session, item_int, qty, reason, source_id)
+        session.add(
+            CashEvent(
+                kind="sale",
+                category=None,
+                amount_cents=amount_cents,
+                item_id=item_int,
+                qty_base=qty,
+                unit_price_cents=unit_price_cents,
+                source_kind="sold",
+                source_id=source_id,
+                related_source_id=None,
+                notes=note,
             )
+        )
     else:
         moves = fifo_consume(session, item_int, qty, reason, ref)
 
@@ -130,7 +129,7 @@ def perform_stock_out_base(
             "qty_change": -qty,
             "unit_cost_cents": 0,
             "source_kind": reason,
-            "source_id": note or None,
+            "source_id": effective_source_id or None,
         }
     )
     return {"ok": True, "lines": lines}
@@ -158,5 +157,4 @@ def perform_purchase_base(session: Session, vendor_id: str, lines: list[dict]) -
                 "vendor_id": vendor_id,
             }
         )
-    session.commit()
     return {"ok": True, "batch_ids": created}
