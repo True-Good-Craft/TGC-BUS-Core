@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(SPECPATH).resolve()
 
 a = Analysis(
     [str(ROOT / 'launcher.py')],
