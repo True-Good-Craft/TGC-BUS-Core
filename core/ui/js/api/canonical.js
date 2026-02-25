@@ -60,8 +60,12 @@ export function purchase({ item_id, quantity_decimal, uom, unit_cost_cents, sour
     item_id: Math.trunc(Number(item_id)),
     quantity_decimal: toDecimalString(quantity_decimal),
     uom: String(uom || ''),
-    unit_cost_cents: Math.trunc(Number(unit_cost_cents)),
   };
+
+  const parsedUnitCost = Number(unit_cost_cents);
+  if (Number.isFinite(parsedUnitCost)) {
+    payload.unit_cost_cents = Math.trunc(parsedUnitCost);
+  }
 
   const sourceId = normalizeOptionalString(source_id);
   if (sourceId !== undefined) payload.source_id = sourceId;

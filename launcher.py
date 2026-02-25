@@ -5,6 +5,7 @@ import os
 import sys
 import argparse
 import ctypes
+import logging
 import threading
 import time
 import webbrowser
@@ -41,6 +42,8 @@ except ImportError:
 except Exception:
     # Ignore runtime errors during import (e.g. X11 missing)
     pystray = None
+
+logger = logging.getLogger(__name__)
 
 def _ensure_runtime_dirs() -> None:
     for path in (DATA, LOGS):
@@ -119,7 +122,8 @@ def main():
     logo_path = Path(__file__).resolve().parent / "core" / "ui" / "Logo.png"
     try:
         icon_image = Image.open(logo_path)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Unable to load tray icon from %s: %s", logo_path, exc)
         icon_image = Image.new('RGB', (64, 64), color=(73, 109, 137))
 
     # Threaded Server

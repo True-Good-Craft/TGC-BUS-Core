@@ -255,7 +255,7 @@ export async function _mountInventory(container) {
       const opt = document.createElement('option');
       opt.value = it.id;
       opt.textContent = it.name || `Item #${it.id}`;
-      opt.dataset.uom = it.uom || it.display_unit || 'ea';
+      opt.dataset.uom = (it.uom ?? it.display_unit ?? '').trim();
       itemSelect.appendChild(opt);
     });
     if (prefill?.item_id) itemSelect.value = String(prefill.item_id);
@@ -357,9 +357,27 @@ export async function _mountInventory(container) {
       }
     }
 
-    itemSelect.addEventListener('change', updatePriceVisibility);
+    const updateStockOutUomState = () => {
+      const opt = itemSelect.options[itemSelect.selectedIndex];
+      const uom = (opt?.dataset?.uom || opt?.dataset?.display_unit || opt?.dataset?.unit || '').trim();
+      const missingUom = !uom;
+      submitBtn.disabled = missingUom;
+      if (missingUom) {
+        errorBanner.textContent = 'UoM missing; cannot proceed.';
+        errorBanner.hidden = false;
+      } else if (errorBanner.textContent === 'UoM missing; cannot proceed.') {
+        errorBanner.textContent = '';
+        errorBanner.hidden = true;
+      }
+    };
+
+    itemSelect.addEventListener('change', () => {
+      updatePriceVisibility();
+      updateStockOutUomState();
+    });
     reasonSelect.addEventListener('change', updatePriceVisibility);
     updatePriceVisibility();
+    updateStockOutUomState();
 
     submitBtn.addEventListener('click', async (ev) => {
       ev.preventDefault();
@@ -382,7 +400,7 @@ export async function _mountInventory(container) {
         const opt = itemSelect.options[itemSelect.selectedIndex];
         const uom = (opt?.dataset?.uom || opt?.dataset?.display_unit || opt?.dataset?.unit || '').trim();
         if (!uom) {
-          errorBanner.textContent = 'Item unit (uom) is missing; cannot stock out.';
+          errorBanner.textContent = 'UoM missing; cannot proceed.';
           errorBanner.hidden = false;
           return;
         }
@@ -447,7 +465,7 @@ export async function _mountInventory(container) {
       const opt = document.createElement('option');
       opt.value = it.id;
       opt.textContent = it.name || `Item #${it.id}`;
-      opt.dataset.uom = it.uom || it.display_unit || 'ea';
+      opt.dataset.uom = (it.uom ?? it.display_unit ?? '').trim();
       itemSelect.appendChild(opt);
     });
     itemWrap.appendChild(itemSelect);
@@ -549,9 +567,25 @@ export async function _mountInventory(container) {
       restockCostRow.style.display = (restock && !related) ? '' : 'none';
     }
 
+    const updateRefundUomState = () => {
+      const opt = itemSelect.options[itemSelect.selectedIndex];
+      const uom = (opt?.dataset?.uom || opt?.dataset?.display_unit || opt?.dataset?.unit || '').trim();
+      const missingUom = !uom;
+      submitBtn.disabled = missingUom;
+      if (missingUom) {
+        errorBanner.textContent = 'UoM missing; cannot proceed.';
+        errorBanner.hidden = false;
+      } else if (errorBanner.textContent === 'UoM missing; cannot proceed.') {
+        errorBanner.textContent = '';
+        errorBanner.hidden = true;
+      }
+    };
+
+    itemSelect.addEventListener('change', updateRefundUomState);
     restockInput.addEventListener('change', updateRestockVisibility);
     relatedInput.addEventListener('input', updateRestockVisibility);
     updateRestockVisibility();
+    updateRefundUomState();
 
     submitBtn.addEventListener('click', async (ev) => {
       ev.preventDefault();
@@ -588,7 +622,7 @@ export async function _mountInventory(container) {
         const opt = itemSelect.options[itemSelect.selectedIndex];
         const uom = (opt?.dataset?.uom || opt?.dataset?.display_unit || opt?.dataset?.unit || '').trim();
         if (!uom) {
-          errorBanner.textContent = 'Item unit (uom) is missing; cannot refund.';
+          errorBanner.textContent = 'UoM missing; cannot proceed.';
           errorBanner.hidden = false;
           return;
         }

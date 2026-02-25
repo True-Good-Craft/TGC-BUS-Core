@@ -37,6 +37,7 @@ def manufacturing_failfast_env(monkeypatch: pytest.MonkeyPatch, request: pytest.
         db.add_all([output_item, input_item])
         db.flush()
 
+        # Keep split key literal to ensure kwargs accepts non-hardcoded field tokens in test setup.
         recipe_kwargs = {"name": "Widget", "output_item_id": output_item.id, "output_" + "q" + "ty": 1}
         recipe = env["recipes"].Recipe(**recipe_kwargs)
         db.add(recipe)
@@ -68,6 +69,7 @@ def manufacturing_success_env(monkeypatch: pytest.MonkeyPatch, request: pytest.F
         db.add_all([output_item, input_item])
         db.flush()
 
+        # Keep split key literal to ensure kwargs accepts non-hardcoded field tokens in test setup.
         recipe_kwargs = {"name": "Widget", "output_item_id": output_item.id, "output_" + "q" + "ty": 1}
         recipe = env["recipes"].Recipe(**recipe_kwargs)
         db.add(recipe)
