@@ -1,10 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+
 a = Analysis(
-    ['D:\\# Dev Test\\BUSCore-Test\\TGC-BUS-Core-main\\launcher.py'],
-    pathex=[],
+    [str(ROOT / 'launcher.py')],
+    pathex=[str(ROOT)],
     binaries=[],
-    datas=[('core\\ui', 'core\\ui'), ('Flat-Dark.png', '.'), ('Glow-Hero.png', '.')],
+    datas=[(str(ROOT / 'core' / 'ui'), 'core/ui'), (str(ROOT / 'Flat-Dark.png'), '.'), (str(ROOT / 'Glow-Hero.png'), '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -27,11 +31,12 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    version='D:\\# Dev Test\\BUSCore-Test\\TGC-BUS-Core-main\\scripts\\_win_version_info.txt',
+    icon=str(ROOT / 'core' / 'ui' / 'Logo.png'),
+    version=str(ROOT / 'scripts' / '_win_version_info.txt'),
 )
