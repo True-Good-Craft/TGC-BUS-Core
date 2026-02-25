@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.10.6",
+  [string]$Version = "",
   [string]$Name    = "BUS-Core",
   [string]$Company = "True Good Craft",
   [string]$Product = "TGC BUS Core",
@@ -28,13 +28,6 @@ if (!(Test-Path $spec)) {
   throw "Spec not found: $spec`nExpected '$Name.spec' at repo root."
 }
 
-# Ensure version is X.Y.Z
-$verParts = $Version.Split(".")
-if ($verParts.Count -ne 3) { throw "Version must be X.Y.Z (got '$Version')" }
-$VMAJOR = [int]$verParts[0]
-$VMINOR = [int]$verParts[1]
-$VPATCH = [int]$verParts[2]
-
 # -----------------------------
 # Clean build outputs
 # -----------------------------
@@ -56,6 +49,24 @@ $venvPy = Join-Path $ROOT ".venv\Scripts\python.exe"
 if (!(Test-Path $venvPy)) {
   throw "Missing venv at .venv. Create it once, then reuse.`nExpected: $venvPy"
 }
+
+$isExplicitVersion = -not [string]::IsNullOrWhiteSpace($Version)
+if (-not $isExplicitVersion) {
+  $Version = (& $venvPy -c "from core.version import VERSION; print(VERSION)").Trim()
+  if ([string]::IsNullOrWhiteSpace($Version)) {
+    throw "Failed to read canonical version from core/version.py (got empty)."
+  }
+  Write-Host "[INFO] Using build version: $Version (from canonical core version)" -ForegroundColor DarkGray
+} else {
+  Write-Host "[INFO] Using build version: $Version (explicit override)" -ForegroundColor DarkGray
+}
+
+# Ensure version is X.Y.Z
+$verParts = $Version.Split(".")
+if ($verParts.Count -ne 3) { throw "Version must be X.Y.Z (got '$Version')" }
+$VMAJOR = [int]$verParts[0]
+$VMINOR = [int]$verParts[1]
+$VPATCH = [int]$verParts[2]
 
 # Ensure pyinstaller exists in the venv
 & $venvPy -m pip show pyinstaller *> $null
