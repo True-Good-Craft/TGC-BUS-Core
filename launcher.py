@@ -9,6 +9,7 @@ import logging
 import copy
 import threading
 import time
+import traceback
 import webbrowser
 from pathlib import Path
 
@@ -45,6 +46,33 @@ except Exception:
     pystray = None
 
 logger = logging.getLogger(__name__)
+
+
+def _write_tray_failure_log(exc: Exception) -> Path:
+    """Persist tray startup failure details to disk."""
+    _ensure_runtime_dirs()
+    log_path = LOGS / "tray_startup_error.log"
+    details = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    log_path.write_text(
+        f"[{timestamp}] Failed to initialize system tray.\n\n{details}",
+        encoding="utf-8",
+    )
+    return log_path
+
+
+def _show_tray_failure_message(log_path: Path) -> None:
+    """Show a fail-loud message box when tray creation fails on Windows."""
+    if os.name != "nt":
+        return
+    try:
+        message = (
+            "TGC BUS Core could not start the system tray icon and will now exit.\n\n"
+            f"Details were written to:\n{log_path}"
+        )
+        ctypes.windll.user32.MessageBoxW(0, message, "TGC BUS Core Startup Error", 0x10)
+    except Exception:
+        pass
 
 
 def _ensure_standard_streams() -> None:
@@ -141,7 +169,10 @@ def main():
     # Load Config
     cfg = load_config()
 
-    logo_path = Path(__file__).resolve().parent / "core" / "ui" / "Logo.png"
+    is_frozen = getattr(sys, "frozen", False)
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    logo_path = base / "core" / "ui" / "Logo.png"
+    logger.debug("Tray icon base path resolved (frozen=%s): %s", is_frozen, logo_path)
     try:
         icon_image = Image.open(logo_path)
     except Exception as exc:
@@ -151,15 +182,19 @@ def main():
     # Threaded Server
     app_instance, _ = build_app()
 
-    def run_server():
-        # log_level error to keep console clean (even if hidden)
-        uvicorn.run(
+    server = uvicorn.Server(
+        uvicorn.Config(
             app_instance,
             host="127.0.0.1",
             port=args.port,
             log_level="error",
             log_config=uvicorn_log_config,
         )
+    )
+
+    def run_server():
+        # log_level error to keep console clean (even if hidden)
+        server.run()
 
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
@@ -169,21 +204,20 @@ def main():
         def launch():
             time.sleep(1.5)
             open_dashboard(args.port)
-        threading.Thread(target=launch).start()
+        threading.Thread(target=launch, daemon=True).start()
 
-    # System Tray (Blocking)
     if pystray is None:
-        # Fallback for headless/error environments
-        while server_thread.is_alive():
-            try:
-                time.sleep(1)
-            except KeyboardInterrupt:
-                break
-        return
+        err = RuntimeError("pystray is unavailable in this environment")
+        log_path = _write_tray_failure_log(err)
+        _show_tray_failure_message(log_path)
+        sys.exit(1)
 
     def on_quit(icon, item):
+        server.should_exit = True
+        server.force_exit = True
         icon.stop()
-        os._exit(0)
+        server_thread.join(timeout=5)
+        sys.exit(0)
 
     try:
         menu = pystray.Menu(
@@ -194,13 +228,12 @@ def main():
 
         icon = pystray.Icon("BUS Core", icon_image, "TGC BUS Core", menu)
         icon.run()
-    except Exception:
-        # Fallback if icon run fails
-        while server_thread.is_alive():
-            try:
-                time.sleep(1)
-            except KeyboardInterrupt:
-                break
+    except Exception as exc:
+        server.should_exit = True
+        server.force_exit = True
+        log_path = _write_tray_failure_log(exc)
+        _show_tray_failure_message(log_path)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
