@@ -144,19 +144,25 @@ def canonical_purchase(raw: dict = Body(...), db: Session = Depends(get_session)
     reject_legacy_qty_keys(raw)
     body = PurchaseCanonicalIn(**raw)
     qty_base = _to_base_qty_for_item(db, body.item_id, body.quantity_decimal, body.uom)
-    return perform_purchase_base(
-        db,
-        vendor_id="",
-        lines=[
-            {
-                "item_id": int(body.item_id),
-                "qty_base": int(qty_base),
-                "unit_cost_cents": int(body.unit_cost_cents),
-                "source_kind": "purchase",
-                "source_id": body.source_id,
-            }
-        ],
-    )
+    try:
+        result = perform_purchase_base(
+            db,
+            vendor_id="",
+            lines=[
+                {
+                    "item_id": int(body.item_id),
+                    "qty_base": int(qty_base),
+                    "unit_cost_cents": int(body.unit_cost_cents),
+                    "source_kind": "purchase",
+                    "source_id": body.source_id,
+                }
+            ],
+        )
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.post("/purchase")
@@ -182,9 +188,11 @@ def consume(body: ConsumeIn, db: Session = Depends(get_session)):
             ref=body.source_id,
             meta={"reason": body.source_kind, "note": body.source_id, "record_cash_event": False},
         )
+        db.commit()
         lines = [{"batch_id": l["batch_id"], "qty": -int(l["qty_change"]), "unit_cost_cents": l["unit_cost_cents"]} for l in result["lines"]]
         return {"ok": True, "lines": lines}
     except Exception as e:
+        db.rollback()
         if hasattr(e, "shortages"):
             raise HTTPException(status_code=400, detail={"shortages": getattr(e, "shortages")})
         raise
@@ -212,8 +220,10 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
             ref=body.note,
             meta={"reason": "adjustment", "note": body.note, "record_cash_event": False},
         )
+        db.commit()
         return {"ok": bool(result.get("ok"))}
     except Exception as e:
+        db.rollback()
         if hasattr(e, "shortages"):
             raise HTTPException(status_code=400, detail={"shortages": getattr(e, "shortages")})
         raise
@@ -225,7 +235,7 @@ def canonical_stock_out(raw: dict = Body(...), db: Session = Depends(get_session
     body = StockOutCanonicalIn(**raw)
     qty_base = _to_base_qty_for_item(db, body.item_id, body.quantity_decimal, body.uom)
     try:
-        return perform_stock_out_base(
+        result = perform_stock_out_base(
             db,
             item_id=str(body.item_id),
             qty_base=qty_base,
@@ -237,11 +247,16 @@ def canonical_stock_out(raw: dict = Body(...), db: Session = Depends(get_session
                 "sell_unit_price_cents": body.sell_unit_price_cents,
             },
         )
+        db.commit()
+        return result
     except LookupError:
+        db.rollback()
         raise HTTPException(status_code=404, detail="item_not_found")
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as e:
+        db.rollback()
         if hasattr(e, "shortages"):
             raise HTTPException(status_code=400, detail={"shortages": getattr(e, "shortages")})
         raise
@@ -367,14 +382,20 @@ def canonical_stock_in(raw: dict = Body(...), db: Session = Depends(get_session)
     reject_legacy_qty_keys(raw)
     body = StockInCanonicalIn(**raw)
     qty_base = _to_base_qty_for_item(db, body.item_id, body.quantity_decimal, body.uom)
-    return perform_stock_in_base(
-        db,
-        item_id=str(body.item_id),
-        qty_base=qty_base,
-        unit_cost_cents=body.unit_cost_cents,
-        ref=body.source_id,
-        meta={"source_kind": "stock_in", "source_id": body.source_id},
-    )
+    try:
+        result = perform_stock_in_base(
+            db,
+            item_id=str(body.item_id),
+            qty_base=qty_base,
+            unit_cost_cents=body.unit_cost_cents,
+            ref=body.source_id,
+            meta={"source_kind": "stock_in", "source_id": body.source_id},
+        )
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.post("/stock_in")

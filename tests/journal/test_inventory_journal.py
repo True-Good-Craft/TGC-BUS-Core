@@ -8,6 +8,20 @@ import pytest
 pytestmark = pytest.mark.api
 
 
+def _create_count_item(client, name: str) -> int:
+    r = client.post(
+        "/app/items",
+        json={"name": name, "dimension": "count", "uom": "ea", "price": 2.50},
+    )
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    item = payload.get("item") if isinstance(payload, dict) else None
+    if item is None and isinstance(payload, dict) and "id" in payload:
+        item = payload
+    assert item is not None
+    return int(item["id"])
+
+
 def _install_test_journal(monkeypatch, journal_path):
     import json
 
@@ -110,3 +124,97 @@ def test_journal_failure_does_not_block_adjustment(inventory_journal_setup, monk
     # Journal write failed but DB state is still committed
     assert not journal_path.exists()
 
+
+def test_stock_out_sold_without_ref_uses_generated_source_id_across_surfaces(bus_client, monkeypatch, tmp_path):
+    client = bus_client["client"]
+    engine = bus_client["engine"]
+    models = bus_client["models"]
+    journal_path = tmp_path / "journals" / "inventory.jsonl"
+    _install_test_journal(monkeypatch, journal_path)
+
+    item_id = _create_count_item(client, "SoldNoRef")
+    seed = client.post(
+        "/app/purchase",
+        json={"item_id": item_id, "quantity_decimal": "10", "uom": "ea", "unit_cost_cents": 50, "source_id": "seed-no-ref"},
+    )
+    assert seed.status_code == 200, seed.text
+
+    sold = client.post(
+        "/app/stock/out",
+        json={"item_id": item_id, "quantity_decimal": "2", "uom": "ea", "reason": "sold", "record_cash_event": True, "sell_unit_price_cents": 300},
+    )
+    assert sold.status_code == 200, sold.text
+    sold_payload = sold.json()
+    assert sold_payload.get("ok") is True
+
+    with engine.SessionLocal() as db:
+        ce = (
+            db.query(models.CashEvent)
+            .filter(models.CashEvent.kind == "sale", models.CashEvent.item_id == item_id)
+            .order_by(models.CashEvent.id.desc())
+            .first()
+        )
+        assert ce is not None
+        assert ce.source_id
+        moves = db.query(models.ItemMovement).filter(models.ItemMovement.source_id == ce.source_id).all()
+        assert moves
+
+    line_source_ids = {line["source_id"] for line in sold_payload["lines"]}
+    assert line_source_ids == {ce.source_id}
+
+    entries = [json.loads(line) for line in journal_path.read_text(encoding="utf-8").splitlines()]
+    sold_entries = [entry for entry in entries if entry.get("op") == "sold" and int(entry.get("item_id")) == item_id]
+    assert sold_entries
+    assert sold_entries[-1]["source_id"] == ce.source_id
+
+
+def test_stock_out_sold_with_ref_uses_provided_source_id_across_surfaces(bus_client, monkeypatch, tmp_path):
+    client = bus_client["client"]
+    engine = bus_client["engine"]
+    models = bus_client["models"]
+    journal_path = tmp_path / "journals" / "inventory.jsonl"
+    _install_test_journal(monkeypatch, journal_path)
+
+    item_id = _create_count_item(client, "SoldWithRef")
+    provided_source_id = "sold-correlation-ref-1"
+    seed = client.post(
+        "/app/purchase",
+        json={"item_id": item_id, "quantity_decimal": "10", "uom": "ea", "unit_cost_cents": 50, "source_id": "seed-with-ref"},
+    )
+    assert seed.status_code == 200, seed.text
+
+    sold = client.post(
+        "/app/stock/out",
+        json={
+            "item_id": item_id,
+            "quantity_decimal": "2",
+            "uom": "ea",
+            "reason": "sold",
+            "note": provided_source_id,
+            "record_cash_event": True,
+            "sell_unit_price_cents": 300,
+        },
+    )
+    assert sold.status_code == 200, sold.text
+    sold_payload = sold.json()
+    assert sold_payload.get("ok") is True
+
+    with engine.SessionLocal() as db:
+        ce = (
+            db.query(models.CashEvent)
+            .filter(models.CashEvent.kind == "sale", models.CashEvent.item_id == item_id)
+            .order_by(models.CashEvent.id.desc())
+            .first()
+        )
+        assert ce is not None
+        assert ce.source_id == provided_source_id
+        moves = db.query(models.ItemMovement).filter(models.ItemMovement.source_id == provided_source_id).all()
+        assert moves
+
+    line_source_ids = {line["source_id"] for line in sold_payload["lines"]}
+    assert line_source_ids == {provided_source_id}
+
+    entries = [json.loads(line) for line in journal_path.read_text(encoding="utf-8").splitlines()]
+    sold_entries = [entry for entry in entries if entry.get("op") == "sold" and int(entry.get("item_id")) == item_id]
+    assert sold_entries
+    assert sold_entries[-1]["source_id"] == provided_source_id
