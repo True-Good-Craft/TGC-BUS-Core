@@ -66,7 +66,8 @@ let _state = {
 const recipeNameCache = (window._recipeNameCache = window._recipeNameCache || Object.create(null));
 
 function fmtHumanQty(value, uom) {
-  return `${String(value ?? '0')} ${String(uom || '').trim() || 'ea'}`;
+  const normalizedUom = String(uom || '').trim();
+  return `${String(value ?? '0')}${normalizedUom ? ` ${normalizedUom}` : ''}`;
 }
 
 function _runConfirmText({ recipeName, outputQty, adhoc }) {
@@ -188,7 +189,7 @@ async function renderNewRunForm(parent) {
       (fullRecipe.items || []).forEach((ri) => {
         const row = el('tr', { style: 'border-bottom:1px solid #2a2a2a' });
         const stock = ri.item?.quantity_decimal != null ? fmtHumanQty(ri.item.quantity_decimal, ri.item.uom || ri.uom) : '—';
-        const change = fmtHumanQty(`-${ri.quantity_decimal || '0'}`, ri.uom || ri.item?.uom || 'ea');
+        const change = fmtHumanQty(`-${ri.quantity_decimal || '0'}`, ri.uom || ri.item?.uom);
         row.append(
           el('td', { style: 'padding:8px', text: ri.item?.name || `Item #${ri.item_id}` }),
           el('td', { style: 'padding:8px;color:#aaa', text: (ri.optional ?? ri.is_optional) ? 'Optional' : 'Input' }),
@@ -204,7 +205,7 @@ async function renderNewRunForm(parent) {
           el('td', { style: 'padding:8px', text: fullRecipe.output_item?.name || `Item #${fullRecipe.output_item_id}` }),
           el('td', { style: 'padding:8px;color:#4caf50', text: 'Output' }),
           el('td', { style: 'padding:8px;text-align:right', text: '—' }),
-          el('td', { style: 'padding:8px;text-align:right;color:#4caf50', text: fmtHumanQty(fullRecipe.quantity_decimal || '1', fullRecipe.uom || fullRecipe.output_item?.uom || 'ea') }),
+          el('td', { style: 'padding:8px;text-align:right;color:#4caf50', text: fmtHumanQty(fullRecipe.quantity_decimal || '1', fullRecipe.uom || fullRecipe.output_item?.uom) }),
         );
         tbody.append(row);
       }
@@ -307,13 +308,36 @@ async function loadRecentRuns30d() {
       return;
     }
 
-    const frag = document.createDocumentFragment();
+    const groupedRuns = [];
+    const runBySourceId = new Map();
     runs.forEach((r) => {
+      const sourceId = r.source_id ? String(r.source_id) : '';
+      if (!sourceId) {
+        groupedRuns.push(r);
+        return;
+      }
+      if (!runBySourceId.has(sourceId)) {
+        runBySourceId.set(sourceId, r);
+        groupedRuns.push(r);
+        return;
+      }
+      const existing = runBySourceId.get(sourceId);
+      const existingTs = Date.parse(existing?.created_at || '');
+      const candidateTs = Date.parse(r?.created_at || '');
+      if (Number.isFinite(candidateTs) && (!Number.isFinite(existingTs) || candidateTs > existingTs)) {
+        runBySourceId.set(sourceId, r);
+        const idx = groupedRuns.indexOf(existing);
+        if (idx >= 0) groupedRuns[idx] = r;
+      }
+    });
+
+    const frag = document.createDocumentFragment();
+    groupedRuns.forEach((r) => {
       const ts = r.created_at || '';
       const d = ts ? new Date(ts) : null;
       const dateStr = d ? d.toLocaleDateString() : '';
       const rid = r.source_id ? String(r.source_id) : null;
-      const recipeName = (rid && recipeNameCache[rid]) || (r.source_kind ? String(r.source_kind) : '(manufacture)');
+      const recipeName = (rid && recipeNameCache[rid]) || (rid ? `Run ${rid}` : (r.source_kind ? String(r.source_kind) : '(manufacture)'));
       const qty = fmtHumanQty(r.quantity_decimal, r.uom);
       const row = document.createElement('div');
       row.className = 'mf-runs-grid mf-runs-row';

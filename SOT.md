@@ -1062,3 +1062,51 @@ Validation-complete when all are true:
 - Full pytest suite passes.
 - No merge/tag performed as part of validation closure.
 
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: UI Hardening + Copilot Thread Closure (Fail-Closed UoM, Header Authority, NaN Guard)
+DATE: 2026-02-25
+SCOPE: documentation/governance record of changes already merged into branch
+[/DELTA HEADER]
+
+(1) OBJECTIVE
+Record post-stabilization Copilot thread-closure outcomes already implemented on branch for UI hardening, launcher defensive behavior, and test-stub header authority handling, without introducing new backend/domain behavior. This governance delta is additive and aligned to v0.11.0 authority rules.
+
+(2) CHANGES RECORDED
+UI
+- Inventory action flows removed default-to-`ea` UoM fallback in selectable item metadata and enforce fail-closed handling when UoM is absent.
+- Stock-out/refund submit paths use explicit inline messaging: `UoM missing; cannot proceed.` and prevent proceeding without a provided unit.
+- Purchase canonical payload now includes `unit_cost_cents` only when parsed value is finite (prevents invalid numeric serialization paths such as NaN-to-null artifacts).
+- Manufacturing display formatting no longer injects `ea` as a default display unit.
+- Manufacturing recent-runs panel applies UI-only grouping keyed by `source_id` for display labeling; no domain quantity/cost derivation was added.
+
+Launcher
+- Tray/logo image load path is guarded; failures produce a warning and use safe fallback imagery to avoid hard crash.
+
+Test stub
+- Local httpx shim now preserves caller-provided `Content-Type`; `application/json` is injected only when absent.
+
+Tests
+- Added regression coverage asserting caller `Content-Type` preservation in the httpx shim.
+- Smoke test concatenated output key string remained intentionally unchanged; clarifying comment added to preserve test intent/readability.
+
+(3) GOVERNANCE NOTES
+- No UoM guessing/defaulting is permitted for action paths; missing UoM remains fail-closed.
+- UI recent-runs grouping is presentation-only and does not compute or derive domain quantities, costs, or accounting outputs.
+- No business logic expansion, no cost-authority math changes, no v2 quantity contract changes, and no backend validation relaxation are recorded in this delta.
+
+(4) EVIDENCE
+- UI fail-closed UoM and fallback removal: `core/ui/js/cards/inventory.js`, `core/ui/js/cards/manufacturing.js`.
+- UI finite guard for purchase `unit_cost_cents`: `core/ui/js/api/canonical.js`.
+- Launcher icon defensive guard: `launcher.py`.
+- httpx shim header authority + regression test: `httpx/__init__.py`, `tests/test_httpx_stub_headers.py`.
+- Smoke test intent comment: `tests/smoke/test_manufacturing_flow.py`.
+- Verification evidence from closure pass: pytest passed (`84 passed, 2 skipped`).
+- Canonical smoke harness (`scripts/smoke.ps1`) was not executed in Linux environment due to missing `pwsh`; operator-run Windows smoke evidence may be attached separately.
+
+(5) ACCEPTANCE CRITERIA
+Release-agent validation for this delta is complete when:
+- `pytest` is re-run and passes in the target release environment.
+- Canonical smoke harness is run via `scripts/smoke.ps1` in a suitable Windows/PowerShell-capable environment and results are attached.
+- Spot-check confirms no reintroduction of UoM defaulting in action flows and no header-clobber behavior in the httpx shim.
