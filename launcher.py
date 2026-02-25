@@ -6,6 +6,7 @@ import sys
 import argparse
 import ctypes
 import logging
+import copy
 import threading
 import time
 import webbrowser
@@ -45,6 +46,24 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
+
+def _ensure_standard_streams() -> None:
+    """Ensure streams exist for windowed executable environments."""
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+
+def _uvicorn_log_config_no_tty() -> dict:
+    """Disable uvicorn color auto-detection to avoid isatty() on missing TTY streams."""
+    config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
+    for formatter_name in ("default", "access"):
+        formatter = config.get("formatters", {}).get(formatter_name)
+        if formatter is not None:
+            formatter["use_colors"] = False
+    return config
+
 def _ensure_runtime_dirs() -> None:
     for path in (DATA, LOGS):
         path.mkdir(parents=True, exist_ok=True)
@@ -83,6 +102,8 @@ def open_dashboard(port):
 # --- 4. Main Execution ---
 def main():
     _ensure_runtime_dirs()
+    _ensure_standard_streams()
+    uvicorn_log_config = _uvicorn_log_config_no_tty()
 
     # A. Parse Explicit Command
     parser = argparse.ArgumentParser()
@@ -110,6 +131,7 @@ def main():
             host="127.0.0.1",
             port=args.port,
             reload=(not is_frozen),
+            log_config=uvicorn_log_config,
         )
         return
 
@@ -131,7 +153,13 @@ def main():
 
     def run_server():
         # log_level error to keep console clean (even if hidden)
-        uvicorn.run(app_instance, host="127.0.0.1", port=args.port, log_level="error")
+        uvicorn.run(
+            app_instance,
+            host="127.0.0.1",
+            port=args.port,
+            log_level="error",
+            log_config=uvicorn_log_config,
+        )
 
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
