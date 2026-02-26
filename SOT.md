@@ -1110,3 +1110,218 @@ Release-agent validation for this delta is complete when:
 - `pytest` is re-run and passes in the target release environment.
 - Canonical smoke harness is run via `scripts/smoke.ps1` in a suitable Windows/PowerShell-capable environment and results are attached.
 - Spot-check confirms no reintroduction of UoM defaulting in action flows and no header-clobber behavior in the httpx shim.
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: BUS Core Lighthouse — Release Manifest Proxy + Aggregate Infra Counters + Discord Ops Channel
+DATE: 2026-02-26
+SCOPE: release distribution surface, update manifest hosting, aggregate counters, ops notifications (external to Core runtime)
+[/DELTA HEADER]
+
+(1) OBJECTIVE
+
+Introduce BUS Core Lighthouse as an official TGC/BUS Core companion service that:
+
+Proxies and normalizes the public update manifest used by Core’s update-check feature (which remains opt-in and manual download only) 
+
+Core sot
+
+Provides a stable “latest download” redirect endpoint for the website/app to use
+
+Tracks only aggregate daily totals for:
+
+update checks
+
+latest-download clicks
+
+operational errors
+
+Posts periodic summaries to a dedicated Discord infrastructure channel for human monitoring
+
+This service exists to harden the release/update surface without changing Core’s “no forced cloud” product posture.
+
+(2) SYSTEM IDENTITY / OWNERSHIP
+
+2.1 Name
+BUS Core Lighthouse (“Lighthouse”)
+
+2.2 Relationship to BUS Core
+
+Lighthouse is a separate program/service owned by TGC and operated as part of the BUS Core ecosystem.
+
+Lighthouse is not required for Core’s local runtime to function; it exists to support optional update checking and public release distribution.
+
+2.3 Non-goals
+
+Lighthouse is not a telemetry system.
+
+Lighthouse does not identify users, does not maintain install IDs, and does not attempt to derive “active users.”
+
+Lighthouse does not auto-update Core and does not run code on client machines.
+
+(3) POLICY COMPATIBILITY WITH CORE (“NO TELEMETRY”)
+
+Core’s product stance is local-first and “no forced cloud / no telemetry” 
+
+Core sot
+
+, and Core analytics are computed locally 
+
+Core sot
+
+.
+
+Therefore Lighthouse is permitted only under these constraints:
+
+Aggregate-only counting (daily totals)
+
+No user identifiers (no install_id, no device ID, no account ID, no cookies)
+
+No IP storage (no raw IP retention; no hashed IP uniqueness systems)
+
+No behavioral profiling or cross-day user linking
+
+Lighthouse is strictly an ops/release surface tool, not a product analytics channel
+
+If Lighthouse is ever expanded beyond aggregate counters, it requires a new explicit SoT delta and must preserve Core’s default telemetry posture of “Disabled (local-only)” 
+
+#TGC-BUS-Core SOT
+
+.
+
+(4) CANONICAL MANIFEST CONTRACT (PUBLIC)
+
+4.1 Canonical manifest location (stable channel)
+Core’s update system uses a hosted manifest URL configured under updates.manifest_url 
+
+Core sot
+
+. The canonical stable manifest is:
+
+https://buscore.ca/manifest/core/stable.json
+
+4.2 Canonical manifest schema (minimum required fields)
+
+The stable manifest MUST be valid JSON and MUST include:
+
+min_supported (string, SemVer x.y.z)
+
+latest.version (string, SemVer x.y.z)
+
+latest.release_notes_url (string URL)
+
+latest.download.url (string URL)
+
+latest.download.sha256 (string, lowercase hex)
+
+latest.size_bytes (integer)
+
+4.3 Manifest determinism rules
+
+The manifest is the single source of truth for “latest release” metadata.
+
+Updating to a new release requires changing only manifest fields (version/hash/size/url/notes link).
+
+Manifest must never contain placeholders or non-JSON tokens.
+
+(5) LIGHTHOUSE SERVICE CONTRACT
+
+5.1 Public endpoints (canonical)
+
+Lighthouse exposes a minimal public surface:
+
+A) GET /update/check
+
+Fetches the canonical manifest (updates.manifest_url equivalent) and returns it (proxy behavior).
+
+Increments daily aggregate counter: update_checks.
+
+Fail-soft: manifest fetch failures must not crash the service; return a clear error envelope.
+
+B) GET /download/latest
+
+Fetches the canonical manifest.
+
+Extracts latest.download.url.
+
+Increments daily aggregate counter: downloads.
+
+Returns 302 redirect to the latest.download.url.
+
+5.2 Storage model (aggregate daily totals only)
+
+Lighthouse persists only daily totals (one row per day, UTC day key):
+
+day (YYYY-MM-DD, UTC)
+
+update_checks (int)
+
+downloads (int)
+
+errors (int)
+
+No event log and no per-request storage is permitted in Lighthouse v1.
+
+5.3 Ops notification (Discord)
+
+Lighthouse posts periodic summary messages to a dedicated Discord channel via webhook.
+
+Webhook URL is treated as a secret and must not be committed to public repositories.
+
+Posting failures increment the errors counter.
+
+(6) INTERACTION WITH CORE UPDATE CHECK SYSTEM
+
+Core’s Update Check system remains unchanged in principle:
+
+Opt-in only and disabled by default 
+
+Core sot
+
+No background auto-installs; manual download/verification required 
+
+Core sot
+
+GET /app/update/check remains the canonical in-app one-shot check surface 
+
+Core sot
+
+Lighthouse is allowed to exist as the public manifest proxy + download redirect target that Core and the website can point at. This does not convert Core into a telemetry product.
+
+(7) ACCEPTANCE CRITERIA
+
+Lighthouse v1 is considered complete when:
+
+GET /update/check returns the stable manifest successfully.
+
+GET /download/latest redirects to latest.download.url from the manifest.
+
+D1 (or equivalent storage) contains a daily row with incrementing:
+
+update_checks
+
+downloads
+
+Discord webhook posting is verified by an observed message in the infra channel.
+
+No user identifiers are stored, emitted, or derived.
+
+Failure modes are fail-soft (manifest unavailable does not crash; counters tolerate storage errors).
+
+(8) NON-COMPLIANCE (REGRESSIONS)
+
+The following changes are regressions and forbidden without a new SoT delta:
+
+Adding install IDs, client IDs, cookies, fingerprinting, or any user-unique identifier
+
+Storing or hashing IPs for uniqueness
+
+Event logging per request (“analytics events”) in Lighthouse
+
+Auto-downloading or auto-installing updates
+
+Making Core depend on Lighthouse for normal local operation
+
+Background polling loops that violate Core’s “one-shot, opt-in” update check posture 
+
+Core sot
