@@ -28,7 +28,7 @@ class DevConfig(BaseModel):
 class UpdatesConfig(BaseModel):
     enabled: bool = False
     channel: str = "stable"
-    manifest_url: str = "https://updates.truegoodcraft.com/bus-core/manifest.json"
+    manifest_url: str = "https://buscore.ca/manifest/core/stable.json"
     check_on_startup: bool = True
 
 class Config(BaseModel):
