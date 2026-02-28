@@ -13,6 +13,18 @@
 
 ### Tests
 - Added/updated update-check coverage for streaming size cap enforcement, strict SemVer handling, manifest URL validation and SSRF cases, redirect/content-type behavior, and response contract key stability.
+- Finance page (`#/finance`) with KPI summary and transaction history.
+
+### API
+- Added finance read endpoints: `/app/finance/summary` and `/app/finance/transactions`.
+
+### Correctness
+- Enforced sales aggregation barriers by `source_id` and stock-authority COGS derivation from sold stock movements.
+- Added double-count guard regression test for repeated summary reads.
+
+### Tests
+- Added `tests/api/test_finance_double_count_guard.py` and expanded finance suite coverage across summary, transactions, stock-authority, and validation scenarios.
+
 
 ## [0.11.0] — 2026-02-25 — System Normalisation
 
