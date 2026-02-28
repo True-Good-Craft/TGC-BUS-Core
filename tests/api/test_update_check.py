@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 import pytest
 
 from core.config.manager import Config, UpdatesConfig
@@ -126,6 +127,37 @@ def test_update_check_private_literal_ip_rejected(bus_client, monkeypatch: pytes
     body = response.json()
     _assert_contract(body)
     assert body["error_code"] == "manifest_url_not_allowed"
+
+
+def test_hostname_allowed(bus_client, monkeypatch: pytest.MonkeyPatch):
+    from core.services import update as update_module
+
+    _set_updates(monkeypatch, enabled=True, manifest_url="https://example.com/manifest.json")
+    called = {"count": 0}
+
+    def _fake_stream(_method, _url, **_kwargs):
+        called["count"] += 1
+        time.sleep(0.002)
+        body = json.dumps({"version": "9.9.9", "download_url": "https://example.test/dl"}).encode()
+        response = _StreamResponse(
+            status_code=200,
+            headers={"content-type": "application/json", "content-length": str(len(body))},
+            chunks=[body],
+        )
+        return _StreamContext(response)
+
+    monkeypatch.setattr(update_module.httpx, "stream", _fake_stream, raising=False)
+
+    started = time.perf_counter()
+    response = bus_client["client"].get("/app/update/check")
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+
+    assert response.status_code == 200
+    body = response.json()
+    _assert_contract(body)
+    assert called["count"] == 1
+    assert body["error_code"] is None
+    assert elapsed_ms > 1.0
 
 
 def test_update_check_redirect_treated_as_network_error(bus_client, monkeypatch: pytest.MonkeyPatch):

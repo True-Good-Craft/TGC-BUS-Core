@@ -189,9 +189,12 @@ def _validate_manifest_url(manifest_url: str) -> None:
     try:
         ip = ipaddress.ip_address(lowered)
     except ValueError:
+        ip = None
+
+    if ip is None:
         return
 
-    if ip.is_loopback or ip.is_private or ip.is_link_local or ip == ipaddress.ip_address("0.0.0.0"):
+    if ip.is_private or ip.is_loopback or ip.is_unspecified or ip.is_link_local:
         raise UpdateCheckError("manifest_url_not_allowed", "Manifest URL is not allowed.")
 
 
