@@ -199,21 +199,59 @@ def _resolve_manifest_entry(manifest: Any, channel: str) -> dict[str, Any]:
     if not isinstance(manifest, dict):
         raise UpdateCheckError("invalid_manifest", "Manifest must be an object.")
 
-    if "version" in manifest:
-        return manifest
+    direct_entry = _normalize_manifest_entry(manifest)
+    if direct_entry is not None:
+        return direct_entry
 
     channels = manifest.get("channels")
     if isinstance(channels, dict):
         selected = channels.get(channel)
         if isinstance(selected, dict):
+            selected_entry = _normalize_manifest_entry(selected)
+            if selected_entry is not None:
+                return selected_entry
             return selected
         raise UpdateCheckError("channel_not_found", "Requested update channel not found.")
 
     selected = manifest.get(channel)
     if isinstance(selected, dict):
+        selected_entry = _normalize_manifest_entry(selected)
+        if selected_entry is not None:
+            return selected_entry
         return selected
 
     raise UpdateCheckError("channel_not_found", "Requested update channel not found.")
+
+
+def _normalize_manifest_entry(manifest_obj: dict[str, Any]) -> dict[str, Any] | None:
+    if "version" in manifest_obj:
+        return manifest_obj
+
+    if "latest" not in manifest_obj:
+        return None
+
+    latest_obj = manifest_obj.get("latest")
+    if not isinstance(latest_obj, dict):
+        raise UpdateCheckError("invalid_manifest", "Manifest latest must be an object.")
+
+    version = latest_obj.get("version")
+    if not isinstance(version, str):
+        raise UpdateCheckError("invalid_manifest", "Manifest latest.version is required and must be a string.")
+    if not _is_semver(version):
+        raise UpdateCheckError("invalid_manifest_version", "Manifest version must be strict SemVer.")
+
+    download = latest_obj.get("download")
+    if not isinstance(download, dict):
+        raise UpdateCheckError("invalid_manifest", "Manifest latest.download is required and must be an object.")
+
+    download_url = download.get("url")
+    if not isinstance(download_url, str):
+        raise UpdateCheckError("invalid_manifest", "Manifest latest.download.url is required and must be a string.")
+
+    return {
+        "version": version,
+        "download_url": download_url,
+    }
 
 
 def _validate_download_url(entry: dict[str, Any]) -> str | None:

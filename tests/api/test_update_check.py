@@ -248,3 +248,84 @@ def test_update_check_injected_fetch_receives_hard_timeout(bus_client, monkeypat
 
     assert response.status_code == 200
     assert seen_timeout == [REQUEST_TIMEOUT_SECONDS]
+
+
+def test_canonical_manifest_shape_update_available(bus_client, monkeypatch: pytest.MonkeyPatch):
+    from core.api.routes import update as update_routes
+
+    _set_updates(monkeypatch, enabled=True)
+    service = UpdateService(
+        fetch_manifest=lambda _url, _timeout: {
+            "min_supported": "0.1.0",
+            "latest": {
+                "version": "9.9.9",
+                "release_notes_url": "https://example.test/release-notes",
+                "size_bytes": 12345,
+                "download": {
+                    "url": "https://example.test/canonical-dl",
+                    "sha256": "abc123",
+                    "size_bytes": 12345,
+                },
+            },
+        }
+    )
+    monkeypatch.setattr(update_routes, "get_update_service", lambda: service)
+
+    response = bus_client["client"].get("/app/update/check")
+
+    assert response.status_code == 200
+    body = response.json()
+    _assert_contract(body)
+    assert body["error_code"] is None
+    assert body["update_available"] is True
+    assert body["download_url"] == "https://example.test/canonical-dl"
+
+
+def test_canonical_manifest_no_update(bus_client, monkeypatch: pytest.MonkeyPatch):
+    from core.api.routes import update as update_routes
+    from core.version import VERSION as CURRENT_VERSION
+
+    _set_updates(monkeypatch, enabled=True)
+    service = UpdateService(
+        fetch_manifest=lambda _url, _timeout: {
+            "min_supported": "0.1.0",
+            "latest": {
+                "version": CURRENT_VERSION,
+                "download": {
+                    "url": "https://example.test/canonical-dl",
+                },
+            },
+        }
+    )
+    monkeypatch.setattr(update_routes, "get_update_service", lambda: service)
+
+    response = bus_client["client"].get("/app/update/check")
+
+    assert response.status_code == 200
+    body = response.json()
+    _assert_contract(body)
+    assert body["error_code"] is None
+    assert body["update_available"] is False
+    assert body["download_url"] is None
+
+
+def test_canonical_manifest_missing_download(bus_client, monkeypatch: pytest.MonkeyPatch):
+    from core.api.routes import update as update_routes
+
+    _set_updates(monkeypatch, enabled=True)
+    service = UpdateService(
+        fetch_manifest=lambda _url, _timeout: {
+            "min_supported": "0.1.0",
+            "latest": {
+                "version": "9.9.9",
+            },
+        }
+    )
+    monkeypatch.setattr(update_routes, "get_update_service", lambda: service)
+
+    response = bus_client["client"].get("/app/update/check")
+
+    assert response.status_code == 200
+    body = response.json()
+    _assert_contract(body)
+    assert body["error_code"] == "invalid_manifest"
