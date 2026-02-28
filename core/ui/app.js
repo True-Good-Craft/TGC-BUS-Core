@@ -28,6 +28,7 @@ import { mountManufacturing, unmountManufacturing } from "./js/cards/manufacturi
 import { mountRecipes, unmountRecipes } from "./js/cards/recipes.js";
 import { settingsCard } from "./js/cards/settings.js";
 import { mountLogsPage } from "./js/logs.js";
+import { mountFinance } from "./js/cards/finance.js";
 import { toMetricBase, DIM_DEFAULTS_IMPERIAL } from "./js/lib/units.js";
 
 const ROUTES = {
@@ -39,6 +40,7 @@ const ROUTES = {
   '#/import': showImport,
   '#/settings': showSettings,
   '#/logs': showLogs,
+  '#/finance': showFinance,
   '#/home': showHome,
   '#/': showInventory,
   '': showInventory,
@@ -101,7 +103,8 @@ function clearCardHost() {
   const manufacturingHost = document.querySelector('[data-tab-panel="manufacturing"]');
   const recipesHost = document.querySelector('[data-tab-panel="recipes"]');
   const logsHost = document.querySelector('[data-role="logs-root"]');
-  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, logsHost].forEach((node) => {
+  const financeHost = document.querySelector('[data-role="finance-root"]');
+  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, logsHost, financeHost].forEach((node) => {
     if (node) node.innerHTML = '';
   });
 }
@@ -193,6 +196,7 @@ async function showContacts() {
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
   contactsScreen?.classList.remove('hidden');
   await ensureContactsMounted();
@@ -205,6 +209,7 @@ async function showInventory() {
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="inventory-screen"]')?.classList.remove('hidden');
@@ -218,6 +223,7 @@ async function showManufacturing() {
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   const screen = document.querySelector('[data-role="manufacturing-screen"]');
   screen?.classList.remove('hidden');
   unmountInventory();
@@ -234,6 +240,7 @@ async function showSettings() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   const settingsScreen = document.querySelector('[data-role="settings-screen"]');
   settingsScreen?.classList.remove('hidden');
   const host = document.querySelector('[data-role="settings-root"]');
@@ -253,6 +260,7 @@ async function showLogs() {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   const logsScreen = document.querySelector('[data-role="logs-screen"]');
   logsScreen?.classList.remove('hidden');
   const host = document.querySelector('[data-role="logs-root"]');
@@ -260,6 +268,23 @@ async function showLogs() {
     host.innerHTML = '';
     mountLogsPage(host);
   }
+}
+
+
+async function showFinance() {
+  unmountInventory();
+  unmountManufacturing();
+  unmountRecipes();
+  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  const financeScreen = document.querySelector('[data-role="finance-screen"]');
+  financeScreen?.classList.remove('hidden');
+  mountFinance();
 }
 
 async function showHome() {
@@ -272,6 +297,7 @@ async function showHome() {
   unmountRecipes();
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
 }
 
 async function showRecipes() {
@@ -281,6 +307,7 @@ async function showRecipes() {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   const recipesScreen = document.querySelector('[data-role="recipes-screen"]');
   recipesScreen?.classList.remove('hidden');
   unmountInventory();
@@ -312,6 +339,7 @@ async function showNotFound(badHash) {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   showScreen('home');
   renderInlinePanel('404 — Not Found', 'The requested route does not exist.', badHash);
 }
@@ -326,6 +354,7 @@ async function showRuns() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   showScreen('home');
   renderInlinePanel('Runs', 'Runs screen not implemented yet');
 }
@@ -340,6 +369,7 @@ async function showImport() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   showScreen('home');
   renderInlinePanel('Import', 'Import screen not implemented yet');
 }
