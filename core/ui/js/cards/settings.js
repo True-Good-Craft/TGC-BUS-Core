@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { apiGet, apiPost, ensureToken } from '../api.js';
 import { mountAdmin } from './admin.js';
+import { runUpdateCheck } from '../update-check.js';
 
 export async function settingsCard(el) {
   el.innerHTML = '<div style="padding:20px;">Loading settings...</div>';
@@ -22,6 +23,7 @@ export async function settingsCard(el) {
   const launcher = config.launcher || {};
   const ui = config.ui || {};
   const backup = config.backup || {};
+  const updates = config.updates || {};
 
   el.innerHTML = '';
   const root = document.createElement('div');
@@ -60,6 +62,25 @@ export async function settingsCard(el) {
              style="width:100%; padding:10px; border-radius:10px; background:#232428; color:#888; border:1px solid #444;"
              value="">
       <div style="font-size:0.85em; color:#666; margin-top:4px;">To change this path, edit config.json directly.</div>
+    </div>
+
+    <div style="margin-bottom:20px; border-top:1px solid #333; padding-top:20px;">
+      <label style="display:block; margin-bottom:8px; font-weight:600; color:#ccc;">Updates</label>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+          <input type="checkbox" id="setting-updates-enabled" style="transform:scale(1.2);">
+          <span>Enable update checks</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+          <input type="checkbox" id="setting-updates-startup" style="transform:scale(1.2);">
+          <span>Check on startup (only when update checks are enabled)</span>
+        </label>
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+          <button id="btn-check-updates" class="btn" style="padding:8px 14px; border-radius:10px; background:#2e7d32; color:white; border:none; cursor:pointer;">Check now</button>
+          <span id="check-updates-feedback" style="color:#aaa;"></span>
+          <button id="btn-download-update" class="btn" style="display:none; padding:8px 14px; border-radius:10px; background:#1f6feb; color:white; border:none; cursor:pointer;">Download</button>
+        </div>
+      </div>
     </div>
 
     <div style="margin-top:30px; border-top:1px solid #333; padding-top:20px;">
@@ -113,10 +134,43 @@ export async function settingsCard(el) {
   root.querySelector('#setting-start-tray').checked = !!launcher.auto_start_in_tray;
   root.querySelector('#setting-close-tray').checked = !!launcher.close_to_tray;
   root.querySelector('#setting-backup-dir').value = backup.default_directory || '';
+  root.querySelector('#setting-updates-enabled').checked = !!updates.enabled;
+  root.querySelector('#setting-updates-startup').checked = updates.check_on_startup !== false;
 
   // Handlers
   const btnSave = root.querySelector('#btn-save');
   const feedback = root.querySelector('#save-feedback');
+  const btnCheck = root.querySelector('#btn-check-updates');
+  const checkFeedback = root.querySelector('#check-updates-feedback');
+  const btnDownload = root.querySelector('#btn-download-update');
+
+  btnCheck.onclick = async () => {
+      btnCheck.disabled = true;
+      btnDownload.style.display = 'none';
+      btnDownload.onclick = null;
+      checkFeedback.textContent = 'Checking...';
+      try {
+          const res = await runUpdateCheck();
+          if (res.error_code) {
+              checkFeedback.textContent = `Check failed: ${res.error_message || res.error_code}`;
+          } else if (res.update_available) {
+              checkFeedback.textContent = `Update available: ${res.latest_version}`;
+              if (res.download_url) {
+                  btnDownload.style.display = 'inline-block';
+                  btnDownload.onclick = () => {
+                      window.open(res.download_url, '_blank', 'noopener');
+                  };
+              }
+          } else {
+              checkFeedback.textContent = 'You are up to date.';
+          }
+      } catch (e) {
+          console.error(e);
+          checkFeedback.textContent = 'Update check failed.';
+      } finally {
+          btnCheck.disabled = false;
+      }
+  };
 
   btnSave.onclick = async () => {
       btnSave.disabled = true;
@@ -130,6 +184,10 @@ export async function settingsCard(el) {
           launcher: {
               auto_start_in_tray: root.querySelector('#setting-start-tray').checked,
               close_to_tray: root.querySelector('#setting-close-tray').checked
+          },
+          updates: {
+              enabled: root.querySelector('#setting-updates-enabled').checked,
+              check_on_startup: root.querySelector('#setting-updates-startup').checked
           }
       };
 
