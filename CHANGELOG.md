@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Added
+- Opt-in update check system with `/app/update/check` for manifest-based version checks and normalized six-field response surface.
+
+### Security
+- Hardened update manifest fetch path with deterministic SSRF guards, redirect rejection (`follow_redirects=False`), JSON-only validation, and streaming 64KB size cap enforcement.
+
+### UX
+- Settings now supports manual “Check now” with conditional Download action, plus optional startup update notice if explicitly opted-in (`updates.enabled && updates.check_on_startup`).
+
+### Tests
+- Added/updated update-check coverage for streaming size cap enforcement, strict SemVer handling, manifest URL validation and SSRF cases, redirect/content-type behavior, and response contract key stability.
 - Finance page (`#/finance`) with KPI summary and transaction history.
 
 ### API

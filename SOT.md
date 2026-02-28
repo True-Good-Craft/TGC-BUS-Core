@@ -1326,6 +1326,56 @@ Background polling loops that violate Core’s “one-shot, opt-in” update che
 
 Core sot
 
+# SoT DELTA — Update Check System — Opt-in Manifest Fetch + SSRF Guards + Streaming Size Cap
+
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Update Check System — Opt-in Manifest Fetch + SSRF Guards + Streaming Size Cap
+DATE: 2026-02-28
+BRANCH: updatecheck
+
+## Scope
+This delta documents the implemented in-app Update Check system behavior and hardening on branch `updatecheck`.
+
+## Canonical Endpoint
+- New endpoint: `GET /app/update/check`.
+- Response contract remains exactly:
+  - `current_version`
+  - `latest_version`
+  - `update_available`
+  - `download_url`
+  - `error_code`
+  - `error_message`
+
+## Config Surface (`updates.*`)
+- `updates.enabled`: `false` (default)
+- `updates.channel`: "stable" (default)
+- `updates.manifest_url`: "https://buscore.ca/manifest/core/stable.json" (default)
+- `updates.check_on_startup`: `true` (default)
+
+## Behavioral Gates
+- Manual “Check now” is always allowed and calls `/app/update/check` even when `updates.enabled=false`.
+- Startup check is gated at UI level only and runs one-shot only when:
+  - `updates.enabled == true`
+  - `updates.check_on_startup == true`
+- No background polling loops were introduced.
+- No auto-update and no installer behavior were introduced.
+
+## Safety / Hardening
+- Strict SemVer enforcement for versions: `X.Y.Z` only.
+- Timeout cap: 4 seconds.
+- Redirects are not followed (`follow_redirects=False`); 3xx is treated as an error.
+- Deterministic SSRF blocking on manifest URL for:
+  - `localhost` / `localhost.`
+  - literal private, link-local, loopback, and `0.0.0.0` IP hosts
+- Manifest is JSON-only (`Content-Type` must include `application/json` when present).
+- Manifest read is streaming with a hard 64KB cap (`65536` bytes).
+
+## UI Behavior
+- Settings includes update controls and manual “Check now”.
+- When `update_available=true` and `download_url` is present, UI exposes a Download action using:
+  - `window.open(url, '_blank', 'noopener')`
+- Startup notice remains non-blocking and auto-hides.
+
 
 # SoT DELTA — Finance Page — KPI Summary + Transaction History + Stock-Authority COGS
 

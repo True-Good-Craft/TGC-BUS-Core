@@ -30,6 +30,7 @@ import { settingsCard } from "./js/cards/settings.js";
 import { mountLogsPage } from "./js/logs.js";
 import { mountFinance } from "./js/cards/finance.js";
 import { toMetricBase, DIM_DEFAULTS_IMPERIAL } from "./js/lib/units.js";
+import { maybeRunStartupUpdateCheck } from "./js/update-check.js";
 
 const ROUTES = {
   '#/inventory': showInventory,
@@ -180,6 +181,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (_) { el.textContent = 'unknown'; }
       }
     }
+    await maybeRunStartupUpdateCheck();
     console.log('BOOT OK');
   } catch (e) {
     console.error('BOOT FAIL', e);
