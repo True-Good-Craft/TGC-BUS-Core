@@ -79,45 +79,23 @@ class UpdateService:
     @staticmethod
     def _http_fetch_manifest(url: str, timeout_s: float) -> Any:
         timeout_config = _build_timeout(timeout_s)
+        client_cls = getattr(httpx, "Client", None)
+        if callable(client_cls):
+            try:
+                with client_cls(timeout=timeout_config, follow_redirects=False) as client:
+                    stream_method = getattr(client, "stream", None)
+                    if callable(stream_method):
+                        with stream_method("GET", url) as response:
+                            return _read_manifest_response(response)
+            except TypeError:
+                pass
+
         stream_fn = getattr(httpx, "stream", None)
         if not callable(stream_fn):
             raise UpdateCheckError("network_error", "Failed to fetch update manifest.")
 
         with stream_fn("GET", url, timeout=timeout_config, follow_redirects=False) as response:
-            status_code = int(getattr(response, "status_code", 0))
-            if 300 <= status_code < 400:
-                raise UpdateCheckError("network_error", "Failed to fetch update manifest.")
-
-            raise_for_status = getattr(response, "raise_for_status", None)
-            if callable(raise_for_status):
-                raise_for_status()
-            elif status_code >= 400:
-                raise UpdateCheckError("network_error", "Failed to fetch update manifest.")
-
-            content_type = _header_value(response, "content-type")
-            if content_type and "application/json" not in content_type.lower():
-                raise UpdateCheckError("invalid_manifest", "Manifest must be JSON.")
-
-            content_length = _header_value(response, "content-length")
-            if content_length is not None:
-                try:
-                    if int(content_length) > MAX_MANIFEST_BYTES:
-                        raise UpdateCheckError("manifest_too_large", "Manifest exceeds maximum size.")
-                except ValueError:
-                    pass
-
-            total_bytes = 0
-            buffer = bytearray()
-            for chunk in response.iter_bytes():
-                total_bytes += len(chunk)
-                if total_bytes > MAX_MANIFEST_BYTES:
-                    raise UpdateCheckError("manifest_too_large", "Manifest exceeds maximum size.")
-                buffer.extend(chunk)
-
-        try:
-            return json.loads(bytes(buffer).decode("utf-8"))
-        except Exception:
-            raise UpdateCheckError("invalid_manifest", "Manifest must be valid JSON.")
+            return _read_manifest_response(response)
 
     @staticmethod
     def _error_result(code: str, message: str) -> UpdateResult:
@@ -168,6 +146,43 @@ def _timeout_exception_class() -> tuple[type[BaseException], ...]:
 def _http_error_class() -> tuple[type[BaseException], ...]:
     http_error = getattr(httpx, "HTTPError", None)
     return (http_error,) if isinstance(http_error, type) else tuple()
+
+
+def _read_manifest_response(response: Any) -> Any:
+    status_code = int(getattr(response, "status_code", 0))
+    if 300 <= status_code < 400:
+        raise UpdateCheckError("network_error", "Failed to fetch update manifest.")
+
+    raise_for_status = getattr(response, "raise_for_status", None)
+    if callable(raise_for_status):
+        raise_for_status()
+    elif status_code >= 400:
+        raise UpdateCheckError("network_error", "Failed to fetch update manifest.")
+
+    content_type = _header_value(response, "content-type")
+    if content_type and "application/json" not in content_type.lower():
+        raise UpdateCheckError("invalid_manifest", "Manifest must be JSON.")
+
+    content_length = _header_value(response, "content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > MAX_MANIFEST_BYTES:
+                raise UpdateCheckError("manifest_too_large", "Manifest exceeds maximum size.")
+        except ValueError:
+            pass
+
+    total_bytes = 0
+    buffer = bytearray()
+    for chunk in response.iter_bytes():
+        total_bytes += len(chunk)
+        if total_bytes > MAX_MANIFEST_BYTES:
+            raise UpdateCheckError("manifest_too_large", "Manifest exceeds maximum size.")
+        buffer.extend(chunk)
+
+    try:
+        return json.loads(bytes(buffer).decode("utf-8"))
+    except Exception:
+        raise UpdateCheckError("invalid_manifest", "Manifest must be valid JSON.")
 
 
 def _validate_manifest_url(manifest_url: str) -> None:

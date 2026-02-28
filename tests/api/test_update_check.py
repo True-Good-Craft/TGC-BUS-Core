@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import time
 import pytest
+from _httpx_stub import Client as StubHttpxClient
 
 from core.config.manager import Config, UpdatesConfig
 from core.services.update import REQUEST_TIMEOUT_SECONDS, UpdateService
@@ -56,6 +57,10 @@ def _set_updates(monkeypatch: pytest.MonkeyPatch, *, enabled: bool, channel: str
 
 def _assert_contract(body: dict) -> None:
     assert set(body.keys()) == EXPECTED_KEYS
+
+
+def _force_client_stream_fallback(monkeypatch: pytest.MonkeyPatch, update_module) -> None:
+    monkeypatch.setattr(update_module.httpx, "Client", StubHttpxClient, raising=False)
 
 
 def test_update_check_works_even_when_updates_disabled(bus_client, monkeypatch: pytest.MonkeyPatch):
@@ -146,6 +151,7 @@ def test_hostname_allowed(bus_client, monkeypatch: pytest.MonkeyPatch):
         )
         return _StreamContext(response)
 
+    _force_client_stream_fallback(monkeypatch, update_module)
     monkeypatch.setattr(update_module.httpx, "stream", _fake_stream, raising=False)
 
     started = time.perf_counter()
@@ -169,6 +175,7 @@ def test_update_check_redirect_treated_as_network_error(bus_client, monkeypatch:
         response = _StreamResponse(status_code=302, headers={"content-type": "application/json"}, chunks=[b"{}"])
         return _StreamContext(response)
 
+    _force_client_stream_fallback(monkeypatch, update_module)
     monkeypatch.setattr(update_module.httpx, "stream", _fake_stream, raising=False)
 
     response = bus_client["client"].get("/app/update/check")
@@ -193,6 +200,7 @@ def test_update_check_stream_over_limit_rejected(bus_client, monkeypatch: pytest
         )
         return _StreamContext(response)
 
+    _force_client_stream_fallback(monkeypatch, update_module)
     monkeypatch.setattr(update_module.httpx, "stream", _fake_stream, raising=False)
 
     response = bus_client["client"].get("/app/update/check")
@@ -226,6 +234,7 @@ def test_update_check_wrong_content_type_rejected(bus_client, monkeypatch: pytes
         response = _StreamResponse(status_code=200, headers={"content-type": "text/html"}, chunks=[b"<html></html>"])
         return _StreamContext(response)
 
+    _force_client_stream_fallback(monkeypatch, update_module)
     monkeypatch.setattr(update_module.httpx, "stream", _fake_stream, raising=False)
 
     response = bus_client["client"].get("/app/update/check")
@@ -251,6 +260,7 @@ def test_update_check_follow_redirects_disabled_and_timeout_configured(bus_clien
         )
         return _StreamContext(response)
 
+    _force_client_stream_fallback(monkeypatch, update_module)
     monkeypatch.setattr(update_module.httpx, "stream", _fake_stream, raising=False)
 
     response = bus_client["client"].get("/app/update/check")
