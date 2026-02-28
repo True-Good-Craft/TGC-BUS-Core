@@ -92,6 +92,26 @@ export async function settingsCard(el) {
     });
   }
 
+  const onboardingSection = document.createElement('section');
+  onboardingSection.style.marginTop = '16px';
+  onboardingSection.innerHTML = `
+    <h2 style="margin:0 0 12px;font-size:1.15em;font-weight:700;">Onboarding</h2>
+    <p style="margin:0 0 12px;color:#aaa;">Restart the first-run onboarding wizard from Settings.</p>
+    <button type="button" data-action="run-onboarding" class="btn btn-secondary">Run onboarding</button>
+  `;
+  el.appendChild(onboardingSection);
+
+  onboardingSection.querySelector('[data-action="run-onboarding"]')?.addEventListener('click', () => {
+    try {
+      if (window.BUS_ONBOARDING?.clear) {
+        window.BUS_ONBOARDING.clear();
+      } else {
+        localStorage.removeItem('bus.onboarding.completed');
+      }
+    } catch {}
+    window.location.hash = '#/welcome';
+  });
+
   const adminSection = document.createElement('section');
   adminSection.style.marginTop = '16px';
   adminSection.innerHTML = `

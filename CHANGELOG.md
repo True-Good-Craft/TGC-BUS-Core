@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+- First-run onboarding wizard (`#/welcome`) with deterministic backend boot probe.
+
+### API
+- Added `/app/system/state` for first-run detection and readiness reporting.
+
+### UX
+- Auto-launch onboarding only on clean DB; Settings button to re-run onboarding.
+
+### Tests
+- Added/updated `system_state` tests covering empty/non-empty/status and canonical failure envelope.
+
 ## [0.11.0] — 2026-02-25 — System Normalisation
 
 ### Added

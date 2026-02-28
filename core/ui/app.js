@@ -18,7 +18,7 @@
 // along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
 import { ensureToken } from "./js/token.js";
-import { rawFetch } from "./js/api.js";
+import { apiGet, rawFetch } from "./js/api.js";
 import { mountBackupExport } from "./js/cards/backup.js";
 import mountVendors from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
@@ -31,6 +31,7 @@ import { mountLogsPage } from "./js/logs.js";
 import { toMetricBase, DIM_DEFAULTS_IMPERIAL } from "./js/lib/units.js";
 
 const ROUTES = {
+  '#/welcome': showWelcome,
   '#/inventory': showInventory,
   '#/manufacturing': showManufacturing,
   '#/recipes': showRecipes,
@@ -42,6 +43,31 @@ const ROUTES = {
   '#/home': showHome,
   '#/': showInventory,
   '': showInventory,
+};
+
+const ONBOARDING_STORAGE_KEY = 'bus.onboarding.completed';
+const ONBOARDING_ALLOWLIST = new Set(['#/welcome', '#/settings']);
+
+function isOnboardingComplete() {
+  try {
+    return localStorage.getItem(ONBOARDING_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setOnboardingComplete(done) {
+  try {
+    if (done) localStorage.setItem(ONBOARDING_STORAGE_KEY, '1');
+    else localStorage.removeItem(ONBOARDING_STORAGE_KEY);
+  } catch {}
+}
+
+window.BUS_ONBOARDING = {
+  key: ONBOARDING_STORAGE_KEY,
+  clear() {
+    setOnboardingComplete(false);
+  },
 };
 
 function normalizeHash(rawHash) {
@@ -101,9 +127,31 @@ function clearCardHost() {
   const manufacturingHost = document.querySelector('[data-tab-panel="manufacturing"]');
   const recipesHost = document.querySelector('[data-tab-panel="recipes"]');
   const logsHost = document.querySelector('[data-role="logs-root"]');
-  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, logsHost].forEach((node) => {
+  const welcomeHost = document.querySelector('[data-role="welcome-root"]');
+  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, logsHost, welcomeHost].forEach((node) => {
     if (node) node.innerHTML = '';
   });
+}
+
+async function enforceFirstRunRedirect(baseHash) {
+  if (baseHash === '#/welcome') return false;
+  if (ONBOARDING_ALLOWLIST.has(baseHash)) return false;
+  if (isOnboardingComplete()) return false;
+  let state;
+  try {
+    state = await apiGet('/app/system/state');
+  } catch (_) {
+    return false;
+  }
+  if (!state || typeof state !== 'object') return false;
+  if (state.is_first_run !== true && state.is_first_run !== false) return false;
+  if (!state.counts || typeof state.counts !== 'object' || Array.isArray(state.counts)) return false;
+  if (state.demo_allowed !== true && state.demo_allowed !== false) return false;
+  if (!Array.isArray(state.basis)) return false;
+  if (state.is_first_run !== true) return false;
+  if (window.location.hash !== baseHash) return false;
+  window.location.hash = '#/welcome';
+  return true;
 }
 
 async function onRouteChange() {
@@ -128,9 +176,15 @@ async function onRouteChange() {
   }
 
   const route = normalizeRoute(baseHash);
+
+  if (await enforceFirstRunRedirect(baseHash)) {
+    return;
+  }
+
   setActiveNav(route);
 
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   clearCardHost();
 
   const fn = ROUTES[hash] || (detailMatch ? ROUTES[baseHash] : null);
@@ -193,6 +247,7 @@ async function showContacts() {
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
   contactsScreen?.classList.remove('hidden');
   await ensureContactsMounted();
@@ -205,6 +260,7 @@ async function showInventory() {
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="inventory-screen"]')?.classList.remove('hidden');
@@ -218,6 +274,7 @@ async function showManufacturing() {
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const screen = document.querySelector('[data-role="manufacturing-screen"]');
   screen?.classList.remove('hidden');
   unmountInventory();
@@ -234,6 +291,7 @@ async function showSettings() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const settingsScreen = document.querySelector('[data-role="settings-screen"]');
   settingsScreen?.classList.remove('hidden');
   const host = document.querySelector('[data-role="settings-root"]');
@@ -253,6 +311,7 @@ async function showLogs() {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const logsScreen = document.querySelector('[data-role="logs-screen"]');
   logsScreen?.classList.remove('hidden');
   const host = document.querySelector('[data-role="logs-root"]');
@@ -272,6 +331,7 @@ async function showHome() {
   unmountRecipes();
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
 }
 
 async function showRecipes() {
@@ -281,6 +341,7 @@ async function showRecipes() {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const recipesScreen = document.querySelector('[data-role="recipes-screen"]');
   recipesScreen?.classList.remove('hidden');
   unmountInventory();
@@ -312,6 +373,7 @@ async function showNotFound(badHash) {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   showScreen('home');
   renderInlinePanel('404 — Not Found', 'The requested route does not exist.', badHash);
 }
@@ -326,6 +388,7 @@ async function showRuns() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   showScreen('home');
   renderInlinePanel('Runs', 'Runs screen not implemented yet');
 }
@@ -340,6 +403,81 @@ async function showImport() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   showScreen('home');
   renderInlinePanel('Import', 'Import screen not implemented yet');
+}
+
+async function showWelcome() {
+  unmountInventory();
+  unmountManufacturing();
+  unmountRecipes();
+  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  const welcomeScreen = document.querySelector('[data-role="welcome-screen"]');
+  welcomeScreen?.classList.remove('hidden');
+  const host = document.querySelector('[data-role="welcome-root"]');
+  if (!host) return;
+
+  const pages = [
+    {
+      title: 'Welcome to BUS Core',
+      body: 'Track items by on-hand quantity and cost batches. The app can show simple item totals while keeping purchase batches for FIFO costing.',
+    },
+    {
+      title: 'FIFO means oldest cost moves first',
+      body: 'When stock leaves inventory, BUS Core consumes the oldest available batch. This keeps unit cost and margins grounded in actual purchase order history.',
+    },
+    {
+      title: 'Recipes and manufacturing runs',
+      body: 'Recipes define what gets consumed and produced. Manufacturing runs execute those recipes and write inventory + journal entries together.',
+    },
+    {
+      title: 'Cost vs price',
+      body: 'Cost tracks what inventory is worth internally. Price is what you charge customers. Keep both updated so reports make sense.',
+    },
+    {
+      title: 'Vendors and linkage',
+      body: 'Link items to vendors to preserve sourcing context for purchasing and replenishment. This helps when costs drift or lead times change.',
+    },
+  ];
+
+  let idx = 0;
+  const render = () => {
+    const page = pages[idx];
+    const isLast = idx === pages.length - 1;
+    host.innerHTML = `
+      <div class="card" style="max-width:760px; margin:0 auto;">
+        <h2 style="margin:0 0 8px;">${page.title}</h2>
+        <p style="margin:0 0 12px; color:#d1d5db;">${page.body}</p>
+        <p style="margin:0 0 18px; font-size:12px; color:#9ca3af;">Step ${idx + 1} of ${pages.length}</p>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+          <button type="button" data-action="welcome-back" ${idx === 0 ? 'disabled' : ''}>Back</button>
+          <button type="button" data-action="welcome-next">${isLast ? 'Finish onboarding' : 'Next'}</button>
+        </div>
+      </div>
+    `;
+    host.querySelector('[data-action="welcome-back"]')?.addEventListener('click', () => {
+      if (idx > 0) {
+        idx -= 1;
+        render();
+      }
+    });
+    host.querySelector('[data-action="welcome-next"]')?.addEventListener('click', () => {
+      if (isLast) {
+        setOnboardingComplete(true);
+        window.location.hash = '#/home';
+        return;
+      }
+      idx += 1;
+      render();
+    });
+  };
+
+  render();
 }
