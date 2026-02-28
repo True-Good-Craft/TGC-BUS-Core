@@ -399,3 +399,54 @@ The following are strictly considered regressions or architectural drift and MUS
 **Architecture:** Business logic inside legacy wrappers, duplicate endpoints lacking deprecation headers, bypassing the canonical service boundary, or using ambiguous quantity variable names (like `qty` or `amount` instead of `qty_base`/`qty_human`).
 
 
+---
+
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.11.0  
+SESSION_LABEL: First-Run Onboarding — System State Probe + Welcome Wizard + Readiness Status  
+DATE: 2026-02-28  
+BRANCH: firstrunwiz
+
+### Backend: `/app/system/state` boot probe
+
+- New endpoint: `GET /app/system/state`.
+- Response includes:
+  - `is_first_run`
+  - `counts` (deterministic `COUNT_KEYS` order)
+  - `demo_allowed`
+  - `basis`
+  - `build`
+  - `status`
+
+### First-run criteria
+
+- `is_first_run` is `true` only when all tracked counts are `0`.
+- `demo_allowed` mirrors `is_first_run`.
+
+### Additive build metadata
+
+- `build.version`
+- `build.schema_version`
+
+### Additive readiness status
+
+- `status="empty"` when `is_first_run` is `true`.
+- `status="needs_migration"` when data is non-empty and `build.schema_version == "baseline"`.
+- `status="ready"` otherwise.
+
+### UI behavior
+
+- New route: `#/welcome`.
+- Route guard behavior:
+  - ensures token first,
+  - fetches `/app/system/state`,
+  - redirects only when first-run and onboarding is not completed and route is not allowlisted,
+  - fail-soft behavior: if system-state fetch fails or payload is invalid, no redirect is applied.
+- Settings includes **Run onboarding** action that clears onboarding completion flag and routes to `#/welcome`.
+
+### Error behavior (documented)
+
+- On backend failure, `/app/system/state` raises stable detail `"system_state_unavailable"`.
+- Response envelope follows canonical global HTTP exception normalization (string detail normalized by global handler into the standard `detail` object shape).
+
