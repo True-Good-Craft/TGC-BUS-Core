@@ -1325,3 +1325,29 @@ Making Core depend on Lighthouse for normal local operation
 Background polling loops that violate Core’s “one-shot, opt-in” update check posture 
 
 Core sot
+
+
+# SoT DELTA — Finance Page — KPI Summary + Transaction History + Stock-Authority COGS
+
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Finance Page — KPI Summary + Transaction History + Stock-Authority COGS
+DATE: 2026-02-28
+BRANCH: financepage
+
+## (1) UI SURFACE
+- Added SPA route `#/finance`.
+- Finance screen renders date range inputs, KPI summary tiles, and a transaction history table backed by finance read endpoints.
+
+## (2) NEW READ ENDPOINTS
+- `GET /app/finance/summary?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /app/finance/transactions?from=YYYY-MM-DD&to=YYYY-MM-DD&limit=N`
+
+## (3) AUTHORITY RULES
+- Units sold and COGS are derived from stock movements (`ItemMovement` with `source_kind="sold"`).
+- Cash events with `kind="sale"` represent revenue intent and are grouped by `source_id` for sale totals in transaction aggregation.
+- Purchase rows can appear in transaction history as `purchase_inferred`, sourced from `ItemMovement` where `source_kind="purchase"` (cash value may be unknown outside movement-derived inferred amount).
+
+## (4) DETERMINISM / ANTI-DRIFT GUARDS
+- Sales transaction aggregation uses explicit per-`source_id` grouping maps for cash totals, COGS totals, and created-at selection.
+- Transaction ordering uses parsed timestamps with stable tie-breakers to ensure deterministic ordering.
+- Regression coverage includes repeated summary-read guards to prevent double-counting drift across identical calls.
