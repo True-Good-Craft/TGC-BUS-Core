@@ -5,7 +5,7 @@ echo ==========================================
 echo Running BUS Core Smoke Test
 echo ==========================================
 
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\smoke.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\smoke_isolated.ps1"
 
 echo.
 echo ==========================================

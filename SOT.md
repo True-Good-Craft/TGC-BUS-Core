@@ -1401,3 +1401,58 @@ BRANCH: financepage
 - Sales transaction aggregation uses explicit per-`source_id` grouping maps for cash totals, COGS totals, and created-at selection.
 - Transaction ordering uses parsed timestamps with stable tie-breakers to ensure deterministic ordering.
 - Regression coverage includes repeated summary-read guards to prevent double-counting drift across identical calls.
+
+
+# SoT Delta
+
+SOT_VERSION_AT_START: v0.11.1
+SESSION_LABEL: Finance Stabilization — Delete Guard → Archive Model
+DATE: 2026-03-04
+BRANCH: work
+
+## Finance Fail-Closed (Confirmed)
+
+- Finance endpoints remain fail-closed when Item resolution fails.
+- Missing Item during aggregation returns HTTP 400 with structured `item_not_found`.
+- No silent skipping of orphaned history is permitted.
+
+## Item Deletion Contract (Updated)
+
+`DELETE /app/items/{id}` is dual-mode:
+
+- If no history exists:
+  - Hard delete occurs.
+  - Returns `{ "ok": true }`.
+
+- If any history exists (`ItemMovement`, `CashEvent`, `ManufacturingRun`):
+  - Item is archived (`is_archived = true`).
+  - Returns `{ "archived": true }`.
+  - Hard delete is forbidden in this case.
+
+- Repeated `DELETE` on archived item with history is idempotent and returns `{ "archived": true }`.
+
+## Archive Semantics
+
+- `items.is_archived BOOLEAN NOT NULL DEFAULT 0` added.
+- `GET /app/items` excludes archived items by default.
+- `GET /app/items?include_archived=true` returns all items.
+- `GET /app/items/{id}` returns archived items normally.
+
+Archived items remain resolvable for:
+
+- Finance aggregation
+- Ledger joins
+- Historical queries
+
+## Smoke Isolation
+
+- `scripts/smoke_isolated.ps1` introduced.
+- Smoke now forces temporary `BUS_DB` path.
+- Working DB cannot be mutated by smoke runs.
+
+## Invariants (Unchanged)
+
+- Backend remains authority for finance math.
+- No float math introduced.
+- COGS derived only from sold stock movements.
+- No cascade delete of ledger history.

@@ -57,6 +57,7 @@ def ensure_schema() -> Dict[str, Any]:
                 qty_stored INTEGER NOT NULL DEFAULT 0,   -- canonical on-hand (int)
                 price REAL DEFAULT 0,
                 is_product BOOLEAN NOT NULL DEFAULT 0,
+                is_archived BOOLEAN NOT NULL DEFAULT 0,
                 notes TEXT,
                 item_type TEXT,
                 location TEXT,
@@ -74,6 +75,10 @@ def ensure_schema() -> Dict[str, Any]:
                 (
                     "is_product",
                     "ALTER TABLE items ADD COLUMN is_product BOOLEAN NOT NULL DEFAULT 0",
+                ),
+                (
+                    "is_archived",
+                    "ALTER TABLE items ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0",
                 ),
             ]:
                 if not col_exists("items", col):
@@ -212,6 +217,9 @@ def ensure_schema() -> Dict[str, Any]:
             created["manufacturing_runs"] = True
 
         # Helpful indexes (idempotent)
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS items_is_archived_idx ON items(is_archived)"
+        )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_item_batches_item_created ON item_batches (item_id, created_at)"
         )
