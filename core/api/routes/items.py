@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from core.appdb.engine import get_session
 from core.config.writes import require_writes
 from core.policy.guard import require_owner_commit
-from core.appdb.models import Item, ItemBatch, Vendor
+from core.appdb.models import CashEvent, Item, ItemBatch, ItemMovement, Vendor
+from core.appdb.models_recipes import ManufacturingRun
 from core.metrics.metric import UNIT_MULTIPLIER, default_unit_for, from_base
 from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
@@ -177,11 +178,15 @@ def _row(it: Item, vendor_name: Optional[str] = None, on_hand: Optional[int] = N
 
 @router.get("/items")
 def list_items(
+    include_archived: bool = Query(False),
     db: Session = Depends(get_session),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ) -> List[Dict[str, Any]]:
-    items = _items_with_onhand(db).all()
+    items_query = _items_with_onhand(db)
+    if not include_archived:
+        items_query = items_query.filter(Item.is_archived == False)
+    items = items_query.all()
     vmap = {v.id: v.name for v in db.query(Vendor).all()}
     rows: List[Dict[str, Any]] = []
     for it, on_hand in items:
@@ -414,6 +419,16 @@ def delete_item(
     it = db.query(Item).get(item_id)
     if not it:
         raise HTTPException(status_code=404, detail="item not found")
+
+    has_item_movement = db.query(ItemMovement.id).filter(ItemMovement.item_id == item_id).first() is not None
+    has_cash_event = db.query(CashEvent.id).filter(CashEvent.item_id == item_id).first() is not None
+    has_manufacturing_run = (
+        db.query(ManufacturingRun.id).filter(ManufacturingRun.output_item_id == item_id).first() is not None
+    )
+    if has_item_movement or has_cash_event or has_manufacturing_run:
+        it.is_archived = True
+        db.commit()
+        return {"archived": True}
 
     # Remove dependent batches to avoid orphaned rows if SQLite reuses item ids after delete
     db.query(ItemBatch).filter(ItemBatch.item_id == item_id).delete(synchronize_session=False)
