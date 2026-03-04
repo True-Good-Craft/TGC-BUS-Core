@@ -177,7 +177,7 @@ curl http://localhost:8765/health
 UI:
 
 ```
-http://localhost:8765/ui/shell.html#/home
+http://localhost:8765/ui/shell.html
 ```
 
 ### Stop
@@ -206,7 +206,7 @@ python -m uvicorn core.api.http:create_app \
 UI:
 
 ```
-http://localhost:8765/ui/shell.html#/home
+http://localhost:8765/ui/shell.html
 ```
 
 ---

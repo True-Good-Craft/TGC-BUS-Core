@@ -10,6 +10,7 @@
 
 ### UX
 - Settings now supports manual “Check now” with conditional Download action, plus optional startup update notice if explicitly opted-in (`updates.enabled && updates.check_on_startup`).
+- launcher: open /ui/shell.html without a hash to preserve deterministic first-run onboarding routing.
 
 ### Tests
 - Added/updated update-check coverage for streaming size cap enforcement, strict SemVer handling, manifest URL validation and SSRF cases, redirect/content-type behavior, and response contract key stability.

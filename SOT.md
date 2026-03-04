@@ -1504,3 +1504,27 @@ BRANCH: firstrunwiz
 
 - On backend failure, `/app/system/state` raises stable detail `"system_state_unavailable"`.
 - Response envelope follows canonical global HTTP exception normalization (string detail normalized by global handler into the standard `detail` object shape).
+
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.11.0  
+SESSION_LABEL: Canonical UI Entry Point — Hash-Free Launch for Deterministic First-Run  
+DATE: 2026-03-04  
+BRANCH: main
+
+### Canonical entry URL
+
+- Canonical launcher/open entry URL is `/ui/shell.html` with **no hash fragment**.
+- Launchers must not pre-seed `#/home` (or any route hash) at browser-open time.
+
+### First-run routing authority
+
+- First-run routing decision remains in SPA boot logic using `/app/system/state` plus local onboarding completion flag (`bus.onboarding.completed`).
+- Manual deep links that include hashes (for example `#/manufacturing`) remain supported and are not overridden by launcher URL construction.
+
+### Files updated in this delta
+
+- `launcher.py`
+- `scripts/up.ps1`
+- `scripts/up.sh`
+- `README.md`
