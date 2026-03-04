@@ -141,6 +141,7 @@ function clearCardHost() {
 }
 
 function setBootHash(hash) {
+  if (window.location.hash === hash) return;
   suppressNextHashchange = true;
   window.location.hash = hash;
 }
