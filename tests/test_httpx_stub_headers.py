@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-from httpx import Client
+from _httpx_stub import Client
 
 
 def test_json_request_preserves_caller_content_type_header():

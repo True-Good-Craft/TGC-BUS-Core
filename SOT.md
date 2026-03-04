@@ -1326,6 +1326,82 @@ Background polling loops that violate Core’s “one-shot, opt-in” update che
 
 Core sot
 
+# SoT DELTA — Update Check System — Opt-in Manifest Fetch + SSRF Guards + Streaming Size Cap
+
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Update Check System — Opt-in Manifest Fetch + SSRF Guards + Streaming Size Cap
+DATE: 2026-02-28
+BRANCH: updatecheck
+
+## Scope
+This delta documents the implemented in-app Update Check system behavior and hardening on branch `updatecheck`.
+
+## Canonical Endpoint
+- New endpoint: `GET /app/update/check`.
+- Response contract remains exactly:
+  - `current_version`
+  - `latest_version`
+  - `update_available`
+  - `download_url`
+  - `error_code`
+  - `error_message`
+
+## Config Surface (`updates.*`)
+- `updates.enabled`: `false` (default)
+- `updates.channel`: "stable" (default)
+- `updates.manifest_url`: "https://buscore.ca/manifest/core/stable.json" (default)
+- `updates.check_on_startup`: `true` (default)
+
+## Behavioral Gates
+- Manual “Check now” is always allowed and calls `/app/update/check` even when `updates.enabled=false`.
+- Startup check is gated at UI level only and runs one-shot only when:
+  - `updates.enabled == true`
+  - `updates.check_on_startup == true`
+- No background polling loops were introduced.
+- No auto-update and no installer behavior were introduced.
+
+## Safety / Hardening
+- Strict SemVer enforcement for versions: `X.Y.Z` only.
+- Timeout cap: 4 seconds.
+- Redirects are not followed (`follow_redirects=False`); 3xx is treated as an error.
+- Deterministic SSRF blocking on manifest URL for:
+  - `localhost` / `localhost.`
+  - literal private, link-local, loopback, and `0.0.0.0` IP hosts
+- Manifest is JSON-only (`Content-Type` must include `application/json` when present).
+- Manifest read is streaming with a hard 64KB cap (`65536` bytes).
+
+## UI Behavior
+- Settings includes update controls and manual “Check now”.
+- When `update_available=true` and `download_url` is present, UI exposes a Download action using:
+  - `window.open(url, '_blank', 'noopener')`
+- Startup notice remains non-blocking and auto-hides.
+
+
+# SoT DELTA — Finance Page — KPI Summary + Transaction History + Stock-Authority COGS
+
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Finance Page — KPI Summary + Transaction History + Stock-Authority COGS
+DATE: 2026-02-28
+BRANCH: financepage
+
+## (1) UI SURFACE
+- Added SPA route `#/finance`.
+- Finance screen renders date range inputs, KPI summary tiles, and a transaction history table backed by finance read endpoints.
+
+## (2) NEW READ ENDPOINTS
+- `GET /app/finance/summary?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /app/finance/transactions?from=YYYY-MM-DD&to=YYYY-MM-DD&limit=N`
+
+## (3) AUTHORITY RULES
+- Units sold and COGS are derived from stock movements (`ItemMovement` with `source_kind="sold"`).
+- Cash events with `kind="sale"` represent revenue intent and are grouped by `source_id` for sale totals in transaction aggregation.
+- Purchase rows can appear in transaction history as `purchase_inferred`, sourced from `ItemMovement` where `source_kind="purchase"` (cash value may be unknown outside movement-derived inferred amount).
+
+## (4) DETERMINISM / ANTI-DRIFT GUARDS
+- Sales transaction aggregation uses explicit per-`source_id` grouping maps for cash totals, COGS totals, and created-at selection.
+- Transaction ordering uses parsed timestamps with stable tie-breakers to ensure deterministic ordering.
+- Regression coverage includes repeated summary-read guards to prevent double-counting drift across identical calls.
+
 ## SoT Delta
 
 SOT_VERSION_AT_START: v0.11.0  

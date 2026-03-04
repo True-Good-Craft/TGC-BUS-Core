@@ -249,3 +249,29 @@ def test_profit_cogs_uses_human_unit_cost_not_base_qty(bus_client):
     payload = profit.json()
 
     assert int(payload["cogs_cents"]) == 10
+
+
+def test_profit_response_shape_regression_guard(bus_client):
+    client = bus_client["client"]
+    day = datetime.utcnow().date().strftime("%Y-%m-%d")
+    res = client.get(f"/app/finance/profit?from={day}&to={day}")
+    assert res.status_code == 200, res.text
+    payload = res.json()
+
+    expected_keys = {
+        "gross_sales_cents",
+        "returns_cents",
+        "net_sales_cents",
+        "cogs_cents",
+        "gross_profit_cents",
+        "from",
+        "to",
+    }
+    assert set(payload.keys()) == expected_keys
+    assert isinstance(payload["gross_sales_cents"], int)
+    assert isinstance(payload["returns_cents"], int)
+    assert isinstance(payload["net_sales_cents"], int)
+    assert isinstance(payload["cogs_cents"], int)
+    assert isinstance(payload["gross_profit_cents"], int)
+    assert isinstance(payload["from"], str)
+    assert isinstance(payload["to"], str)

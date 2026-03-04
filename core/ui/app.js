@@ -28,7 +28,9 @@ import { mountManufacturing, unmountManufacturing } from "./js/cards/manufacturi
 import { mountRecipes, unmountRecipes } from "./js/cards/recipes.js";
 import { settingsCard } from "./js/cards/settings.js";
 import { mountLogsPage } from "./js/logs.js";
+import { mountFinance } from "./js/cards/finance.js";
 import { toMetricBase, DIM_DEFAULTS_IMPERIAL } from "./js/lib/units.js";
+import { maybeRunStartupUpdateCheck } from "./js/update-check.js";
 
 const ROUTES = {
   '#/welcome': showWelcome,
@@ -40,6 +42,7 @@ const ROUTES = {
   '#/import': showImport,
   '#/settings': showSettings,
   '#/logs': showLogs,
+  '#/finance': showFinance,
   '#/home': showHome,
   '#/': showInventory,
   '': showInventory,
@@ -127,6 +130,8 @@ function clearCardHost() {
   const manufacturingHost = document.querySelector('[data-tab-panel="manufacturing"]');
   const recipesHost = document.querySelector('[data-tab-panel="recipes"]');
   const logsHost = document.querySelector('[data-role="logs-root"]');
+  const financeHost = document.querySelector('[data-role="finance-root"]');
+  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, logsHost, financeHost].forEach((node) => {
   const welcomeHost = document.querySelector('[data-role="welcome-root"]');
   [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, logsHost, welcomeHost].forEach((node) => {
     if (node) node.innerHTML = '';
@@ -231,6 +236,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (_) { el.textContent = 'unknown'; }
       }
     }
+    await maybeRunStartupUpdateCheck();
     console.log('BOOT OK');
   } catch (e) {
     console.error('BOOT FAIL', e);
@@ -247,6 +253,7 @@ async function showContacts() {
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
   contactsScreen?.classList.remove('hidden');
@@ -260,6 +267,7 @@ async function showInventory() {
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   unmountManufacturing();
   unmountRecipes();
@@ -274,6 +282,7 @@ async function showManufacturing() {
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const screen = document.querySelector('[data-role="manufacturing-screen"]');
   screen?.classList.remove('hidden');
@@ -291,6 +300,7 @@ async function showSettings() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const settingsScreen = document.querySelector('[data-role="settings-screen"]');
   settingsScreen?.classList.remove('hidden');
@@ -311,6 +321,7 @@ async function showLogs() {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const logsScreen = document.querySelector('[data-role="logs-screen"]');
   logsScreen?.classList.remove('hidden');
@@ -319,6 +330,23 @@ async function showLogs() {
     host.innerHTML = '';
     mountLogsPage(host);
   }
+}
+
+
+async function showFinance() {
+  unmountInventory();
+  unmountManufacturing();
+  unmountRecipes();
+  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  const financeScreen = document.querySelector('[data-role="finance-screen"]');
+  financeScreen?.classList.remove('hidden');
+  mountFinance();
 }
 
 async function showHome() {
@@ -331,6 +359,7 @@ async function showHome() {
   unmountRecipes();
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
 }
 
@@ -341,6 +370,7 @@ async function showRecipes() {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const recipesScreen = document.querySelector('[data-role="recipes-screen"]');
   recipesScreen?.classList.remove('hidden');
@@ -373,6 +403,7 @@ async function showNotFound(badHash) {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   showScreen('home');
   renderInlinePanel('404 — Not Found', 'The requested route does not exist.', badHash);
@@ -388,6 +419,7 @@ async function showRuns() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   showScreen('home');
   renderInlinePanel('Runs', 'Runs screen not implemented yet');
@@ -403,6 +435,7 @@ async function showImport() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   showScreen('home');
   renderInlinePanel('Import', 'Import screen not implemented yet');
