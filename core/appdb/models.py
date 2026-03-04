@@ -60,6 +60,7 @@ class Item(Base):
     qty_stored = Column(Integer, nullable=False, default=0)      # canonical on-hand (base int)
     price = Column(Float, default=0)
     is_product = Column(Boolean, nullable=False, server_default="0")
+    is_archived = Column(Boolean, nullable=False, default=False, server_default="0")
     notes = Column(Text, nullable=True)
     item_type = Column(String, nullable=True)
     location = Column(String, nullable=True)

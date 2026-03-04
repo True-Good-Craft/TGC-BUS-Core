@@ -36,6 +36,26 @@
 ### Tests
 - Added/updated `system_state` tests covering empty/non-empty/status and canonical failure envelope.
 
+## [0.12.0] — 2026-03-04 — Finance Stabilization & Archive Model
+
+### Added
+- `items.is_archived` column (additive, non-breaking).
+- Archive semantics for Items.
+- Smoke isolation wrapper (`scripts/smoke_isolated.ps1`).
+
+### Changed
+- `DELETE /app/items/{id}` now archives items with history instead of returning `409`.
+- `GET /app/items` excludes archived items by default.
+- Optional `?include_archived=true` query parameter added for full item listings.
+
+### Fixed
+- Prevented orphaned finance history via hard delete path by archiving when history exists.
+- Ensured smoke tests cannot mutate working database by forcing temporary `BUS_DB` in smoke wrapper.
+
+### Security / Integrity
+- Ledger invariants preserved.
+- Finance remains fail-closed for missing Item resolution.
+
 ## [0.11.0] — 2026-02-25 — System Normalisation
 
 ### Added
