@@ -108,6 +108,7 @@ from core.api.routes import dev as dev_routes
 from core.api.routes import transactions as transactions_routes
 from core.api.routes import config as config_routes
 from core.api.routes import update as update_routes
+from core.api.routes import system_state as system_state_routes
 from core.api.security import _calc_default_allow_writes
 from core.api.errors import error_envelope, normalize_http_exc, normalize_validation_err
 from core.config.paths import (
@@ -2146,6 +2147,7 @@ def create_app():
         app.include_router(transactions_routes.router, prefix="/app")
         app.include_router(config_routes.router, prefix="/app")
         app.include_router(update_routes.router, prefix="/app")
+        app.include_router(system_state_routes.router, prefix="/app")
         app.state._domain_routes_registered = True
     return app
 
