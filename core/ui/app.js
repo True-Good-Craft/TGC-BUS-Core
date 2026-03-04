@@ -131,11 +131,12 @@ function clearCardHost() {
   const recipesHost = document.querySelector('[data-tab-panel="recipes"]');
   const logsHost = document.querySelector('[data-role="logs-root"]');
   const financeHost = document.querySelector('[data-role="finance-root"]');
-  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, logsHost, financeHost].forEach((node) => {
   const welcomeHost = document.querySelector('[data-role="welcome-root"]');
-  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, logsHost, welcomeHost].forEach((node) => {
-    if (node) node.innerHTML = '';
-  });
+  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, logsHost, financeHost, welcomeHost]
+    .filter(Boolean)
+    .forEach((n) => {
+      n.innerHTML = '';
+    });
 }
 
 async function enforceFirstRunRedirect(baseHash) {
@@ -452,6 +453,7 @@ async function showWelcome() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   const welcomeScreen = document.querySelector('[data-role="welcome-screen"]');
   welcomeScreen?.classList.remove('hidden');
   const host = document.querySelector('[data-role="welcome-root"]');
