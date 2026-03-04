@@ -49,7 +49,6 @@ const ROUTES = {
 };
 
 const ONBOARDING_STORAGE_KEY = 'bus.onboarding.completed';
-const ONBOARDING_ALLOWLIST = new Set(['#/welcome', '#/settings']);
 
 function isOnboardingComplete() {
   try {
@@ -113,6 +112,8 @@ function showScreen(name) {
 }
 
 let settingsMounted = false;
+let suppressNextHashchange = false;
+let initialBootPromise = null;
 
 const ensureContactsMounted = async () => {
   const host = document.querySelector('[data-view="contacts"]');
@@ -139,25 +140,55 @@ function clearCardHost() {
     });
 }
 
-async function enforceFirstRunRedirect(baseHash) {
-  if (baseHash === '#/welcome') return false;
-  if (ONBOARDING_ALLOWLIST.has(baseHash)) return false;
-  if (isOnboardingComplete()) return false;
-  let state;
-  try {
-    state = await apiGet('/app/system/state');
-  } catch (_) {
+function setBootHash(hash) {
+  suppressNextHashchange = true;
+  window.location.hash = hash;
+}
+
+async function runInitialBootRedirect() {
+  if (initialBootPromise) return initialBootPromise;
+  initialBootPromise = (async () => {
+    const initialHash = window.location.hash;
+    const isDefaultHash = !initialHash || initialHash === '#/home';
+    if (!isDefaultHash) return false;
+
+    await ensureToken();
+
+    let state;
+    try {
+      state = await apiGet('/app/system/state');
+    } catch (_) {
+      if (isDefaultHash) {
+        setBootHash('#/home');
+        return true;
+      }
+      return false;
+    }
+
+    if (state && typeof state === 'object' && (state.is_first_run === true || state.is_first_run === false)) {
+      console.debug('system/state fetched', state.is_first_run);
+    }
+
+    if (
+      state &&
+      typeof state === 'object' &&
+      state.is_first_run === true &&
+      !isOnboardingComplete() &&
+      isDefaultHash
+    ) {
+      console.debug('redirecting to #/welcome');
+      setBootHash('#/welcome');
+      return true;
+    }
+
+    if (isDefaultHash) {
+      setBootHash('#/home');
+      return true;
+    }
+
     return false;
-  }
-  if (!state || typeof state !== 'object') return false;
-  if (state.is_first_run !== true && state.is_first_run !== false) return false;
-  if (!state.counts || typeof state.counts !== 'object' || Array.isArray(state.counts)) return false;
-  if (state.demo_allowed !== true && state.demo_allowed !== false) return false;
-  if (!Array.isArray(state.basis)) return false;
-  if (state.is_first_run !== true) return false;
-  if (window.location.hash !== baseHash) return false;
-  window.location.hash = '#/welcome';
-  return true;
+  })();
+  return initialBootPromise;
 }
 
 async function onRouteChange() {
@@ -183,10 +214,6 @@ async function onRouteChange() {
 
   const route = normalizeRoute(baseHash);
 
-  if (await enforceFirstRunRedirect(baseHash)) {
-    return;
-  }
-
   setActiveNav(route);
 
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
@@ -203,13 +230,16 @@ async function onRouteChange() {
 }
 
 window.addEventListener('hashchange', () => {
+  if (suppressNextHashchange) {
+    suppressNextHashchange = false;
+    return;
+  }
   onRouteChange().catch(err => console.error('route change failed', err));
 });
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
+  await runInitialBootRedirect();
   onRouteChange().catch(err => console.error('route change failed', err));
 });
-
-if (!location.hash) location.hash = '#/home';
 
 // ---- American mode (imperial) toggle state ----
 window.BUS_UNITS = {
@@ -516,3 +546,4 @@ async function showWelcome() {
 
   render();
 }
+
