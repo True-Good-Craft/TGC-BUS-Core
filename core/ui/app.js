@@ -589,20 +589,73 @@ async function showWelcome() {
 
   let idx = 0;
   let eulaAccepted = false;
+  let eulaReachedEnd = false;
+  let eulaMarkdown = null;
+  let eulaLoadStarted = false;
+
+  const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  const renderEulaContent = () => {
+    if (typeof eulaMarkdown !== 'string') {
+      return '<p style="margin:0; color:#9ca3af;">Loading EULA...</p>';
+    }
+    /*
+If a markdown renderer such as "marked" is present it will be used.
+Otherwise the EULA is rendered as plain text inside a <pre> block.
+*/
+    if (window.marked?.parse) {
+      try {
+        return window.marked.parse(eulaMarkdown);
+      } catch (error) {
+        console.error('EULA markdown render failed', error);
+      }
+    }
+    return `<pre class="eula-pre">${escapeHtml(eulaMarkdown)}</pre>`;
+  };
+
+  const loadEula = async () => {
+    if (eulaLoadStarted) return;
+    eulaLoadStarted = true;
+    try {
+      const response = await fetch('/EULA.md');
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      eulaMarkdown = await response.text();
+    } catch (error) {
+      console.error('Failed to load EULA.md', error);
+      eulaMarkdown = 'Unable to load EULA.md. Please verify the file is present and retry onboarding.';
+    } finally {
+      render();
+    }
+  };
+
   const render = () => {
     const page = pages[idx];
     const isLast = idx === pages.length - 1;
     const requireEula = page.requireEula === true;
+    if (requireEula) {
+      try {
+        const storedEula = localStorage.getItem('buscore.eulaAccepted') === 'true';
+        if (storedEula) eulaAccepted = true;
+      } catch {}
+    }
     const nextDisabled = requireEula && !eulaAccepted;
+    const eulaHtml = requireEula ? renderEulaContent() : '';
+    const eulaReady = requireEula && typeof eulaMarkdown === 'string';
     host.innerHTML = `
       <div class="card" style="max-width:760px; margin:0 auto;">
         <h2 style="margin:0 0 8px;">${page.title}</h2>
         <p style="margin:0 0 12px; color:#d1d5db;">${page.body}</p>
         ${requireEula ? `
-          <label style="display:flex; gap:10px; align-items:flex-start; margin:0 0 14px; color:#f5f5f5;">
-            <input type="checkbox" data-role="eula-check" ${eulaAccepted ? 'checked' : ''}>
-            <span>I have read and accept the BUS Core End User License Agreement.</span>
-          </label>
+          <div class="eula-container">
+            <div id="eula-scroll">${eulaHtml}</div>
+            <div class="eula-actions">
+              <input type="checkbox" id="eula-accept" data-role="eula-check" ${eulaAccepted ? 'checked' : ''} ${eulaReachedEnd && eulaReady ? '' : 'disabled'}>
+              <label for="eula-accept">I have read and accept the BUS Core End User License Agreement</label>
+            </div>
+          </div>
         ` : ''}
         <p style="margin:0 0 18px; font-size:12px; color:#9ca3af;">Step ${idx + 1} of ${pages.length}</p>
         <div style="display:flex; gap:8px; justify-content:flex-end;">
@@ -612,8 +665,41 @@ async function showWelcome() {
       </div>
     `;
 
-    host.querySelector('[data-role="eula-check"]')?.addEventListener('change', (event) => {
+    if (requireEula && !eulaLoadStarted) {
+      void loadEula();
+    }
+
+    const eulaScroll = host.querySelector('#eula-scroll');
+    if (requireEula && eulaReady && eulaScroll) {
+      if (!eulaScroll.dataset.listenerAttached) {
+        eulaScroll.dataset.listenerAttached = 'true';
+        eulaScroll.addEventListener('scroll', () => {
+          if (eulaScroll.scrollTop + eulaScroll.clientHeight >= eulaScroll.scrollHeight - 4) {
+            const checkbox = document.getElementById('eula-accept');
+            if (checkbox) checkbox.disabled = false;
+            eulaReachedEnd = true;
+          }
+        });
+      }
+      if (eulaScroll.scrollHeight <= eulaScroll.clientHeight) {
+        const checkbox = document.getElementById('eula-accept');
+        if (checkbox) checkbox.disabled = false;
+        eulaReachedEnd = true;
+      }
+      if (eulaScroll.scrollTop + eulaScroll.clientHeight >= eulaScroll.scrollHeight - 4) {
+        const checkbox = document.getElementById('eula-accept');
+        if (checkbox) checkbox.disabled = false;
+        eulaReachedEnd = true;
+      }
+    }
+
+    host.querySelector('#eula-accept')?.addEventListener('change', (event) => {
       eulaAccepted = !!event.target?.checked;
+      if (eulaAccepted) {
+        try {
+          localStorage.setItem('buscore.eulaAccepted', 'true');
+        } catch {}
+      }
       render();
     });
 

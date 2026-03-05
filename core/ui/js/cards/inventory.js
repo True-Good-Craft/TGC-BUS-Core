@@ -149,15 +149,37 @@ function toast(message, tone = 'ok') {
   }, 2000);
 }
 
+function quantityValueOnly(source) {
+  const toNumeric = (value) => {
+    if (value == null || typeof value === 'object') return null;
+    const match = String(value).match(/-?\d+(?:\.\d+)?/);
+    if (!match) return null;
+    const parsed = Number(match[0]);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  if (source == null) return null;
+  if (typeof source !== 'object') return toNumeric(source);
+  return toNumeric(source.qty ?? source.quantity ?? source.value);
+}
+
 function formatOnHandDisplay(item) {
-  if (item?.stock_on_hand_display) {
-    return String(item.stock_on_hand_display);
+  const stockOnHandValue = quantityValueOnly(item?.stock_on_hand_display);
+  if (stockOnHandValue != null && stockOnHandValue !== '') {
+    return String(stockOnHandValue);
   }
-  if (item?.quantity_decimal != null && item?.uom) {
-    return `${item.quantity_decimal} ${item.uom}`;
+  if (item?.quantity_decimal != null) {
+    return String(item.quantity_decimal);
   }
-  if (item?.quantity_display?.value != null && item?.quantity_display?.unit) {
-    return `${item.quantity_display.value} ${item.quantity_display.unit}`;
+  const quantityDisplayValue = quantityValueOnly(item?.quantity_display);
+  if (quantityDisplayValue != null && quantityDisplayValue !== '') {
+    return String(quantityDisplayValue);
+  }
+  const quantityValue = quantityValueOnly(item?.quantity);
+  if (quantityValue != null && quantityValue !== '') {
+    return String(quantityValue);
+  }
+  if (item?.qty != null && item.qty !== '') {
+    return String(item.qty);
   }
   return '—';
 }
@@ -1698,3 +1720,4 @@ export function openItemModal(item = null) {
     }
   });
 }
+

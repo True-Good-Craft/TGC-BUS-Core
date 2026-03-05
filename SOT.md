@@ -1616,3 +1616,61 @@ A fresh installation must:
 - Allow deterministic transition to production database.
 
 These conditions define the stable baseline for BUS Core v1.0.0.
+
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.12.0  
+SESSION_LABEL: Pre-1.0 UX hardening — EULA viewer, inventory quantity fix, settings layout cleanup  
+DATE: 2026-03-05  
+BRANCH: pre1.0-polish  
+
+### EULA Viewer
+
+The onboarding EULA step now loads `/EULA.md` dynamically and displays it in a scrollable container.
+
+Acceptance checkbox remains disabled until the user scrolls to the end of the document.
+
+This ensures the user must at least reach the end of the license before continuing.
+
+### Inventory Rendering
+
+Inventory UI previously rendered quantity objects directly, producing `[object Object]`.
+
+Renderer now extracts the numeric quantity field only.
+
+Backend schema remains unchanged.
+
+### Settings Layout
+
+Settings page reorganized into logical UI cards:
+
+System  
+Updates  
+Interface  
+Data Management
+
+This change is purely visual and does not modify configuration logic.
+
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.12.0  
+SESSION_LABEL: Pre-1.0 UX hardening follow-up — EULA listener guard, CSS variable fix, EULA persistence  
+DATE: 2026-03-05  
+BRANCH: pre1.0-polish  
+
+### EULA Viewer Hardening
+
+Scroll listener now attaches only once to prevent duplicated handlers after re-renders.
+
+Checkbox also unlocks when the EULA content fits entirely within the viewer container.
+
+### EULA Persistence
+
+Acceptance of the BUS Core EULA is now stored in localStorage so returning users are not forced to accept again.
+
+### CSS Token Alignment
+
+EULA viewer and settings layout styles updated to use BUS Core theme tokens:
+
+--border-color  
+--card-bg
