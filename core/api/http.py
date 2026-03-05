@@ -54,7 +54,7 @@ from fastapi import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
-from starlette.staticfiles import StaticFiles
+from fastapi.staticfiles import StaticFiles
 from starlette.responses import RedirectResponse, Response
 
 import requests
@@ -2170,6 +2170,7 @@ def create_app():
 
 
 APP = create_app()
+APP.mount("/license", StaticFiles(directory="license"), name="license")
 
 def build_app():
     global CORE, RUN_ID, SESSION_TOKEN, LOG_FILE

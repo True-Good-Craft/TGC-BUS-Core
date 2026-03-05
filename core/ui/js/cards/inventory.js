@@ -782,19 +782,12 @@ export async function _mountInventory(container) {
 
     const batchRows = (detail.batches_summary && detail.batches_summary.length)
       ? detail.batches_summary.map((b) => {
-          const remaining =
-            b?.remaining ??
-            b?.remaining_qty ??
-            b?.qty_remaining ??
-            b?.remainingQuantity ??
-            0;
-          const original =
-            b?.original ??
-            b?.original_qty ??
-            b?.qty_original ??
-            b?.originalQuantity ??
-            0;
-          const remainingText = `${remaining} / ${original}`;
+          const batch = b;
+          const remaining = batch.remaining_int ?? 0;
+          const original = batch.original_int ?? 0;
+          const remainingDisplay = remaining / 1000;
+          const originalDisplay = original / 1000;
+          const remainingText = `${remainingDisplay} / ${originalDisplay}`;
           return el('tr', {}, [
             el('td', { text: b.entered ? new Date(b.entered).toLocaleDateString() : '—' }),
             el('td', { text: remainingText }),

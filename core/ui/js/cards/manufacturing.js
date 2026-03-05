@@ -188,18 +188,13 @@ async function renderNewRunForm(parent) {
 
       (fullRecipe.items || []).forEach((ri) => {
         const row = el('tr', { style: 'border-bottom:1px solid #2a2a2a' });
-        const stock =
-          ri.item?.stock ??
-          ri.item?.stock_qty ??
-          ri.item?.quantity ??
-          ri.item?.qty ??
-          ri.item?.available ??
-          null;
+        const item = ri.item || {};
+        const stock = item.stock_on_hand_display?.value ?? '—';
         const change = fmtHumanQty(`-${ri.quantity_decimal || '0'}`, ri.uom || ri.item?.uom);
         row.append(
           el('td', { style: 'padding:8px', text: ri.item?.name || `Item #${ri.item_id}` }),
           el('td', { style: 'padding:8px;color:#aaa', text: (ri.optional ?? ri.is_optional) ? 'Optional' : 'Input' }),
-          el('td', { style: 'padding:8px;text-align:right', text: stock !== null ? stock : '—' }),
+          el('td', { style: 'padding:8px;text-align:right', text: stock }),
           el('td', { style: 'padding:8px;text-align:right', text: change }),
         );
         tbody.append(row);
