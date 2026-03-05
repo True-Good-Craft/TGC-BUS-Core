@@ -8,7 +8,10 @@ a = Analysis(
     [str(ROOT / 'launcher.py')],
     pathex=[str(ROOT)],
     binaries=[],
-    datas=[(str(ROOT / 'core' / 'ui'), 'core/ui')],
+    datas=[
+        (str(ROOT / 'core' / 'ui'), 'core/ui'),
+        (str(ROOT / 'license'), 'license'),   # <-- ONLY CHANGE (bundle license folder)
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
