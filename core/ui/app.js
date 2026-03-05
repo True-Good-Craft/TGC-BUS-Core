@@ -620,7 +620,7 @@ Otherwise the EULA is rendered as plain text inside a <pre> block.
     if (eulaLoadStarted) return;
     eulaLoadStarted = true;
     try {
-      const response = await fetch('/EULA.md');
+      const response = await fetch('/license/EULA.md');
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       eulaMarkdown = await response.text();
     } catch (error) {

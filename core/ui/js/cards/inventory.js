@@ -782,18 +782,17 @@ export async function _mountInventory(container) {
 
     const batchRows = (detail.batches_summary && detail.batches_summary.length)
       ? detail.batches_summary.map((b) => {
-          const quantityDisplayUom = b?.quantity_display?.uom || b?.quantity_display?.unit || '';
-          const quantityDisplayText = b?.quantity_display?.value != null
-            ? `${b.quantity_display.value}${quantityDisplayUom ? ` ${quantityDisplayUom}` : ''}`.trim()
-            : null;
-          const remainingOriginalUom = b?.remaining_display?.uom || b?.remaining_display?.unit || b?.original_display?.uom || b?.original_display?.unit || '';
-          const remainingOriginalText = (b?.remaining_display?.value != null && b?.original_display?.value != null)
-            ? `${b.remaining_display.value} / ${b.original_display.value}${remainingOriginalUom ? ` ${remainingOriginalUom}` : ''}`
-            : null;
-          const numericRemainingText = (b?.qty_remaining != null && b?.qty_original != null)
-            ? `${b.qty_remaining} / ${b.qty_original}${displayUnit ? ` ${displayUnit}` : ''}`
-            : null;
-          const remainingText = quantityDisplayText || remainingOriginalText || numericRemainingText || '—';
+          const remaining =
+            b?.remaining ??
+            b?.qty_remaining ??
+            b?.remaining_qty ??
+            0;
+          const original =
+            b?.original ??
+            b?.qty_original ??
+            b?.original_qty ??
+            0;
+          const remainingText = `${remaining} / ${original}`;
           return el('tr', {}, [
             el('td', { text: b.entered ? new Date(b.entered).toLocaleDateString() : '—' }),
             el('td', { text: remainingText }),

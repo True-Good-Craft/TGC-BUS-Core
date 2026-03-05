@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-05
+
+### Added
+- First-run onboarding wizard
+- Demo dataset environment
+- EULA acceptance with scroll lock
+- Inventory batch visualization
+- Settings UI grouping
+- Backup + restore
+
+### Fixed
+- Inventory quantity rendering
+- Batch remaining/original display
+- EULA file path resolution
+
+### Notes
+BUS Core v1.0.0 marks the first stable release of the local-first shop ERP system.
 ## [1.0.0] - 2026-03-04
 
 BUS Core v1.0.0 establishes the platform as a **local-first manufacturing ledger kernel** with deterministic database behavior, onboarding workflow, and controlled update signaling.
