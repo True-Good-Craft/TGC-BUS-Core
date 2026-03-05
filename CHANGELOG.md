@@ -2,6 +2,45 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-04
+
+BUS Core v1.0.0 establishes the platform as a **local-first manufacturing ledger kernel** with deterministic database behavior, onboarding workflow, and controlled update signaling.
+
+This release marks the first stable version of BUS Core.
+
+### Added
+
+- Deterministic first-run onboarding wizard.
+- Mandatory EULA acceptance gate during onboarding.
+- Demo environment using a pre-seeded demo database.
+- "Start Fresh Shop" action to transition from demo environment to production database.
+- System runtime mode support (`demo` vs `production`).
+- Settings-based update check (manual, opt-in).
+- Semantic versioning for BUS Core releases.
+- Public API contract documentation.
+
+### Changed
+
+- Canonical UI routing stabilized in `core/ui/app.js`.
+- First-run logic now relies on backend `/app/system/state`.
+- Initial database state detection standardized.
+
+### Fixed
+
+- Hash routing suppression bug causing the first click to be ignored.
+- Wizard redirect logic when default route already present.
+
+### Notes
+
+BUS Core remains:
+
+- Local-first
+- Offline-capable
+- Zero telemetry
+- Deterministic database behavior
+
+Future releases will prioritize stability, bug fixes, and incremental polish rather than feature expansion.
+
 ### Added
 - Opt-in update check system with `/app/update/check` for manifest-based version checks and normalized six-field response surface.
 

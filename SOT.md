@@ -1528,3 +1528,91 @@ BRANCH: main
 - `scripts/up.ps1`
 - `scripts/up.sh`
 - `README.md`
+
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.12.0  
+SESSION_LABEL: Deterministic Demo Mode + Mandatory EULA  
+DATE: 2026-03-04  
+BRANCH: demo-mode-first-run
+
+Summary:
+
+BUS Core now ships with deterministic demo mode for onboarding.
+
+Behavior:
+
+Fresh installs launch into demo mode using a pre-seeded demo database.
+
+The onboarding wizard runs automatically and requires EULA acceptance.
+
+After onboarding users may convert the system to production mode using the "Start Fresh Shop" action.
+
+Production mode initializes a new empty database and disables demo functionality.
+
+Scope:
+
+- Adds runtime database mode support.
+- Introduces demo database.
+- Adds EULA requirement during onboarding.
+- Adds system endpoint to transition from demo to production.
+
+Acceptance Criteria:
+
+Fresh install produces deterministic demo environment and onboarding wizard with EULA gate.
+Transition to production mode results in clean database with no demo data.
+
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.12.0  
+SESSION_LABEL: v1.0.0 Release Preparation  
+DATE: 2026-03-04  
+BRANCH: main
+
+### Summary
+
+BUS Core v1.0.0 establishes the system as a stable, local-first manufacturing ledger kernel with deterministic first-run behavior and controlled update signaling.
+
+### Key Capabilities
+
+- Deterministic database initialization.
+- Canonical API contract.
+- Stable ledger and inventory movement model.
+- Manufacturing run tracking.
+- Financial profit calculation endpoints.
+- Deterministic onboarding wizard.
+
+### First-Run Behavior
+
+Fresh installs now initialize into demo mode using a pre-seeded demo database.
+
+The onboarding wizard launches automatically and requires explicit EULA acceptance before the user may enter the application.
+
+After onboarding, the system exposes a "Start Fresh Shop" action that initializes a clean production database and disables demo mode.
+
+### Runtime Modes
+
+BUS Core supports two runtime modes:
+
+demo
+- Uses demo database.
+- Onboarding wizard active.
+- Demo banner visible.
+
+production
+- Uses standard database.
+- Wizard disabled.
+- Demo indicators removed.
+
+### Acceptance Criteria
+
+A fresh installation must:
+
+- Launch BUS Core successfully.
+- Detect first-run state.
+- Start onboarding wizard.
+- Require EULA acceptance.
+- Present demo dataset.
+- Allow deterministic transition to production database.
+
+These conditions define the stable baseline for BUS Core v1.0.0.

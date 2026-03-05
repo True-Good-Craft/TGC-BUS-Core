@@ -8,29 +8,40 @@ Improvements:
 - No hard sys.exit() that raises SystemExit during normal failure.
 - Clearer error reporting.
 - Optional --self-test mode to validate payload contracts without hitting the API.
+- Optional --db-path mode to seed SQLite directly for deterministic demo DB generation.
 """
 
-import requests
-import sys
+from __future__ import annotations
+
 import argparse
-from datetime import datetime, UTC
+import os
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
-BASE = "http://127.0.0.1:8765"
-
-s = requests.Session()
+BASE = os.environ.get("BUS_SEED_BASE", "http://127.0.0.1:8765")
+_API_SESSION = None
 
 
 # ----------------------------
-# HTTP Helpers
+# HTTP Helpers (API mode)
 # ----------------------------
+
+def _session():
+    global _API_SESSION
+    if _API_SESSION is None:
+        import requests
+
+        _API_SESSION = requests.Session()
+    return _API_SESSION
+
 
 def ensure_token():
-    r = s.get(f"{BASE}/session/token")
+    r = _session().get(f"{BASE}/session/token")
     r.raise_for_status()
 
 
 def post(path, payload):
-    r = s.post(f"{BASE}{path}", json=payload)
+    r = _session().post(f"{BASE}{path}", json=payload)
     if not r.ok:
         print(f"\nERROR calling {path}")
         print("Payload:", payload)
@@ -40,13 +51,13 @@ def post(path, payload):
 
 
 def get(path):
-    r = s.get(f"{BASE}{path}")
+    r = _session().get(f"{BASE}{path}")
     r.raise_for_status()
     return r.json()
 
 
 # ----------------------------
-# Domain Helpers
+# Domain Helpers (API mode)
 # ----------------------------
 
 def create_vendor(name):
@@ -197,6 +208,273 @@ def self_test():
 
 
 # ----------------------------
+# Direct DB Mode (deterministic demo DB)
+# ----------------------------
+
+def _to_base(quantity_decimal: str, uom: str, dimension: str) -> int:
+    from core.metrics.metric import normalize_quantity_to_base_int
+
+    return int(
+        normalize_quantity_to_base_int(
+            quantity_decimal=str(quantity_decimal),
+            uom=str(uom),
+            dimension=str(dimension),
+        )
+    )
+
+
+def _stamp_by_source(db, source_id, when):
+    from core.appdb.models import CashEvent, ItemBatch, ItemMovement
+
+    db.query(ItemMovement).filter(ItemMovement.source_id == source_id).update(
+        {"created_at": when}, synchronize_session=False
+    )
+    db.query(ItemBatch).filter(ItemBatch.source_id == source_id).update(
+        {"created_at": when}, synchronize_session=False
+    )
+    db.query(CashEvent).filter(CashEvent.source_id == source_id).update(
+        {"created_at": when}, synchronize_session=False
+    )
+
+
+def seed_sqlite_demo_db(db_path: str | Path) -> bool:
+    """Seed a deterministic offline dataset into the provided SQLite DB path."""
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from core.api.schemas.manufacturing import RecipeRunRequest
+    from core.appdb.migrate import ensure_vendors_flags
+    from core.appdb.models import Base, CashEvent, Item, Vendor
+    from core.appdb.models_recipes import ManufacturingRun, Recipe, RecipeItem
+    from core.manufacturing.service import execute_run_txn, validate_run
+    from core.services.stock_mutation import (
+        perform_purchase_base,
+        perform_stock_in_base,
+        perform_stock_out_base,
+    )
+
+    target = Path(db_path).expanduser().resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    engine = create_engine(
+        f"sqlite+pysqlite:///{target.as_posix()}",
+        future=True,
+        connect_args={"check_same_thread": False},
+    )
+    SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
+
+    try:
+        Base.metadata.create_all(bind=engine)
+        ensure_vendors_flags(engine)
+
+        with SessionLocal() as db:
+            if db.query(Item).count() > 0 or db.query(Vendor).count() > 0:
+                return True
+
+            t0 = datetime(2026, 1, 2, 9, 0, 0)
+            t1 = t0 + timedelta(minutes=1)
+            t2 = t0 + timedelta(minutes=2)
+            t3 = t0 + timedelta(minutes=3)
+            t4 = t0 + timedelta(minutes=4)
+            t5 = t0 + timedelta(minutes=5)
+            t6 = t0 + timedelta(minutes=6)
+
+            print("Creating vendors...")
+            db.add_all(
+                [
+                    Vendor(name="Steel Supply Co", created_at=t0),
+                    Vendor(name="Local Wood Ltd", created_at=t0),
+                    Vendor(name="Packaging Inc", created_at=t0),
+                ]
+            )
+            db.commit()
+
+            print("Creating items...")
+            steel = Item(name="Steel Rod", dimension="length", uom="m", qty_stored=0, created_at=t1)
+            wood = Item(name="Wood Panel", dimension="area", uom="m2", qty_stored=0, created_at=t1)
+            screws = Item(name="Screws", dimension="count", uom="ea", qty_stored=0, created_at=t1)
+            frame = Item(
+                name="Table Frame",
+                dimension="count",
+                uom="ea",
+                qty_stored=0,
+                is_product=True,
+                price=150.0,
+                created_at=t1,
+            )
+            bench = Item(name="Workbench", dimension="count", uom="ea", qty_stored=0, is_product=True, created_at=t1)
+            db.add_all([steel, wood, screws, frame, bench])
+            db.commit()
+
+            print("Purchasing stock...")
+            perform_purchase_base(
+                db,
+                vendor_id="",
+                lines=[
+                    {
+                        "item_id": int(steel.id),
+                        "qty_base": _to_base("100", "m", "length"),
+                        "unit_cost_cents": 500,
+                        "source_kind": "purchase",
+                        "source_id": "seed-purchase-steel",
+                    }
+                ],
+            )
+            perform_purchase_base(
+                db,
+                vendor_id="",
+                lines=[
+                    {
+                        "item_id": int(wood.id),
+                        "qty_base": _to_base("50", "m2", "area"),
+                        "unit_cost_cents": 2000,
+                        "source_kind": "purchase",
+                        "source_id": "seed-purchase-wood",
+                    }
+                ],
+            )
+            perform_purchase_base(
+                db,
+                vendor_id="",
+                lines=[
+                    {
+                        "item_id": int(screws.id),
+                        "qty_base": _to_base("1000", "ea", "count"),
+                        "unit_cost_cents": 10,
+                        "source_kind": "purchase",
+                        "source_id": "seed-purchase-screws",
+                    }
+                ],
+            )
+            _stamp_by_source(db, "seed-purchase-steel", t2)
+            _stamp_by_source(db, "seed-purchase-wood", t2)
+            _stamp_by_source(db, "seed-purchase-screws", t2)
+            db.commit()
+
+            print("Creating recipe...")
+            recipe_frame = Recipe(
+                name="Frame Recipe",
+                output_item_id=int(frame.id),
+                output_qty=_to_base("1", "ea", "count"),
+                created_at=t3,
+                updated_at=t3,
+            )
+            db.add(recipe_frame)
+            db.flush()
+            db.add_all(
+                [
+                    RecipeItem(
+                        recipe_id=int(recipe_frame.id),
+                        item_id=int(steel.id),
+                        qty_required=_to_base("5", "m", "length"),
+                        sort_order=0,
+                        created_at=t3,
+                        updated_at=t3,
+                    ),
+                    RecipeItem(
+                        recipe_id=int(recipe_frame.id),
+                        item_id=int(screws.id),
+                        qty_required=_to_base("20", "ea", "count"),
+                        sort_order=1,
+                        created_at=t3,
+                        updated_at=t3,
+                    ),
+                ]
+            )
+            db.commit()
+
+            print("Manufacturing run...")
+            run_request = RecipeRunRequest(
+                recipe_id=int(recipe_frame.id),
+                quantity_decimal="5",
+                uom="ea",
+                output_qty=5,
+                notes="seed run",
+            )
+            output_item_id, required_components, output_qty_base, shortages = validate_run(db, run_request)
+            if shortages:
+                print("Seeder aborted: unexpected manufacturing shortages", shortages)
+                db.rollback()
+                return False
+            result = execute_run_txn(db, run_request, output_item_id, required_components, output_qty_base)
+            run_id = int(result["run"].id)
+            run = db.get(ManufacturingRun, run_id)
+            if run is not None:
+                run.created_at = t4
+                run.executed_at = t4
+            _stamp_by_source(db, run_id, t4)
+            db.commit()
+
+            print("Selling product...")
+            perform_stock_out_base(
+                db,
+                item_id=str(int(frame.id)),
+                qty_base=_to_base("2", "ea", "count"),
+                ref="seed-sale-frame",
+                meta={
+                    "reason": "sold",
+                    "note": "seed",
+                    "record_cash_event": True,
+                    "sell_unit_price_cents": 15000,
+                },
+            )
+            _stamp_by_source(db, "seed-sale-frame", t5)
+            db.commit()
+
+            print("Refunding one unit...")
+            refund_source = "seed-refund-frame"
+            refund_qty = _to_base("1", "ea", "count")
+            db.add(
+                CashEvent(
+                    kind="refund",
+                    category=None,
+                    amount_cents=-15000,
+                    item_id=int(frame.id),
+                    qty_base=refund_qty,
+                    unit_price_cents=None,
+                    source_kind="refund",
+                    source_id=refund_source,
+                    related_source_id="seed-sale-frame",
+                    notes="seed refund",
+                    created_at=t6,
+                )
+            )
+            perform_stock_in_base(
+                db,
+                item_id=str(int(frame.id)),
+                qty_base=refund_qty,
+                unit_cost_cents=5000,
+                ref=refund_source,
+                meta={"source_kind": "refund_restock", "source_id": refund_source},
+            )
+            _stamp_by_source(db, refund_source, t6)
+
+            db.add(
+                CashEvent(
+                    kind="expense",
+                    category="rent",
+                    amount_cents=-50000,
+                    item_id=None,
+                    qty_base=None,
+                    unit_price_cents=None,
+                    source_kind="expense",
+                    source_id="seed-expense-rent",
+                    related_source_id=None,
+                    notes="seed expense",
+                    created_at=t6,
+                )
+            )
+            db.commit()
+
+            # Profit snapshot seed requirement is satisfied by sale/refund/expense + COGS movements.
+            print("Seed complete.")
+            return True
+    finally:
+        engine.dispose()
+
+
+# ----------------------------
 # Main Execution
 # ----------------------------
 
@@ -216,7 +494,7 @@ def main():
 
     print("Creating finished products...")
     frame = create_item("Table Frame", "count", "ea", True)
-    bench = create_item("Workbench", "count", "ea", True)
+    create_item("Workbench", "count", "ea", True)
 
     print("Purchasing stock...")
     purchase(steel["id"], 100, "m", 500)
@@ -252,7 +530,7 @@ def main():
     try:
         from_ts = datetime(2020, 1, 1, tzinfo=UTC).strftime("%Y-%m-%d")
         to_ts = datetime.now(UTC).strftime("%Y-%m-%d")
-        r = s.get(
+        r = _session().get(
             f"{BASE}/app/finance/profit",
             params={"from": from_ts, "to": to_ts},
         )
@@ -270,11 +548,14 @@ def main():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--db-path", type=str, default="")
     args = parser.parse_args()
 
     try:
         if args.self_test:
             ok = self_test()
+        elif args.db_path:
+            ok = seed_sqlite_demo_db(args.db_path)
         else:
             ok = main()
 

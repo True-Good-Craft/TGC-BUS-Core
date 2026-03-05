@@ -18,7 +18,7 @@
 // along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
 import { ensureToken } from "./js/token.js";
-import { apiGet, rawFetch } from "./js/api.js";
+import { apiGet, apiPost, rawFetch } from "./js/api.js";
 import { mountBackupExport } from "./js/cards/backup.js";
 import mountVendors from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
@@ -71,6 +71,75 @@ window.BUS_ONBOARDING = {
     setOnboardingComplete(false);
   },
 };
+
+let runtimeBusMode = 'prod';
+let runtimeSystemState = null;
+
+function inDemoMode() {
+  return runtimeBusMode === 'demo';
+}
+
+function setRuntimeSystemState(state) {
+  runtimeSystemState = state && typeof state === 'object' ? state : null;
+  runtimeBusMode = runtimeSystemState?.bus_mode === 'demo' ? 'demo' : 'prod';
+  renderDemoBanner();
+}
+
+async function handleStartFreshShop(button) {
+  const trigger = button instanceof HTMLButtonElement ? button : null;
+  const originalText = trigger?.textContent || 'Start Fresh Shop';
+  if (trigger) {
+    trigger.disabled = true;
+    trigger.textContent = 'Preparing...';
+  }
+
+  try {
+    await ensureToken();
+    const response = await apiPost('/app/system/start-fresh', {});
+    if (!response || response.ok !== true) {
+      throw new Error('start_fresh_failed');
+    }
+    setOnboardingComplete(true);
+    setRuntimeSystemState({ ...(runtimeSystemState || {}), bus_mode: 'prod' });
+    setBootHash('#/home');
+    window.location.reload();
+  } catch (err) {
+    console.error('start fresh failed', err);
+    alert('Unable to start a fresh production database. Please try again.');
+  } finally {
+    if (trigger) {
+      trigger.disabled = false;
+      trigger.textContent = originalText;
+    }
+  }
+}
+
+function renderDemoBanner() {
+  const banner = document.querySelector('[data-role="demo-banner"]');
+  if (!banner) return;
+
+  if (!inDemoMode()) {
+    banner.classList.add('hidden');
+    banner.innerHTML = '';
+    return;
+  }
+
+  banner.classList.remove('hidden');
+  banner.innerHTML = `
+    <div>
+      <strong>Demo Data Active</strong>
+      <p>You are viewing the BUS Core demo environment.</p>
+    </div>
+    <button type="button" data-action="start-fresh-shop">Start Fresh Shop</button>
+  `;
+
+  banner
+    .querySelector('[data-action="start-fresh-shop"]')
+    ?.addEventListener('click', (event) => {
+      const target = event.currentTarget;
+      handleStartFreshShop(target);
+    });
+}
 
 function normalizeHash(rawHash) {
   let hash = (rawHash || '#/home').trim();
@@ -149,40 +218,30 @@ function setBootHash(hash) {
 async function runInitialBootRedirect() {
   if (initialBootPromise) return initialBootPromise;
   initialBootPromise = (async () => {
-    const initialHash = window.location.hash;
-    const isDefaultHash = !initialHash || initialHash === '#/home';
-    if (!isDefaultHash) return false;
+    const initialHashRaw = window.location.hash || '#/home';
+    const initialHash = normalizeHash(initialHashRaw);
 
     await ensureToken();
 
-    let state;
+    let state = null;
     try {
       state = await apiGet('/app/system/state');
     } catch (_) {
-      if (isDefaultHash) {
-        setBootHash('#/home');
-        return true;
-      }
-      return false;
+      state = null;
     }
+    setRuntimeSystemState(state);
 
-    if (state && typeof state === 'object' && (state.is_first_run === true || state.is_first_run === false)) {
-      console.debug('system/state fetched', state.is_first_run);
-    }
-
-    if (
-      state &&
-      typeof state === 'object' &&
-      state.is_first_run === true &&
-      !isOnboardingComplete() &&
-      isDefaultHash
-    ) {
-      console.debug('redirecting to #/welcome');
+    if (inDemoMode() && !isOnboardingComplete() && initialHash !== '#/welcome') {
       setBootHash('#/welcome');
       return true;
     }
 
-    if (isDefaultHash) {
+    if (!inDemoMode() && initialHash === '#/welcome') {
+      setBootHash('#/home');
+      return true;
+    }
+
+    if (!initialHashRaw || initialHashRaw === '#') {
       setBootHash('#/home');
       return true;
     }
@@ -202,6 +261,16 @@ async function onRouteChange() {
     return;
   }
 
+  if (inDemoMode() && !isOnboardingComplete() && canonical !== '#/welcome') {
+    setBootHash('#/welcome');
+    return;
+  }
+  if (!inDemoMode() && canonical === '#/welcome') {
+    setBootHash('#/home');
+    return;
+  }
+
+  renderDemoBanner();
   window.BUS_ROUTE = { path: canonical, base: canonical, id: null };
 
   const detailMatch = canonical.match(/^#\/(inventory|contacts|recipes|runs)\/([^/]+)$/);
@@ -474,6 +543,10 @@ async function showImport() {
 }
 
 async function showWelcome() {
+  if (!inDemoMode()) {
+    setBootHash('#/home');
+    return;
+  }
   unmountInventory();
   unmountManufacturing();
   unmountRecipes();
@@ -492,49 +565,69 @@ async function showWelcome() {
 
   const pages = [
     {
-      title: 'Welcome to BUS Core',
-      body: 'Track items by on-hand quantity and cost batches. The app can show simple item totals while keeping purchase batches for FIFO costing.',
+      title: 'Welcome',
+      body: 'Welcome to BUS Core. This guided setup explains the system and demo environment before entering the application.',
     },
     {
-      title: 'FIFO means oldest cost moves first',
-      body: 'When stock leaves inventory, BUS Core consumes the oldest available batch. This keeps unit cost and margins grounded in actual purchase order history.',
+      title: 'System explanation',
+      body: 'BUS Core tracks inventory using base units and FIFO costing so movements, costs, and finance totals stay consistent.',
     },
     {
-      title: 'Recipes and manufacturing runs',
-      body: 'Recipes define what gets consumed and produced. Manufacturing runs execute those recipes and write inventory + journal entries together.',
+      title: 'Demo system explanation',
+      body: 'You are running a deterministic demo database with pre-seeded data so you can review workflows safely before going live.',
     },
     {
-      title: 'Cost vs price',
-      body: 'Cost tracks what inventory is worth internally. Price is what you charge customers. Keep both updated so reports make sense.',
+      title: 'EULA acceptance',
+      body: 'You must accept the BUS Core End User License Agreement to continue.',
+      requireEula: true,
     },
     {
-      title: 'Vendors and linkage',
-      body: 'Link items to vendors to preserve sourcing context for purchasing and replenishment. This helps when costs drift or lead times change.',
+      title: 'Enter application',
+      body: 'Onboarding is complete. Select Enter application to continue.',
     },
   ];
 
   let idx = 0;
+  let eulaAccepted = false;
   const render = () => {
     const page = pages[idx];
     const isLast = idx === pages.length - 1;
+    const requireEula = page.requireEula === true;
+    const nextDisabled = requireEula && !eulaAccepted;
     host.innerHTML = `
       <div class="card" style="max-width:760px; margin:0 auto;">
         <h2 style="margin:0 0 8px;">${page.title}</h2>
         <p style="margin:0 0 12px; color:#d1d5db;">${page.body}</p>
+        ${requireEula ? `
+          <label style="display:flex; gap:10px; align-items:flex-start; margin:0 0 14px; color:#f5f5f5;">
+            <input type="checkbox" data-role="eula-check" ${eulaAccepted ? 'checked' : ''}>
+            <span>I have read and accept the BUS Core End User License Agreement.</span>
+          </label>
+        ` : ''}
         <p style="margin:0 0 18px; font-size:12px; color:#9ca3af;">Step ${idx + 1} of ${pages.length}</p>
         <div style="display:flex; gap:8px; justify-content:flex-end;">
           <button type="button" data-action="welcome-back" ${idx === 0 ? 'disabled' : ''}>Back</button>
-          <button type="button" data-action="welcome-next">${isLast ? 'Finish onboarding' : 'Next'}</button>
+          <button type="button" data-action="welcome-next" ${nextDisabled ? 'disabled' : ''}>${isLast ? 'Enter application' : 'Continue'}</button>
         </div>
       </div>
     `;
+
+    host.querySelector('[data-role="eula-check"]')?.addEventListener('change', (event) => {
+      eulaAccepted = !!event.target?.checked;
+      render();
+    });
+
     host.querySelector('[data-action="welcome-back"]')?.addEventListener('click', () => {
       if (idx > 0) {
         idx -= 1;
         render();
       }
     });
+
     host.querySelector('[data-action="welcome-next"]')?.addEventListener('click', () => {
+      if (requireEula && !eulaAccepted) {
+        return;
+      }
       if (isLast) {
         setOnboardingComplete(true);
         window.location.hash = '#/home';

@@ -15,7 +15,8 @@ def test_system_state_is_first_run_on_empty_db(bus_client):
     payload = response.json()
     assert payload["is_first_run"] is True
     assert payload["status"] == "empty"
-    assert payload["demo_allowed"] is True
+    assert payload["bus_mode"] == "prod"
+    assert payload["demo_allowed"] is False
     assert payload["basis"] == []
     assert "build" in payload
     assert payload["counts"] == {
@@ -42,6 +43,7 @@ def test_system_state_not_first_run_after_item_created(bus_client):
 
     payload = response.json()
     assert payload["is_first_run"] is False
+    assert payload["bus_mode"] == "prod"
     assert payload["demo_allowed"] is False
     assert payload["counts"]["items"] == 1
     assert "items" in payload["basis"]
@@ -61,6 +63,7 @@ def test_system_state_vendor_basis_and_order(bus_client):
 
     payload = response.json()
     assert payload["is_first_run"] is False
+    assert payload["bus_mode"] == "prod"
     assert payload["status"] == "needs_migration"
     assert "vendors" in payload["basis"]
     assert all(isinstance(value, int) for value in payload["counts"].values())
@@ -143,3 +146,14 @@ def test_system_state_status_ready_when_schema_version_is_not_baseline(bus_clien
     payload = response.json()
     assert payload["build"]["schema_version"] == "2026_01"
     assert payload["status"] == "ready"
+
+
+def test_start_fresh_endpoint_response_shape(bus_client):
+    client = bus_client["client"]
+
+    response = client.post("/app/system/start-fresh")
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "restart_required": True,
+    }

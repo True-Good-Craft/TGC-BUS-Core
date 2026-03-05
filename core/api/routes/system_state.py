@@ -1,15 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from core.appdb.engine import get_session
-from core.appdb.models import CashEvent, Item, ItemMovement, Vendor
+from core.appdata.paths import db_path_for_mode, resolve_bus_mode, set_bus_mode
+from core.appdb.engine import dispose_engine, get_engine, get_session
+from core.appdb.migrate import ensure_vendors_flags
+from core.appdb.models import Base, CashEvent, Item, ItemMovement, Vendor
 from core.appdb.models_recipes import ManufacturingRun, Recipe
+from core.config.writes import require_writes
 from tgc.security import require_token_ctx
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -62,6 +66,8 @@ def get_system_state(
     except Exception as exc:
         raise HTTPException(status_code=500, detail="system_state_unavailable") from exc
 
+    bus_mode = resolve_bus_mode()
+    demo_mode = bus_mode == "demo"
     is_first_run = all(int(counts[key]) == 0 for key in COUNT_KEYS)
     basis: List[str] = [key for key in COUNT_KEYS if int(counts[key]) > 0]
     status = "ready"
@@ -71,13 +77,42 @@ def get_system_state(
         status = "needs_migration"
 
     return {
+        "bus_mode": bus_mode,
         "is_first_run": is_first_run,
         "counts": counts,
-        "demo_allowed": is_first_run,
+        "demo_allowed": demo_mode,
         "basis": basis,
         "build": {
             "version": str(version),
             "schema_version": str(schema_version),
         },
         "status": status,
+    }
+
+
+@router.post("/start-fresh")
+def start_fresh_shop(
+    _token: str = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+) -> Dict[str, object]:
+    try:
+        set_bus_mode("prod")
+        prod_db = db_path_for_mode("prod")
+
+        dispose_engine()
+
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            candidate = Path(f"{prod_db}{suffix}")
+            candidate.unlink(missing_ok=True)
+
+        engine = get_engine()
+        Base.metadata.create_all(bind=engine)
+        ensure_vendors_flags(engine)
+        dispose_engine()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="start_fresh_failed") from exc
+
+    return {
+        "ok": True,
+        "restart_required": True,
     }

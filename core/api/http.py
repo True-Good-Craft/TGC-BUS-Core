@@ -122,6 +122,7 @@ from core.config.paths import (
 from core.appdb.migrate import ensure_vendors_flags
 from core.appdb.models import Base
 from core.appdb.paths import ui_dir
+from core.appdata.paths import db_path_for_mode, resolve_bus_mode
 
 if os.name == "nt":  # pragma: no cover - windows specific
     from core.broker.pipes import NamedPipeServer
@@ -333,7 +334,23 @@ def _ensure_schema_upgrades(db: Session) -> None:
     db.commit()
 
 
+def _ensure_demo_seed_database() -> None:
+    if os.environ.get("BUS_DB"):
+        return
+    if resolve_bus_mode() != "demo":
+        return
+    demo_db = db_path_for_mode("demo")
+    if demo_db.exists():
+        return
+    from scripts.dev_seed import seed_sqlite_demo_db
+
+    ok = seed_sqlite_demo_db(demo_db)
+    if not ok:
+        raise RuntimeError("demo_seed_failed")
+
+
 def startup_migrations():
+    _ensure_demo_seed_database()
     engine = get_engine()
     # Ensure all declared tables exist before running additive patches.
     Base.metadata.create_all(bind=engine)

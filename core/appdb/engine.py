@@ -14,20 +14,23 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
-from core.appdata.paths import resolve_db_path, legacy_repo_db  # SoT helpers
+from core.appdata.paths import resolve_db_path, legacy_repo_db, resolve_bus_mode  # SoT helpers
 
 # --- Path & URL -------------------------------------------------------------
 
 env_db = os.environ.get("BUS_DB")
-# New default: AppData target; one-time migrate repo DB if present
+runtime_mode = resolve_bus_mode() if not env_db else "external"
+
+# New default: mode-resolved AppData target; one-time migrate repo DB if present
+# only in prod mode to avoid contaminating deterministic demo DB.
 target_path = Path(resolve_db_path())
 target_path.parent.mkdir(parents=True, exist_ok=True)
 
-source = "ENV" if env_db else "APPDATA"
+source = "ENV" if env_db else f"APPDATA:{runtime_mode}"
 
-# One-time migration: if legacy repo DB exists and AppData DB does not, copy it
+# One-time migration: if legacy repo DB exists and prod AppData DB does not, copy it
 legacy = legacy_repo_db()
-if not env_db:
+if not env_db and runtime_mode == "prod":
     try:
         if legacy.exists() and (not target_path.exists()):
             legacy.parent.mkdir(parents=True, exist_ok=True)
