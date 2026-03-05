@@ -188,12 +188,18 @@ async function renderNewRunForm(parent) {
 
       (fullRecipe.items || []).forEach((ri) => {
         const row = el('tr', { style: 'border-bottom:1px solid #2a2a2a' });
-        const stock = ri.item?.quantity_decimal != null ? fmtHumanQty(ri.item.quantity_decimal, ri.item.uom || ri.uom) : '—';
+        const stock =
+          ri.item?.stock ??
+          ri.item?.stock_qty ??
+          ri.item?.quantity ??
+          ri.item?.qty ??
+          ri.item?.available ??
+          null;
         const change = fmtHumanQty(`-${ri.quantity_decimal || '0'}`, ri.uom || ri.item?.uom);
         row.append(
           el('td', { style: 'padding:8px', text: ri.item?.name || `Item #${ri.item_id}` }),
           el('td', { style: 'padding:8px;color:#aaa', text: (ri.optional ?? ri.is_optional) ? 'Optional' : 'Input' }),
-          el('td', { style: 'padding:8px;text-align:right', text: stock }),
+          el('td', { style: 'padding:8px;text-align:right', text: stock !== null ? stock : '—' }),
           el('td', { style: 'padding:8px;text-align:right', text: change }),
         );
         tbody.append(row);
@@ -349,3 +355,4 @@ async function loadRecentRuns30d() {
     body.innerHTML = '<div class="mf-runs-empty">Failed to load recent runs.</div>';
   }
 }
+

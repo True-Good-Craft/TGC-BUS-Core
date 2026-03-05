@@ -784,13 +784,15 @@ export async function _mountInventory(container) {
       ? detail.batches_summary.map((b) => {
           const remaining =
             b?.remaining ??
-            b?.qty_remaining ??
             b?.remaining_qty ??
+            b?.qty_remaining ??
+            b?.remainingQuantity ??
             0;
           const original =
             b?.original ??
-            b?.qty_original ??
             b?.original_qty ??
+            b?.qty_original ??
+            b?.originalQuantity ??
             0;
           const remainingText = `${remaining} / ${original}`;
           return el('tr', {}, [
