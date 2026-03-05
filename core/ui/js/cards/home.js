@@ -100,7 +100,7 @@ function renderHome() {
           <p>Local-first business core for small workshops. Tracks inventory, builds products, and calculates costs. No cloud. No subscriptions.</p>
         </div>
         <div class="meta" aria-label="Status">
-          <div><span class="pill">Beta</span></div>
+          <div><span class="pill">Stable</span></div>
           <div style="margin-top:8px;">Version: <code id="bus-version">…</code></div>
           <div>Storage: <span class="kbd">Local</span></div>
           <div>Telemetry: <span class="kbd">Off</span></div>
@@ -155,18 +155,18 @@ function renderHome() {
         </div>
 
         <div class="card limits">
-          <h2>Known Limits (Beta)</h2>
+          <h2>Known Limits</h2>
           <p class="sub">This is here to build trust, not to scare you.</p>
           <ul>
             <li>No cloud sync</li>
             <li>No multi-user access</li>
             <li>No automatic backups (export manually)</li>
-            <li>Database changes may require reset during beta</li>
+            <li>Database changes may require reset during pre-1.0 release</li>
           </ul>
           <div class="card" style="margin-top:12px; box-shadow:none;">
             <h2 style="margin-bottom:6px;">Data Safety</h2>
             <p class="sub" style="margin:0 0 10px;">All data is stored <strong>locally on this machine</strong>. Nothing is transmitted.</p>
-            <p class="sub" style="margin:0;">If something breaks during beta:<br>1) Close BUS-Core<br>2) Delete local app data<br>3) Restart</p>
+            <p class="sub" style="margin:0;">If something breaks during pre-1.0 release:<br>1) Close BUS-Core<br>2) Delete local app data<br>3) Restart</p>
             <p class="sub" style="margin:10px 0 0;"><a href="#/settings">Where is my data stored?</a></p>
           </div>
         </div>

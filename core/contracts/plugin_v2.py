@@ -24,7 +24,7 @@ from core.services.conn_broker import ConnectionBroker
 
 class PluginV2:
     id: str = "plugin"
-    name: str = "Alpha Plugin"
+    name: str = "BUS Plugin"
     version: str = "0.1"
     api_version: str = "2"
 

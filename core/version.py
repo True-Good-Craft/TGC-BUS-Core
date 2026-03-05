@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Version information for TGC Alpha Core."""
+"""Version information for BUS Core."""
 
 VERSION = "1.0.0"
 

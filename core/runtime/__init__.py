@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Runtime utilities for BUS Core Alpha."""
+"""Runtime utilities for BUS Core."""
 
 from .core_alpha import CoreAlpha
 from .policy import PolicyDecision

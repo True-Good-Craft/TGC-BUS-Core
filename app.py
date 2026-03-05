@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Alpha Core entry point."""
+"""BUS Core entry point."""
 
 from __future__ import annotations
 

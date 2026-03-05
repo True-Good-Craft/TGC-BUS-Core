@@ -27,7 +27,7 @@ class AppState:
 
 
 def init_state(settings: Settings) -> AppState:
-    # Ensure data dir exists BEFORE CoreAlpha touches DB/files
+    # Ensure data dir exists BEFORE core runtime touches DB/files
     data_dir: Path = settings.resolve_data_dir()
     tokens = TokenManager(settings)
     logger = setup_logging(data_dir / "buscore.log")

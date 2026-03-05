@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     pass
 
 
-app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
+app = FastAPI(title="BUS Core", version=VERSION, lifespan=lifespan)
 try:
     ensure_schema()
 except Exception:

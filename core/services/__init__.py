@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Service-layer modules for Alpha Core."""
+"""Service-layer modules for BUS Core."""
 from __future__ import annotations
 
 __all__: list[str] = []

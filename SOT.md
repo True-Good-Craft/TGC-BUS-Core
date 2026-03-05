@@ -1,6 +1,6 @@
 # 🛠️ TGC BUS Core — Unified Source of Truth
 
-**Version:** v0.11.0 (Reflecting Phase 0–1 Locks, Cost Authority & Manufacturing Hardening) **Updated:** 2026‑02‑22 **Status:** Beta **Authority:** Code is truth. Where this document and code disagree, update this document.
+**Version:** v0.11.0 (Reflecting Phase 0–1 Locks, Cost Authority & Manufacturing Hardening) **Updated:** 2026‑02‑22 **Status:** Stable **Authority:** Code is truth. Where this document and code disagree, update this document.
 
 ---
 

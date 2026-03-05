@@ -25,7 +25,7 @@ TOKEN_FILE: Path = DATA / "session_token.txt"
 def ensure_first_run() -> dict:
     """
     Materialize required runtime folders and return a serializable summary
-    used by CoreAlpha/bootstrap reporting.
+    used by core/bootstrap reporting.
     """
     # Ensure canonical dirs exist (idempotent)
     root = APP_DIR

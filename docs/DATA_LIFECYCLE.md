@@ -1,6 +1,6 @@
-# BUS Core Alpha Data Lifecycle
+# BUS Core Data Lifecycle
 
-This document explains how BUS Core Alpha handles data, where it is stored, and how operators can clear or rotate it.
+This document explains how BUS Core handles data, where it is stored, and how operators can clear or rotate it.
 
 ## Storage Locations
 
@@ -38,7 +38,7 @@ This document explains how BUS Core Alpha handles data, where it is stored, and 
 
 1. **Read**: Requests go through the policy engine; allowed reads return structured data and never write to disk.
 2. **Transform**: Input is packaged into a sandboxed subprocess. The subprocess can only propose operations; it does not persist results. The Core records the proposal in the journal and surfaces it back to the caller.
-3. **Write**: Not exposed over HTTP in Core Alpha, but the primitive is available internally. It records to the journal, re-evaluates policy, and then commits with an audit record.
+3. **Write**: Not exposed over HTTP in BUS Core, but the primitive is available internally. It records to the journal, re-evaluates policy, and then commits with an audit record.
 4. **Secrets**: Plugins retrieve secrets via `core.secrets.Secrets.get` on demand. They never cache or persist them.
 
 For additional context, review `docs/TRANSPARENCY.md` and inspect the live transparency endpoints.

@@ -189,7 +189,7 @@ def _index_disabled() -> bool:
     return flag in {"1", "true", "yes"}
 
 
-app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
+app = FastAPI(title="BUS Core", version=VERSION, lifespan=lifespan)
 
 # --- Maintenance / Restore Interlock ---------------------------------------
 app.state.maintenance = False

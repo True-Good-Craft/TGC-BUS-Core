@@ -227,7 +227,7 @@ def test_write_sheets_index_markdown_writes_sorted_table(tmp_path):
 
     assert content[0] == "# Master Index — Google Sheets"
     assert "Total spreadsheets: 2 • Total tabs: 2" in content[2]
-    # Sorted alphabetically by spreadsheet title, then sheet index
+    # Sorted lexicographically by spreadsheet title, then sheet index
     data_rows = [
         line
         for line in content

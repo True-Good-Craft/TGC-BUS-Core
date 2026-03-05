@@ -1,6 +1,6 @@
-# BUS Core Alpha Transparency Report
+# BUS Core Transparency Report
 
-The BUS Core Alpha runtime is built for transparency and local control. This document summarises what the Core does at runtime, where data flows, and how operators can verify behaviour.
+The BUS Core runtime is built for transparency and local control. This document summarises what the Core does at runtime, where data flows, and how operators can verify behaviour.
 
 ## Identity & Versioning
 
