@@ -2170,7 +2170,12 @@ def create_app():
 
 
 APP = create_app()
-APP.mount("/license", StaticFiles(directory="license"), name="license")
+
+# Resolve license path correctly when running under PyInstaller ONEFILE
+BASE_DIR = Path(getattr(sys, "_MEIPASS", Path.cwd()))
+LICENSE_DIR = BASE_DIR / "license"
+
+APP.mount("/license", StaticFiles(directory=str(LICENSE_DIR)), name="license")
 
 def build_app():
     global CORE, RUN_ID, SESSION_TOKEN, LOG_FILE
