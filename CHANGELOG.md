@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-03-08
+
+### Changed
+- Bumped the core patch version from `0.11.0` to `0.11.1`.
+- Added this changelog entry to summarize the version bump update.
+
 ## [1.0.0] - 2026-03-05
 
 ### Added
