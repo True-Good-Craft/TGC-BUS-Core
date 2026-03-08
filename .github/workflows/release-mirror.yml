@@ -91,8 +91,8 @@ jobs:
 
       - name: Upload manifest to R2
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           wrangler r2 object put --remote \
             "${{ secrets.R2_BUCKET }}/manifest/core/stable.json" \
