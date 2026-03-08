@@ -72,7 +72,7 @@ jobs:
             --arg version "${{ env.SEMVER_VERSION }}" \
             --arg release_notes_url "https://github.com/True-Good-Craft/TGC-BUS-Core/releases/tag/${{ github.event.release.tag_name }}" \
             --argjson size_bytes "${{ env.ASSET_SIZE_BYTES }}" \
-            --arg download_url "https://lighthouse.buscore.ca/releases/${{ env.ASSET_NAME }}" \
+            --arg download_url "/releases/${{ env.ASSET_NAME }}" \
             --arg sha256 "${{ env.ASSET_SHA256 }}" \
             '{
               min_supported: $min_supported,
