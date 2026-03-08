@@ -1198,7 +1198,7 @@ Core sot
 
 . The canonical stable manifest is:
 
-https://buscore.ca/manifest/core/stable.json
+https://lighthouse.buscore.ca/update/check
 
 4.2 Canonical manifest schema (minimum required fields)
 
@@ -1349,7 +1349,7 @@ This delta documents the implemented in-app Update Check system behavior and har
 ## Config Surface (`updates.*`)
 - `updates.enabled`: `false` (default)
 - `updates.channel`: "stable" (default)
-- `updates.manifest_url`: "https://buscore.ca/manifest/core/stable.json" (default)
+- `updates.manifest_url`: "https://lighthouse.buscore.ca/update/check" (default)
 - `updates.check_on_startup`: `true` (default)
 
 ## Behavioral Gates

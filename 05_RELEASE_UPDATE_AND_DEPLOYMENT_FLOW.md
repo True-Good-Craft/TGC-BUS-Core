@@ -15,7 +15,7 @@
 | Package metadata version | `pyproject.toml` | Packaging stub only | Drifted | Still `0.11.0` while runtime is `1.0.0`. |
 | SoT/changelog version text | `SOT.md`, `CHANGELOG.md` | Human docs | Secondary | Useful evidence, but not code authority; some entries drift or duplicate. |
 | Update-check route contract | `core/api/routes/update.py` | UI Settings/update notice consumes this response | Canonical | Fixed six-field response. |
-| Update manifest URL | `%LOCALAPPDATA%\BUSCore\config.json` `updates.manifest_url` | `SOT.md` documents different default URL | Drifted | Code default is Workers URL, docs point to `buscore.ca`. |
+| Update manifest URL | `%LOCALAPPDATA%\BUSCore\config.json` `updates.manifest_url` | `SOT.md` | Canonical | Code and docs use Lighthouse endpoint. |
 | Manifest version field | `core/services/update.py` strict SemVer parsing | Docs also describe SemVer | Canonical | Must be `X.Y.Z`. |
 | Manifest `download_url` | `core/services/update.py` extracts and returns it | UI opens it in browser | Canonical | No artifact validation beyond manifest parsing. |
 | Manifest checksum / hash | No consuming code found | `SOT.md` describes hash/size expectations | Drifted | Update-check path ignores checksum fields. |
@@ -80,7 +80,7 @@
 | Element | Implemented in code | Documented only | Assumed by tooling | Status |
 | --- | --- | --- | --- | --- |
 | Runtime version source | Yes | Yes | Yes | Canonical |
-| Default manifest URL | Yes (`buscore-lighthouse...workers.dev`) | Yes (`buscore.ca/manifest/core/stable.json`) | No | Drifted |
+| Default manifest URL | Yes (`lighthouse.buscore.ca/update/check`) | Yes (`lighthouse.buscore.ca/update/check`) | No | Canonical |
 | Manual update check UI | Yes | Yes | No | Canonical |
 | Startup update notice | Yes | Yes | No | Canonical |
 | Manifest channel support | Yes | Yes | No | Canonical |
@@ -94,8 +94,7 @@
 
 | Reference | Status | Where it appears | Notes |
 | --- | --- | --- | --- |
-| `https://buscore-lighthouse.jamie-eb1.workers.dev/update/check` | Canonical | `core/config/manager.py` default updates config | Current code default manifest endpoint. |
-| `https://buscore.ca/manifest/core/stable.json` | Secondary | `SOT.md` | Documented default, not current code default. |
+| `https://lighthouse.buscore.ca/update/check` | Canonical | `core/config/manager.py` default updates config, `SOT.md` | Current default update endpoint. |
 | `https://buscore.ca` | Secondary | `README.md` | Public site reference only. |
 | GHCR `ghcr.io/true-good-craft/tgc-bus-core` | Canonical | README + publish workflow | Container distribution path. |
 
