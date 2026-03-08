@@ -95,6 +95,6 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           wrangler r2 object put --remote \
-            "${R2_BUCKET}/manifest/core/stable.json" \
+            "${{ secrets.R2_BUCKET }}/manifest/core/stable.json" \
             --file stable.json \
             --content-type "application/json"
