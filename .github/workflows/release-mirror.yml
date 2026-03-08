@@ -59,7 +59,8 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          wrangler r2 object put "${R2_BUCKET}/releases/${{ env.ASSET_NAME }}" \
+          wrangler r2 object put --remote \
+            "${R2_BUCKET}/releases/${{ env.ASSET_NAME }}" \
             --file "${{ env.ASSET_FILE }}"
 
       - name: Generate manifest (stable.json)
@@ -96,6 +97,7 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          wrangler r2 object put "${R2_BUCKET}/manifest/core/stable.json" \
+          wrangler r2 object put --remote \
+            "${R2_BUCKET}/manifest/core/stable.json" \
             --file stable.json \
             --content-type "application/json"
