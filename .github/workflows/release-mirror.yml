@@ -55,12 +55,11 @@ jobs:
       - name: Upload artifact to R2
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           wrangler r2 object put --remote \
-            "${R2_BUCKET}/releases/${{ env.ASSET_NAME }}" \
+            "${{ secrets.R2_BUCKET }}/releases/${{ env.ASSET_NAME }}" \
             --file "${{ env.ASSET_FILE }}"
 
       - name: Generate manifest (stable.json)
