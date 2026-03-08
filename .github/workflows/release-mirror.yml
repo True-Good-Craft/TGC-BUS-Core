@@ -1,0 +1,101 @@
+name: Release Mirror
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Install Wrangler CLI
+        run: npm install -g wrangler
+
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ github.event.release.tag_name }}" \
+            --pattern "TGC-BUS-Core-*" \
+            --dir ./release-assets
+          MATCH_COUNT=$(find ./release-assets -name "TGC-BUS-Core-*" -type f | wc -l)
+          if [ "$MATCH_COUNT" -eq 0 ]; then
+            echo "::error::No matching release asset found (TGC-BUS-Core-*)"
+            exit 1
+          fi
+          if [ "$MATCH_COUNT" -gt 1 ]; then
+            echo "::error::Multiple matching assets found; expected exactly one TGC-BUS-Core-* asset"
+            exit 1
+          fi
+          ASSET_FILE=$(find ./release-assets -name "TGC-BUS-Core-*" -type f)
+          echo "ASSET_FILE=${ASSET_FILE}" >> "$GITHUB_ENV"
+          echo "ASSET_NAME=$(basename "${ASSET_FILE}")" >> "$GITHUB_ENV"
+
+      - name: Compute SHA256 checksum and metadata
+        run: |
+          SHA256=$(sha256sum "${{ env.ASSET_FILE }}" | awk '{ print $1 }')
+          SIZE_BYTES=$(wc -c < "${{ env.ASSET_FILE }}")
+          RAW_TAG="${{ github.event.release.tag_name }}"
+          SEMVER_VERSION="${RAW_TAG#v}"
+          echo "ASSET_SHA256=${SHA256}" >> "$GITHUB_ENV"
+          echo "ASSET_SIZE_BYTES=${SIZE_BYTES}" >> "$GITHUB_ENV"
+          echo "SEMVER_VERSION=${SEMVER_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Upload artifact to R2
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          wrangler r2 object put "${R2_BUCKET}/releases/${{ env.ASSET_NAME }}" \
+            --file "${{ env.ASSET_FILE }}"
+
+      - name: Generate manifest (stable.json)
+        env:
+          MIN_SUPPORTED_VERSION: ${{ vars.MIN_SUPPORTED_VERSION }}
+        run: |
+          MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-${{ env.SEMVER_VERSION }}}"
+          jq -n \
+            --arg min_supported "$MIN_SUPPORTED" \
+            --arg version "${{ env.SEMVER_VERSION }}" \
+            --arg release_notes_url "https://github.com/True-Good-Craft/TGC-BUS-Core/releases/tag/${{ github.event.release.tag_name }}" \
+            --argjson size_bytes "${{ env.ASSET_SIZE_BYTES }}" \
+            --arg download_url "/releases/${{ env.ASSET_NAME }}" \
+            --arg sha256 "${{ env.ASSET_SHA256 }}" \
+            '{
+              min_supported: $min_supported,
+              latest: {
+                version: $version,
+                release_notes_url: $release_notes_url,
+                size_bytes: $size_bytes,
+                download: {
+                  url: $download_url,
+                  sha256: $sha256,
+                  size_bytes: $size_bytes
+                }
+              }
+            }' \
+            > stable.json
+
+      - name: Upload manifest to R2
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          wrangler r2 object put "${R2_BUCKET}/manifest/core/stable.json" \
+            --file stable.json \
+            --content-type "application/json"
