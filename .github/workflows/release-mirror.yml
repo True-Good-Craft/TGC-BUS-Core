@@ -42,10 +42,15 @@ jobs:
           echo "ASSET_FILE=${ASSET_FILE}" >> "$GITHUB_ENV"
           echo "ASSET_NAME=$(basename "${ASSET_FILE}")" >> "$GITHUB_ENV"
 
-      - name: Compute SHA256 checksum
+      - name: Compute SHA256 checksum and metadata
         run: |
           SHA256=$(sha256sum "${{ env.ASSET_FILE }}" | awk '{ print $1 }')
+          SIZE_BYTES=$(wc -c < "${{ env.ASSET_FILE }}")
+          RAW_TAG="${{ github.event.release.tag_name }}"
+          SEMVER_VERSION="${RAW_TAG#v}"
           echo "ASSET_SHA256=${SHA256}" >> "$GITHUB_ENV"
+          echo "ASSET_SIZE_BYTES=${SIZE_BYTES}" >> "$GITHUB_ENV"
+          echo "SEMVER_VERSION=${SEMVER_VERSION}" >> "$GITHUB_ENV"
 
       - name: Upload artifact to R2
         env:
@@ -58,14 +63,30 @@ jobs:
             --file "${{ env.ASSET_FILE }}"
 
       - name: Generate manifest (stable.json)
+        env:
+          MIN_SUPPORTED_VERSION: ${{ vars.MIN_SUPPORTED_VERSION }}
         run: |
+          MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-${{ env.SEMVER_VERSION }}}"
           jq -n \
-            --arg version "${{ github.event.release.tag_name }}" \
-            --arg name "${{ env.ASSET_NAME }}" \
-            --arg url "https://lighthouse.buscore.ca/releases/${{ env.ASSET_NAME }}" \
+            --arg min_supported "$MIN_SUPPORTED" \
+            --arg version "${{ env.SEMVER_VERSION }}" \
+            --arg release_notes_url "https://github.com/True-Good-Craft/TGC-BUS-Core/releases/tag/${{ github.event.release.tag_name }}" \
+            --argjson size_bytes "${{ env.ASSET_SIZE_BYTES }}" \
+            --arg download_url "https://lighthouse.buscore.ca/releases/${{ env.ASSET_NAME }}" \
             --arg sha256 "${{ env.ASSET_SHA256 }}" \
-            --arg published_at "${{ github.event.release.published_at }}" \
-            '{version: $version, name: $name, url: $url, sha256: $sha256, published_at: $published_at}' \
+            '{
+              min_supported: $min_supported,
+              latest: {
+                version: $version,
+                release_notes_url: $release_notes_url,
+                size_bytes: $size_bytes,
+                download: {
+                  url: $download_url,
+                  sha256: $sha256,
+                  size_bytes: $size_bytes
+                }
+              }
+            }' \
             > stable.json
 
       - name: Upload manifest to R2
