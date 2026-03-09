@@ -11,6 +11,7 @@ permissions:
 jobs:
   mirror:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,19 +28,32 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "${{ github.event.release.tag_name }}" \
+          TAG="${{ github.event.release.tag_name }}"
+
+          if [ -z "$TAG" ]; then
+            TAG=$(git describe --tags --abbrev=0)
+          fi
+
+          echo "RAW_TAG=$TAG" >> "$GITHUB_ENV"
+
+          gh release download "$TAG" \
             --pattern "TGC-BUS-Core-*" \
             --dir ./release-assets
+
           MATCH_COUNT=$(find ./release-assets -name "TGC-BUS-Core-*" -type f | wc -l)
+
           if [ "$MATCH_COUNT" -eq 0 ]; then
             echo "::error::No matching release asset found (TGC-BUS-Core-*)"
             exit 1
           fi
+
           if [ "$MATCH_COUNT" -gt 1 ]; then
             echo "::error::Multiple matching assets found; expected exactly one TGC-BUS-Core-* asset"
             exit 1
           fi
+
           ASSET_FILE=$(find ./release-assets -name "TGC-BUS-Core-*" -type f)
+
           echo "ASSET_FILE=${ASSET_FILE}" >> "$GITHUB_ENV"
           echo "ASSET_NAME=$(basename "${ASSET_FILE}")" >> "$GITHUB_ENV"
 
@@ -47,8 +61,10 @@ jobs:
         run: |
           SHA256=$(sha256sum "${{ env.ASSET_FILE }}" | awk '{ print $1 }')
           SIZE_BYTES=$(wc -c < "${{ env.ASSET_FILE }}")
-          RAW_TAG="${{ github.event.release.tag_name }}"
+
+          RAW_TAG="${{ env.RAW_TAG }}"
           SEMVER_VERSION="${RAW_TAG#v}"
+
           echo "ASSET_SHA256=${SHA256}" >> "$GITHUB_ENV"
           echo "ASSET_SIZE_BYTES=${SIZE_BYTES}" >> "$GITHUB_ENV"
           echo "SEMVER_VERSION=${SEMVER_VERSION}" >> "$GITHUB_ENV"
@@ -67,16 +83,15 @@ jobs:
           MIN_SUPPORTED_VERSION: ${{ vars.MIN_SUPPORTED_VERSION }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-${{ env.SEMVER_VERSION }}}"
+          MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-$SEMVER_VERSION}"
 
-          # Fetch the latest 5 releases from the GitHub API (newest first)
-          RELEASES_JSON=$(gh api "repos/${{ github.repository }}/releases?per_page=5" 2>/dev/null || echo "[]")
+          # Fetch latest releases from GitHub
+          RELEASES_JSON=$(gh api "repos/${{ github.repository }}/releases?per_page=10" 2>/dev/null || echo "[]")
 
-          # Build the history array; include sha256 only for the current release
           HISTORY_JSON=$(echo "$RELEASES_JSON" | jq -c \
-            --arg current_tag "${{ github.event.release.tag_name }}" \
+            --arg current_tag "${{ env.RAW_TAG }}" \
             --arg current_sha256 "${{ env.ASSET_SHA256 }}" \
-            '[
+            '[ 
               .[] |
               . as $release |
               ($release.assets | map(select(.name | startswith("TGC-BUS-Core-"))) | .[0]) as $asset |
@@ -95,7 +110,7 @@ jobs:
           jq -n \
             --arg min_supported "$MIN_SUPPORTED" \
             --arg version "${{ env.SEMVER_VERSION }}" \
-            --arg release_notes_url "https://github.com/True-Good-Craft/TGC-BUS-Core/releases/tag/${{ github.event.release.tag_name }}" \
+            --arg release_notes_url "https://github.com/${{ github.repository }}/releases/tag/${{ env.RAW_TAG }}" \
             --argjson size_bytes "${{ env.ASSET_SIZE_BYTES }}" \
             --arg download_url "/releases/${{ env.ASSET_NAME }}" \
             --arg sha256 "${{ env.ASSET_SHA256 }}" \
