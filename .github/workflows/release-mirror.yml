@@ -31,7 +31,8 @@ jobs:
           TAG="${{ github.event.release.tag_name }}"
 
           if [ -z "$TAG" ]; then
-            TAG=$(git describe --tags --abbrev=0)
+            echo "::error::No release tag available. This workflow must run from a release event."
+            exit 1
           fi
 
           echo "RAW_TAG=$TAG" >> "$GITHUB_ENV"
@@ -85,13 +86,12 @@ jobs:
         run: |
           MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-$SEMVER_VERSION}"
 
-          # Fetch latest releases from GitHub
           RELEASES_JSON=$(gh api "repos/${{ github.repository }}/releases?per_page=10" 2>/dev/null || echo "[]")
 
           HISTORY_JSON=$(echo "$RELEASES_JSON" | jq -c \
             --arg current_tag "${{ env.RAW_TAG }}" \
             --arg current_sha256 "${{ env.ASSET_SHA256 }}" \
-            '[ 
+            '[
               .[] |
               . as $release |
               ($release.assets | map(select(.name | startswith("TGC-BUS-Core-"))) | .[0]) as $asset |
