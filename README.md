@@ -122,7 +122,7 @@ Development scripts are included in the source tree.
 
 ## Architecture
 
-See [`docs/SOT.md`](docs/SOT.md) for the canonical Source of Truth and system architecture.
+See [`SOT.md`](SOT.md) for the canonical Source of Truth and system architecture.
 
 ---
 
@@ -197,11 +197,12 @@ Docker is optional.
 ```powershell
 pip install -r requirements.txt
 
-python -m uvicorn core.api.http:create_app \
-  --factory \
-  --host 0.0.0.0 \
-  --port 8765
+python launcher.py
+# or
+.\Run Core.bat
 ```
+
+`launcher.py` is the canonical native entry. It boots the canonical HTTP runtime from `core.api.http:create_app()` and opens `/ui/shell.html`.
 
 UI:
 
@@ -210,7 +211,6 @@ http://localhost:8765/ui/shell.html
 ```
 
 ---
-
 ## Data & Persistence
 
 * All data is stored locally in SQLite.
@@ -262,3 +262,5 @@ See `LICENSE` for details.
 https://buscore.ca
 
 Maintained by True Good Craft (Canada)
+
+

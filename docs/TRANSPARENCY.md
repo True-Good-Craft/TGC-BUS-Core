@@ -42,8 +42,9 @@ The BUS Core runtime is built for transparency and local control. This document 
 
 1. Inspect `docs/DATA_LIFECYCLE.md` for retention and clearing procedures.
 2. Review `config/policy.json` to understand allowed operations.
-3. Start the server (`python -m uvicorn core.api.http:APP ...`) and confirm the startup trust banner.
+3. Start the server with the canonical native entry (`python launcher.py --dev`) and confirm the startup trust banner.
 4. Call `/transparency.report` and verify paths, telemetry status, and enabled plugins.
-5. Use `python app.py config status` to review local paths.
+5. Use `/dev/paths` (with `BUS_DEV=1`) and `/app/config` to review local paths and runtime settings.
 
 This document, alongside the live `/transparency.report`, forms the disclosure package shipped with the Core.
+

@@ -7,6 +7,9 @@
 
 ### Changed
 - Preserved strict SemVer `version` for release/update surfaces while documenting owner-only `version` bumps and agent-only `internal_version` bumps.
+- Locked runtime authority to one supported path set: `launcher.py` for native, `core.api.http:create_app` for HTTP/container, and Docker/Uvicorn `--factory` for container startup.
+- Removed legacy alternate runtime/package surfaces: `app.py`, `tgc/http.py`, `core/main.py`, and `tgc_controller.spec`.
+- Removed the conflicting alternate `/session/token` surface that existed only on non-canonical runtime files.
 
 ## [0.11.1] - 2026-03-08
 
@@ -212,4 +215,5 @@ Future releases will prioritize stability, bug fixes, and incremental polish rat
 - Deleted `/dev/license` and license.json handling.
 - Removed Pro-only features (RFQ, batch automation, scheduled runs).
 - **UI:** Removed license/tier badge and all “Pro/Upgrade” wording.
+
 

@@ -2143,6 +2143,8 @@ async def _stop_indexer_event() -> None:
         pass
 
 
+# Canonical HTTP runtime surface. Native entry is launcher.py; containers use
+# `uvicorn core.api.http:create_app --factory`.
 def create_app():
     init_app_state(app)
     app.state.pause_indexer = pause_indexer
@@ -2169,6 +2171,8 @@ def create_app():
     return app
 
 
+# Convenience in-process app instance for launcher/test internals. This is not
+# the advertised runtime entry surface.
 APP = create_app()
 
 # Resolve license path correctly when running under PyInstaller ONEFILE
@@ -2207,3 +2211,4 @@ __all__ = [
     "create_app",
     "SESSION_TOKEN",
 ]
+

@@ -13,6 +13,7 @@ $env:BUS_DB = (Resolve-Path .\data\app.db).Path
 # Apply migration
 python core/appdb/migrations/2025_11_30_int_measurements.py
 
-# Launch (adjust module/path if different in repo)
-uvicorn core.api.http:create_app --factory --host 127.0.0.1 --port 8765
+# Launch the canonical native entry (visible console)
+python launcher.py --dev --port 8765
 ```
+

@@ -184,7 +184,8 @@ def render_status_plugins_overview(payload: Dict[str, Any]) -> None:
     unilog_write("menu.view.status_plugins", None, counts=counts)
 
 
-# --- Backward compatibility alias (legacy support for app.py) ---
+# --- Backward compatibility alias for older menu callers ---
 def render_root(quiet: bool = False) -> None:
     """Legacy entrypoint. Calls render_main_menu()."""
     return render_main_menu(quiet=quiet)
+

@@ -49,13 +49,15 @@
 ### Deployment Modes
 
 * 
-**Native Windows:** Uses `%LOCALAPPDATA%\BUSCore\` for DB, config, and journals. Launch via `scripts/launch.ps1`.
+**Native Windows:** Uses `%LOCALAPPDATA%\BUSCore\` for DB, config, and journals. Launch via `launcher.py` (or the thin wrapper `Run Core.bat`).
 
 
 * 
 **Docker:** Uses `python:3.12-slim`. Persistence via volume mounted at `/data` (e.g., `BUS_DB=/data/app.db`). Runs as non-root `appuser`.
 
 
+* 
+**Dev/smoke helper:** `scripts/launch.ps1` runs the same `core.api.http:create_app` factory for scripted local checks only; it is not the supported native app entry.
 
 ---
 
@@ -1674,3 +1676,5 @@ EULA viewer and settings layout styles updated to use BUS Core theme tokens:
 
 --border-color  
 --card-bg
+
+

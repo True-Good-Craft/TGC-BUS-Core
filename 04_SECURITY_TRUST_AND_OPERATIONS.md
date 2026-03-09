@@ -48,7 +48,7 @@
 | Route-local token dependency in protected router | Drifted | `core/api/http.py::require_token_ctx()` | Checks against global `SESSION_TOKEN`. |
 | Global session token | Drifted | `core/api/http.py::SESSION_TOKEN` | Separate live authority from AppState token manager. |
 | Token file | Secondary | `%LOCALAPPDATA%\BUSCore\app\data\session_token.txt` | Written by `build_app()` / bootstrap path. |
-| `app.py` token contract | Drifted | `app.py` | Uses `X-Session-Token` cookie name and different token path/behavior. |
+| Legacy alternate token surfaces | Removed | `app.py`, `tgc/http.py` | Conflicting parallel `/session/token` contracts were removed from the repo. |
 
 ### Route-level enforcement inconsistencies
 
@@ -119,7 +119,7 @@
 - Drifted: `ledger_api` and `finance_api` rely on global middleware rather than the explicit route-local auth/write pattern used by other write domains.
 - Drifted: CORS is configured with `allow_origins=["*"]` and `allow_methods=["*"]` on the local server.
 - Drifted: `core/services/capabilities/registry.py` injects a `license` block with `PolyForm-Noncommercial-1.0.0`, which conflicts with the repo-wide AGPL labeling elsewhere.
-- Drifted: `app.py` exposes an alternate `/session/token` contract that does not match the active runtime surface.
+- Canonical: legacy alternate `/session/token` surfaces (`app.py`, `tgc/http.py`) were removed; `core/api/http.py` is the only supported bootstrap route.
 - Canonical: backup import/export paths enforce password-based decryption, exports-root path confinement, maintenance mode, and journal archiving during restore.
 - Canonical: update manifest fetch blocks localhost and literal private/loopback/link-local/unspecified IP hosts, rejects redirects, and caps response size.
 - Drifted: update/download path does not validate release artifact checksum or signature before surfacing `download_url` to the UI.
@@ -133,3 +133,4 @@
 - Refresh on: token/session flow changes, route-guard changes, provider integration changes, restore/export changes, or policy enforcement changes.
 - Fastest invalidators: consolidating token authority, moving ledger/finance to explicit route-local guards, changing secrets storage, or altering update validation behavior.
 - Check alongside: `02_API_AND_UI_CONTRACT_MAP.md` for route ownership and `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for update-path release validation details.
+

@@ -17,11 +17,10 @@
 
 | Concern | Status | Authority location | Notes |
 | --- | --- | --- | --- |
-| Runtime HTTP surface | Canonical | `core/api/http.py::create_app()` and mounted routers | Referenced by `README.md`, `scripts/launch.ps1`, `Dockerfile`, and `launcher.py`. |
-| Native app entry | Canonical | `launcher.py` | Starts Uvicorn in-process, opens `/ui/shell.html`, manages tray lifecycle. |
-| Container entry | Canonical | `Dockerfile` command `uvicorn core.api.http:create_app --factory` | Same HTTP surface as native runtime. |
-| Alternate HTTP app | Legacy | `tgc/http.py` | Parallel FastAPI surface exists in repo but is not used by current launch/build scripts. |
-| Alternate app entry | Drifted | `app.py` | Conflicts with current runtime/auth contract and imports missing `core.api.app_router`. |
+| Runtime HTTP surface | Canonical | `core/api/http.py::create_app()` and mounted routers | Referenced by `Dockerfile`, `docker-compose.yml`, `launcher.py`, and dev/smoke helper `scripts/launch.ps1`. |
+| Native app entry | Canonical | `launcher.py` | Only supported native entry; starts BUS Core locally, opens `/ui/shell.html`, and manages tray lifecycle. |
+| Container entry | Canonical | `Dockerfile` command `uvicorn core.api.http:create_app --factory` | Only supported container entry; same HTTP surface as native runtime. |
+| Dev/smoke HTTP launcher | Secondary | `scripts/launch.ps1` | Scripted helper for smoke/dev automation against `core.api.http:create_app`; not a supported native runtime entry. |
 | UI routing / boot | Canonical | `core/ui/app.js`, `core/ui/shell.html` | Hash routes, onboarding redirects, version badge, startup update check. |
 | API contract | Canonical | Mounted routes in `core/api/http.py` and `core/api/routes/*` | Detailed in `02_API_AND_UI_CONTRACT_MAP.md`. |
 | Persistence schema | Canonical | `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/api/http.py::startup_migrations()` | SQL files in `migrations/` are supplementary, not the only authority. |
@@ -58,8 +57,7 @@
 | Broker / providers | Canonical | `core/domain/bootstrap.py`, `core/adapters/*`, plugin loader | Local FS, Google Drive, plugin services. |
 | Background indexer | Canonical | `core/api/http.py` | `data/index_state.json`, broker catalog surfaces. |
 | Update check path | Canonical | `core/services/update.py` | Hosted manifest URL from config. |
-| `tgc/http.py` app | Legacy | `tgc/http.py` | Parallel route surface; not current runtime authority. |
-| `app.py` app | Drifted | `app.py` | Conflicting token contract and broken import path. |
+| Removed legacy entry surfaces | Resolved | `app.py`, `tgc/http.py`, `core/main.py`, `tgc_controller.spec` | Deleted to prevent parallel runtime/package authority. |
 
 ## Startup and Request Skeleton
 
@@ -107,7 +105,7 @@
 | FastAPI <-> local DB/files | Canonical | DB writes, exports/imports, journals, logs, secrets, config. |
 | FastAPI <-> OS actions | Canonical | Tray/browser launch, Explorer open, process exit/restart, local path validation. |
 | FastAPI <-> external network | Canonical | Update manifest fetches, Google OAuth/token exchange, Google Drive API calls. |
-| Alternate runtime surfaces | Drifted | `app.py` and `tgc/http.py` could mislead contract or auth assumptions if treated as authoritative. |
+| Runtime authority | Canonical | `launcher.py` (native), `core/api/http.py::create_app()` (HTTP surface), and Docker `uvicorn core.api.http:create_app --factory` are the only supported runtime paths. |
 
 ## Coupling Hotspots
 
@@ -118,11 +116,13 @@
 | Version/update authority drift | Drifted | Release tags and manifest generation still derive public version from tag discipline instead of reading `core/version.py` directly; update manifest URL history also diverges in older docs. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
 | Repo-local mutable state | Drifted | Some live state is stored in repo `data/` instead of AppData. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Placeholder/stale UI surfaces | Drifted | `#/runs`, `#/import`, backup UI, and stub transaction widgets can mislead contract assumptions. | `02_API_AND_UI_CONTRACT_MAP.md` |
-| Alternate entrypoints | Drifted | `app.py` and `tgc/http.py` are present but not current runtime authorities. | This file |
+| Runtime authority | Canonical | Legacy alternate entry surfaces were removed; `scripts/launch.ps1` remains dev/smoke-only around the canonical factory. | This file |
 
 ## Freeze Notes
 
 - Refresh on: entrypoint changes, router remounting, new runtime services, trust-boundary changes, or path-authority changes.
 - Fastest invalidators: switching the canonical entrypoint, consolidating config/session authority, changing mounted route roots, or replacing the SPA shell.
 - Check alongside: `02_API_AND_UI_CONTRACT_MAP.md` for route truth, `03_DATA_CONFIG_AND_STATE_MODEL.md` for storage authority, `04_SECURITY_TRUST_AND_OPERATIONS.md` for auth/trust splits, `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for version/update authority.
+
+
 

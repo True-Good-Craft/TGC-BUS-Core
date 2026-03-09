@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # scripts/launch.ps1
+# Dev/smoke helper for the canonical FastAPI factory.
+# This is not the supported native app entry; use launcher.py / Run Core.bat.
 param(
   [string]$BindHost = "127.0.0.1",
   [int]$Port = 8765,
@@ -87,7 +89,7 @@ try {
   $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
   $env:PYTHONPATH = "$repoRoot;$env:PYTHONPATH"
 
-  # Canonical FastAPI entrypoint (factory)
+  # Canonical FastAPI entrypoint (factory) for scripted local checks.
   $appModule = 'core.api.http:create_app'
   $appArgs   = @('--factory','--host',$BindHost,'--port',$Port)
 
@@ -100,7 +102,7 @@ try {
   }
 
   # Launch
-  Say ("[launch] Starting BUS Core at http://{0}:{1}" -f $BindHost,$Port) "Green"
+  Say ("[launch] Starting BUS Core dev helper at http://{0}:{1}" -f $BindHost,$Port) "Green"
   & $venvPy -m uvicorn $appModule @appArgs
 
   if ($Smoke) {
@@ -115,3 +117,4 @@ try {
 finally {
   Pop-Location
 }
+
