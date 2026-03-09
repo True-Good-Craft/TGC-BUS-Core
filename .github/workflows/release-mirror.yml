@@ -65,8 +65,33 @@ jobs:
       - name: Generate manifest (stable.json)
         env:
           MIN_SUPPORTED_VERSION: ${{ vars.MIN_SUPPORTED_VERSION }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-${{ env.SEMVER_VERSION }}}"
+
+          # Fetch the latest 5 releases from the GitHub API (newest first)
+          RELEASES_JSON=$(gh api "repos/${{ github.repository }}/releases?per_page=5" 2>/dev/null || echo "[]")
+
+          # Build the history array; include sha256 only for the current release
+          HISTORY_JSON=$(echo "$RELEASES_JSON" | jq -c \
+            --arg current_tag "${{ github.event.release.tag_name }}" \
+            --arg current_sha256 "${{ env.ASSET_SHA256 }}" \
+            '[
+              .[] |
+              . as $release |
+              ($release.assets | map(select(.name | startswith("TGC-BUS-Core-"))) | .[0]) as $asset |
+              if $asset then
+                {
+                  version: ($release.tag_name | ltrimstr("v")),
+                  url: ("/releases/" + $asset.name),
+                  release_notes_url: $release.html_url,
+                  size_bytes: $asset.size
+                } +
+                if $release.tag_name == $current_tag then { sha256: $current_sha256 } else {} end
+              else empty
+              end
+            ] | .[0:5]')
+
           jq -n \
             --arg min_supported "$MIN_SUPPORTED" \
             --arg version "${{ env.SEMVER_VERSION }}" \
@@ -74,6 +99,7 @@ jobs:
             --argjson size_bytes "${{ env.ASSET_SIZE_BYTES }}" \
             --arg download_url "/releases/${{ env.ASSET_NAME }}" \
             --arg sha256 "${{ env.ASSET_SHA256 }}" \
+            --argjson history "$HISTORY_JSON" \
             '{
               min_supported: $min_supported,
               latest: {
@@ -85,7 +111,8 @@ jobs:
                   sha256: $sha256,
                   size_bytes: $size_bytes
                 }
-              }
+              },
+              history: $history
             }' \
             > stable.json
 
