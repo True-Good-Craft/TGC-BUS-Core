@@ -3,7 +3,12 @@ name: Release Mirror
 on:
   release:
     types: [published]
+
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (example: v1.0.2)"
+        required: false
 
 permissions:
   contents: read
@@ -24,20 +29,23 @@ jobs:
       - name: Install Wrangler CLI
         run: npm install -g wrangler
 
-      - name: Download release asset
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Determine release tag
         run: |
-          TAG="${{ github.event.release.tag_name }}"
+          TAG="${{ github.event.release.tag_name || github.event.inputs.tag }}"
 
           if [ -z "$TAG" ]; then
-            echo "::error::No release tag available. This workflow must run from a release event."
+            echo "::error::No release tag provided."
+            echo "Run this workflow from a release or supply a tag manually."
             exit 1
           fi
 
           echo "RAW_TAG=$TAG" >> "$GITHUB_ENV"
 
-          gh release download "$TAG" \
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ env.RAW_TAG }}" \
             --pattern "TGC-BUS-Core-*" \
             --dir ./release-assets
 
@@ -49,7 +57,7 @@ jobs:
           fi
 
           if [ "$MATCH_COUNT" -gt 1 ]; then
-            echo "::error::Multiple matching assets found; expected exactly one TGC-BUS-Core-* asset"
+            echo "::error::Multiple matching assets found; expected exactly one"
             exit 1
           fi
 
@@ -84,7 +92,7 @@ jobs:
           MIN_SUPPORTED_VERSION: ${{ vars.MIN_SUPPORTED_VERSION }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-$SEMVER_VERSION}"
+          MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-${{ env.SEMVER_VERSION }}}"
 
           RELEASES_JSON=$(gh api "repos/${{ github.repository }}/releases?per_page=10" 2>/dev/null || echo "[]")
 
