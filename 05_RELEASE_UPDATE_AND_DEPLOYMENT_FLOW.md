@@ -4,15 +4,16 @@
 - Primary authority basis: `core/version.py`, `scripts/build_core.ps1`, `BUS-Core.spec`, `Dockerfile`, `core/api/routes/update.py`, `core/services/update.py`, `.github/workflows/publish-image.yml`.
 - Best use: Validate what is actually implemented for shipping and update checks, and separate that from older docs or tooling assumptions.
 - Refresh triggers: Version bumps, build script changes, manifest URL changes, update-service changes, CI/workflow changes, signing or artifact-validation changes.
-- Highest-risk drift areas: Runtime version drift vs docs/package metadata, default manifest URL drift, disabled CI, stale `release-check` script, missing artifact checksum/signature verification.
+- Highest-risk drift areas: Runtime version drift vs docs/package metadata, owner vs agent version-bump governance, default manifest URL drift, disabled CI, stale `release-check` script, missing artifact checksum/signature verification.
 - Key dependent files / modules: `core/version.py`, `scripts/build_core.ps1`, `scripts/release-check.ps1`, `BUS-Core.spec`, `core/config/manager.py`, `core/api/routes/update.py`, `core/services/update.py`, `.github/workflows/publish-image.yml`.
 
 ## Version and Update Authority Matrix
 
 | Concern | Implemented authority | Doc / tooling assumption | Status | Notes |
 | --- | --- | --- | --- | --- |
-| Runtime version | `core/version.py` | FastAPI app version, build script read from same source | Canonical | Main version truth. |
-| Package metadata version | `pyproject.toml` | Packaging stub only | Drifted | Still `0.11.0` while runtime is `1.0.0`. |
+| Runtime version | `core/version.py` | FastAPI app version, build script read from same source | Canonical | `VERSION` is the owner-controlled public/release SemVer source. |
+| Internal working version | core/version.py | Internal reports may expose INTERNAL_VERSION | Canonical | INTERNAL_VERSION is X.Y.Z.R, for repo working revisions only, and must not flow into strict SemVer consumers. |
+| Package metadata version | `pyproject.toml` | Packaging stub only | Canonical mirror | Kept aligned to `core/version.py` strict SemVer `VERSION`. |
 | SoT/changelog version text | `SOT.md`, `CHANGELOG.md` | Human docs | Secondary | Useful evidence, but not code authority; some entries drift or duplicate. |
 | Update-check route contract | `core/api/routes/update.py` | UI Settings/update notice consumes this response | Canonical | Fixed six-field response. |
 | Update manifest URL | `%LOCALAPPDATA%\BUSCore\config.json` `updates.manifest_url` | `SOT.md` | Canonical | Code and docs use Lighthouse endpoint. |
@@ -34,7 +35,7 @@
 
 ## Observed Release Flow
 
-1. Version source is `core/version.py`; build script reads this unless explicitly overridden.
+1. Version source is `core/version.py`; build script and runtime release surfaces read strict SemVer `VERSION` unless explicitly overridden.
 2. Windows build requires a pre-existing `.venv` with Python `3.11.x`.
 3. `scripts/build_core.ps1` deletes old `build/` and `dist/`, writes `scripts/_win_version_info.txt`, and runs PyInstaller with `BUS-Core.spec`.
 4. The script verifies one-file output exists at `dist/BUS-Core.exe` and copies it to `dist/BUS-Core-<VERSION>.exe`.
@@ -113,7 +114,7 @@
 
 | Coupling point | Status | Why it matters |
 | --- | --- | --- |
-| `core/version.py` vs `pyproject.toml` / `SOT.md` / `CHANGELOG.md` | Drifted | Version truth differs across code, package stub, and docs. |
+| `core/version.py` vs docs/governance text | Secondary | Runtime/build truth is canonical in code; human docs must stay in sync. |
 | Code default manifest URL vs documented manifest URL | Drifted | Update-check behavior and docs disagree on the default authority. |
 | `scripts/release-check.ps1` -> missing `build-windows.ps1` | Drifted | Release helper references a script not present in repo. |
 | Disabled CI/build-test workflows | Drifted | Automated release validation is not active despite workflow presence. |
@@ -125,3 +126,10 @@
 - Refresh on: version bumps, build script/spec changes, update-service changes, manifest URL changes, workflow changes, or signing/validation changes.
 - Fastest invalidators: aligning version authorities, changing manifest schema or endpoint, enabling real artifact verification, or replacing the build/release scripts.
 - Check alongside: `02_API_AND_UI_CONTRACT_MAP.md` for `/app/update/check` contract shape and `04_SECURITY_TRUST_AND_OPERATIONS.md` for update-path security implications.
+
+## Internal Version Boundary
+
+- `VERSION` remains the only value allowed into release tags, published manifest `latest.version`, and update comparison logic.
+- `INTERNAL_VERSION` is for repo working-revision tracking only.
+- No repository evidence in this change set switched manifest generation, release tags, or update SemVer validation to `INTERNAL_VERSION`.
+- Remaining drift: `.github/workflows/release-mirror.yml` still derives manifest versions from release tags rather than reading `core/version.py` directly; this preserves the strict external boundary but leaves release-time authority split between code and tag discipline.

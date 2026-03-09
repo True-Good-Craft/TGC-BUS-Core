@@ -14,6 +14,7 @@ from core.appdb.migrate import ensure_vendors_flags
 from core.appdb.models import Base, CashEvent, Item, ItemMovement, Vendor
 from core.appdb.models_recipes import ManufacturingRun, Recipe
 from core.config.writes import require_writes
+from core.version import INTERNAL_VERSION
 from tgc.security import require_token_ctx
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -84,6 +85,7 @@ def get_system_state(
         "basis": basis,
         "build": {
             "version": str(version),
+            "internal_version": str(INTERNAL_VERSION),
             "schema_version": str(schema_version),
         },
         "status": status,
@@ -116,3 +118,4 @@ def start_fresh_shop(
         "ok": True,
         "restart_required": True,
     }
+

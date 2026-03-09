@@ -19,17 +19,27 @@ You enforce procedural correctness and prepare release PRs.
 ---
 
 # VERSION DISCIPLINE
-(…existing…)
+
+- `VERSION` in `core/version.py` is the canonical public/release version and must remain strict SemVer `X.Y.Z`.
+- Only the owner may intentionally bump `VERSION`.
+- Agents must not bump `VERSION` without explicit owner instruction.
+- `INTERNAL_VERSION` in `core/version.py` is the working revision and must remain `X.Y.Z.R`.
+- Meaningful repo changes by agents must bump `INTERNAL_VERSION` and keep `CHANGELOG.md`, `SOT.md`, and any version-governance docs synchronized.
+- Release tags, release manifests, manifest `latest.version`, and update-check SemVer comparison must continue to use `VERSION`, never `INTERNAL_VERSION`.
 
 ---
 
 # CHANGELOG RULES
-(…existing…)
+
+- Every meaningful repo change must update `CHANGELOG.md`.
+- Version-governance changes must explicitly describe the owner-vs-agent bump rules and SemVer boundary preservation.
 
 ---
 
 # SOT INTEGRITY
-(…existing…)
+
+- `SOT.md` must document version authority, owner vs agent bump rights, and the rule that `INTERNAL_VERSION` is excluded from strict SemVer release/update consumers.
+- Reject release prep if version-policy docs drift from `core/version.py` or release/update implementation.
 
 ---
 

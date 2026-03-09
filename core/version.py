@@ -17,8 +17,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Version information for BUS Core."""
+"""Canonical version information for BUS Core."""
 
+# Public/release version. Must remain strict SemVer X.Y.Z.
 VERSION = "1.0.2"
 
-__all__ = ["VERSION"]
+# Internal working revision. Agents may bump this on meaningful repo changes.
+INTERNAL_VERSION = "1.0.2.0"
+
+__all__ = ["VERSION", "INTERNAL_VERSION"]

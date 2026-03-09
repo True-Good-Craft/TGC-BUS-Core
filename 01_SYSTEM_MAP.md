@@ -28,7 +28,7 @@
 | Durable settings config | Drifted | Split between `core/config/manager.py` and `core/config/paths.py` | Two live JSON config stores exist; see `03_DATA_CONFIG_AND_STATE_MODEL.md`. |
 | Session/auth authority | Drifted | `session_guard`, `GET /session/token`, `tgc.security.require_token_ctx`, `core.api.http.require_token_ctx` | Multiple live token authorities; see `04_SECURITY_TRUST_AND_OPERATIONS.md`. |
 | Update check behavior | Canonical | `core/api/routes/update.py`, `core/services/update.py`, `core/config/manager.py` | UI contract lives in `core/ui/js/update-check.js`. |
-| Release version | Canonical | `core/version.py` | `pyproject.toml`, `SOT.md`, and parts of `CHANGELOG.md` drift. |
+| Release version | Canonical | `core/version.py` | `VERSION` is the strict SemVer release authority; `INTERNAL_VERSION` is the working revision. |
 | Repository docs | Secondary | `README.md`, `SOT.md`, `API_CONTRACT.md`, `CHANGELOG.md`, `docs/*` | Useful context; code wins on conflict. |
 
 ## Top-level Repository Skeleton
@@ -115,7 +115,7 @@
 | --- | --- | --- | --- |
 | Config split (`config.json` vs `app\config.json`) | Drifted | Settings, writes, and policy do not share one durable authority. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Session/token split | Drifted | Middleware, AppState token manager, global `SESSION_TOKEN`, and token file all participate. | `04_SECURITY_TRUST_AND_OPERATIONS.md` |
-| Version/update authority drift | Drifted | `core/version.py` differs from `pyproject.toml` and older docs; update manifest URL also diverges. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
+| Version/update authority drift | Drifted | Release tags and manifest generation still derive public version from tag discipline instead of reading `core/version.py` directly; update manifest URL history also diverges in older docs. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
 | Repo-local mutable state | Drifted | Some live state is stored in repo `data/` instead of AppData. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Placeholder/stale UI surfaces | Drifted | `#/runs`, `#/import`, backup UI, and stub transaction widgets can mislead contract assumptions. | `02_API_AND_UI_CONTRACT_MAP.md` |
 | Alternate entrypoints | Drifted | `app.py` and `tgc/http.py` are present but not current runtime authorities. | This file |
@@ -125,3 +125,4 @@
 - Refresh on: entrypoint changes, router remounting, new runtime services, trust-boundary changes, or path-authority changes.
 - Fastest invalidators: switching the canonical entrypoint, consolidating config/session authority, changing mounted route roots, or replacing the SPA shell.
 - Check alongside: `02_API_AND_UI_CONTRACT_MAP.md` for route truth, `03_DATA_CONFIG_AND_STATE_MODEL.md` for storage authority, `04_SECURITY_TRUST_AND_OPERATIONS.md` for auth/trust splits, `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for version/update authority.
+

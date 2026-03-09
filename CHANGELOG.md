@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+- Introduced `internal_version` as a separate working-revision field in the canonical version source, initialized to `1.0.2.0`.
+
+### Changed
+- Preserved strict SemVer `version` for release/update surfaces while documenting owner-only `version` bumps and agent-only `internal_version` bumps.
+
 ## [0.11.1] - 2026-03-08
 
 ### Changed
@@ -206,3 +212,4 @@ Future releases will prioritize stability, bug fixes, and incremental polish rat
 - Deleted `/dev/license` and license.json handling.
 - Removed Pro-only features (RFQ, batch automation, scheduled runs).
 - **UI:** Removed license/tier badge and all “Pro/Upgrade” wording.
+

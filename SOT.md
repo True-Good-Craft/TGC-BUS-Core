@@ -1,6 +1,6 @@
 # 🛠️ TGC BUS Core — Unified Source of Truth
 
-**Version:** v0.11.0 (Reflecting Phase 0–1 Locks, Cost Authority & Manufacturing Hardening) **Updated:** 2026‑02‑22 **Status:** Stable **Authority:** Code is truth. Where this document and code disagree, update this document.
+**Version:** v1.0.2 **Updated:** 2026-03-09 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -59,8 +59,37 @@
 
 ---
 
-## 3. Canonical Unit Model & Storage Contract
+## 3. Version Authority & Governance
 
+### Canonical Version Fields
+
+* **Canonical source:** `core/version.py`.
+
+* **`VERSION`:** Canonical public/release/runtime version and MUST remain strict SemVer `X.Y.Z`.
+
+* **`INTERNAL_VERSION`:** Internal working revision and MUST use `X.Y.Z.R`.
+
+* **Initialization rule:** When introduced alongside release version `1.0.2`, `INTERNAL_VERSION` starts at `1.0.2.0`.
+
+### Authority Rules
+
+* Only the owner may intentionally bump `VERSION`.
+
+* Agents MUST NOT bump `VERSION` without explicit owner instruction.
+
+* Agents MAY bump only `INTERNAL_VERSION`, and MUST do so on meaningful repo changes.
+
+* Meaningful agent changes MUST also update `CHANGELOG.md`, this SOT when behavior/contracts/authority change, and any governance docs affected by version-policy changes.
+
+### Release and Update Boundary
+
+* Strict SemVer consumers MUST continue reading `VERSION` only.
+
+* `INTERNAL_VERSION` is not part of release tags, manifest generation, `latest.version`, update-check comparison logic, or any other strict SemVer validation path.
+
+---
+
+## 4. Canonical Unit Model & Storage Contract
 ### Storage Layer (Absolute)
 
 * All inventory quantities MUST be stored internally as integer base units.
@@ -1674,3 +1703,5 @@ EULA viewer and settings layout styles updated to use BUS Core theme tokens:
 
 --border-color  
 --card-bg
+
+

@@ -13,11 +13,20 @@ You run the canonical build script and produce a deterministic onefile EXE in di
 
 # CANONICALS
 
-- Canonical version source: `core/version.py` (symbol: `VERSION`)
+- Canonical version source: `core/version.py` (symbols: `VERSION`, `INTERNAL_VERSION`)
 - Canonical build script: `scripts/build_core.ps1`
 - Canonical smoke harness: `scripts/smoke.ps1`
 - Output directory: `dist/`
 - Expected artifact name: `dist/BUS-Core-{VERSION}.exe`
+
+# VERSION GOVERNANCE
+
+- `VERSION` is owner-controlled and is the only public/release version.
+- `VERSION` must remain strict SemVer `X.Y.Z`.
+- `INTERNAL_VERSION` is the agent-bumpable working revision and must remain `X.Y.Z.R`.
+- Agents must NOT bump `VERSION` without explicit owner instruction.
+- Meaningful agent changes must bump `INTERNAL_VERSION` and keep `CHANGELOG.md`, `SOT.md`, and version-governance docs in sync when policy or authority changes.
+- Build, manifest, and release surfaces must continue using `VERSION`, never `INTERNAL_VERSION`.
 
 # HARD CONSTRAINTS
 

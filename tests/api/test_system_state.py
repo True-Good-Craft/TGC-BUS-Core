@@ -104,6 +104,7 @@ def test_system_state_build_metadata_fields_are_strings(bus_client):
     payload = response.json()
     assert "build" in payload
     assert isinstance(payload["build"].get("version"), str)
+    assert isinstance(payload["build"].get("internal_version"), str)
     assert isinstance(payload["build"].get("schema_version"), str)
 
 
@@ -157,3 +158,4 @@ def test_start_fresh_endpoint_response_shape(bus_client):
         "ok": True,
         "restart_required": True,
     }
+

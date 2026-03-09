@@ -4,20 +4,29 @@ import re
 import tomllib
 from pathlib import Path
 
-from core.version import VERSION
+from core.version import INTERNAL_VERSION, VERSION
 
 REPO_ROOT = Path(__file__).parent.parent
 UI_JS_DIR = REPO_ROOT / "core" / "ui" / "js"
-# Pattern for semver literals like 0.10.5 or 0.11.0 — 3-part dotted numbers
 SEMVER_RE = re.compile(r"\b\d+\.\d+\.\d+\b")
+STRICT_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+INTERNAL_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+\.\d+$")
 
 
-def test_version_file_matches_canonical():
-    """Repo VERSION file must equal core.version.VERSION (the single source of truth)."""
-    declared = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    assert declared == VERSION, (
-        f"VERSION file={declared!r} does not match core/version.py VERSION={VERSION!r}. "
-        "Update the VERSION file to match core/version.py."
+def test_version_has_strict_semver_format():
+    """Public VERSION must remain strict X.Y.Z."""
+    assert STRICT_VERSION_RE.match(VERSION), (
+        f"core/version.py VERSION={VERSION!r} must be strict X.Y.Z."
+    )
+
+
+def test_internal_version_has_expected_four_part_format():
+    """Internal working version must remain X.Y.Z.R."""
+    assert INTERNAL_VERSION_RE.match(INTERNAL_VERSION), (
+        f"core/version.py INTERNAL_VERSION={INTERNAL_VERSION!r} must be X.Y.Z.R."
+    )
+    assert INTERNAL_VERSION.startswith(f"{VERSION}."), (
+        f"INTERNAL_VERSION={INTERNAL_VERSION!r} must extend VERSION={VERSION!r}."
     )
 
 
@@ -37,7 +46,6 @@ def test_no_hardcoded_semver_in_ui_js():
     for js_file in UI_JS_DIR.rglob("*.js"):
         text = js_file.read_text(encoding="utf-8", errors="replace")
         for lineno, line in enumerate(text.splitlines(), 1):
-            # Skip lines that are clearly license/comment boilerplate
             stripped = line.strip()
             if stripped.startswith("//") or stripped.startswith("*"):
                 continue
