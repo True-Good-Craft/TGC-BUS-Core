@@ -41,6 +41,8 @@ UI_DIR: Path = ui_dir()
 for _dir in (BUS_ROOT, APP_DIR, DATA_DIR, JOURNAL_DIR, EXPORTS_DIR, IMPORTS_DIR, STATE_DIR):
     _dir.mkdir(parents=True, exist_ok=True)
 
+# Legacy compatibility path only. App-runtime config authority lives at
+# %LOCALAPPDATA%\BUSCore\config.json via core.config.manager.
 CONFIG_PATH = APP_DIR / "config.json"
 
 
@@ -58,3 +60,4 @@ def _save_config_dict(d: dict) -> None:
     tmp_path = CONFIG_PATH.with_suffix(CONFIG_PATH.suffix + ".tmp")
     tmp_path.write_text(json.dumps(d, indent=2), encoding="utf-8")
     tmp_path.replace(CONFIG_PATH)
+

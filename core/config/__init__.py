@@ -27,7 +27,7 @@ __all__ = ["load_core_config"]
 
 
 def load_core_config() -> Dict[str, Any]:
-    """Back-compat shim for test harnesses that import core.config.load_core_config."""
+    """Legacy back-compat shim for plugin/test harness context, not app-runtime config."""
     path = app_db_path().parent / "core_config.json"
     if path.exists():
         try:
@@ -35,3 +35,4 @@ def load_core_config() -> Dict[str, Any]:
         except Exception:
             return {}
     return {}
+

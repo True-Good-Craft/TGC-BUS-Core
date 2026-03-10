@@ -71,7 +71,7 @@ from core.services.capabilities.registry import MANIFEST_PATH
 from core.policy.guard import require_owner_commit
 from core.policy.model import Policy
 from core.policy.store import load_policy, save_policy
-from core.config.writes import require_writes
+from core.config.writes import get_writes_enabled, require_writes
 from core.plans.commit import commit_local
 from core.plans.model import Plan, PlanStatus
 from core.plans.preview import preview_plan
@@ -109,7 +109,7 @@ from core.api.routes import transactions as transactions_routes
 from core.api.routes import config as config_routes
 from core.api.routes import update as update_routes
 from core.api.routes import system_state as system_state_routes
-from core.api.security import _calc_default_allow_writes
+
 from core.api.errors import error_envelope, normalize_http_exc, normalize_validation_err
 from core.config.paths import (
     APP_DIR,
@@ -405,7 +405,7 @@ def _is_dev_route_path(path: str) -> bool:
     return path == "/dev" or path.startswith("/dev/")
 
 def _buscore_writeflag_startup() -> None:
-    app.state.allow_writes = _calc_default_allow_writes()
+    app.state.allow_writes = get_writes_enabled()
 
 
 def ensure_core_initialized():

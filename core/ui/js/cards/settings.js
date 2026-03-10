@@ -89,7 +89,7 @@ export async function settingsCard(el) {
         <input type="text" id="setting-backup-dir" readonly
                style="width:100%; padding:10px; border-radius:10px; background:#232428; color:#888; border:1px solid #444;"
                value="">
-        <div style="font-size:0.85em; color:#666; margin-top:4px;">To change this path, edit config.json directly.</div>
+        <div style="font-size:0.85em; color:#666; margin-top:4px;">To change this path, edit %LOCALAPPDATA%\\BUSCore\\config.json directly.</div>
       </div>
     </div>
 
@@ -223,3 +223,4 @@ export async function settingsCard(el) {
       }
   };
 }
+

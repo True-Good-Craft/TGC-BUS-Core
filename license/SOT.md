@@ -317,7 +317,11 @@
 
 
 * 
-**Config:** Managed via `updates` section in `config.json` (enabled, channel, manifest_url). Strict SemVer required, and fetches time out at 4 seconds.
+**Config:** Update settings live in `%LOCALAPPDATA%\\BUSCore\\config.json` under `updates` (`enabled`, `channel`, `manifest_url`, `check_on_startup`). Strict SemVer required, and fetches time out at 4 seconds.
+
+
+* 
+**Config Authority:** `%LOCALAPPDATA%\BUSCore\config.json` is the canonical app-runtime config file. `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only for recognized older keys when canonical values are absent.
 
 
 * 
@@ -1676,5 +1680,4 @@ EULA viewer and settings layout styles updated to use BUS Core theme tokens:
 
 --border-color  
 --card-bg
-
 

@@ -25,8 +25,9 @@ from core.config.paths import APP_DIR
 
 def load_core_config() -> Dict[str, Any]:
     """
-    Back-compat shim for test harnesses that import core.config.load_core_config.
-    Reads a JSON config file if present; otherwise returns {}.
+    Legacy back-compat shim for plugin/test harness context.
+    This does not participate in BUS Core app-runtime config authority.
+    Reads a local core_config.json file if present; otherwise returns {}.
     """
     path = APP_DIR / "core_config.json"
     if path.exists():
@@ -35,3 +36,4 @@ def load_core_config() -> Dict[str, Any]:
         except Exception:
             return {}
     return {}
+
