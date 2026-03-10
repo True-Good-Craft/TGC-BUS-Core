@@ -8,10 +8,10 @@
 - Added release/update drift guards that verify release tooling reads `core/version.py`, targets the real `BUS-Core-<VERSION>.exe` artifact name, and keeps `INTERNAL_VERSION` out of public SemVer consumers.
 
 ### Changed
-- Bumped `INTERNAL_VERSION` from `1.0.2.3` to `1.0.2.4` without changing public `VERSION`.
+- Bumped `INTERNAL_VERSION` from `1.0.2.4` to `1.0.2.5` without changing public `VERSION`.
 - Reconciled config authority so `%LOCALAPPDATA%\BUSCore\config.json` is the single app-runtime settings authority, while `%LOCALAPPDATA%\BUSCore\app\config.json` is read only as a one-way legacy fallback for recognized older keys.
 - Moved durable `writes_enabled`, `role`, and `plan_only` persistence under the canonical root config file without changing public `/app/config` or `/policy` route shapes.
-- Aligned `SOT.md`, the config/security authority maps, and the Settings UI copy with the canonical config path and legacy fallback story.
+- Aligned `SOT.md`, the config/security authority maps, and the Settings UI copy with the exact canonical Windows path strings the config-authority drift guards enforce.
 - Reconciled release authority so `.github/workflows/release-mirror.yml` reads `core/version.py`, fails unless the release tag equals `v{VERSION}`, and publishes manifest `latest.version` from canonical `VERSION`.
 - Repaired `scripts/release-check.ps1` to validate the real current release chain: `smoke_isolated.ps1`, `build_core.ps1`, and the expected `dist/BUS-Core.exe` plus `dist/BUS-Core-<VERSION>.exe` artifacts.
 - Aligned release/update documentation and README wording with actual behavior: Lighthouse remains the default manifest URL, checksum metadata may be published, and the app does not verify checksum or signature before surfacing `download_url`.

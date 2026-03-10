@@ -24,7 +24,7 @@
 | UI routing / boot | Canonical | `core/ui/app.js`, `core/ui/shell.html` | Hash routes, onboarding redirects, version badge, startup update check. |
 | API contract | Canonical | Mounted routes in `core/api/http.py` and `core/api/routes/*` | Detailed in `02_API_AND_UI_CONTRACT_MAP.md`. |
 | Persistence schema | Canonical | `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/api/http.py::startup_migrations()` | SQL files in `migrations/` are supplementary, not the only authority. |
-| Durable settings config | Canonical | `%LOCALAPPDATA%\\BUSCore\\config.json` via `core/config/manager.py` | Root config is the single app-runtime settings authority; `%LOCALAPPDATA%\\BUSCore\\app\\config.json` is legacy compatibility input only. |
+| Durable settings config | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` via `core/config/manager.py` | Root config is the single app-runtime settings authority; `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only. |
 | Session/auth authority | Drifted | `session_guard`, `GET /session/token`, `tgc.security.require_token_ctx`, `core.api.http.require_token_ctx` | Multiple live token authorities; see `04_SECURITY_TRUST_AND_OPERATIONS.md`. |
 | Update check behavior | Canonical | `core/api/routes/update.py`, `core/services/update.py`, `core/config/manager.py` | UI contract lives in `core/ui/js/update-check.js`. |
 | Release version | Canonical | `core/version.py` | `VERSION` is the strict SemVer release authority; `INTERNAL_VERSION` is the working revision. |
@@ -111,7 +111,7 @@
 
 | Hotspot | Status | Why it matters | Own in |
 | --- | --- | --- | --- |
-| Config authority (`config.json` vs `app\\config.json`) | Resolved | `%LOCALAPPDATA%\\BUSCore\\config.json` is canonical; `%LOCALAPPDATA%\\BUSCore\\app\\config.json` is legacy compatibility input only. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
+| Config authority (`config.json` vs `app\\config.json`) | Resolved | `%LOCALAPPDATA%\BUSCore\config.json` is canonical; `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Session/token split | Drifted | Middleware, AppState token manager, global `SESSION_TOKEN`, and token file all participate. | `04_SECURITY_TRUST_AND_OPERATIONS.md` |
 | Version/update authority drift | Narrowed drift | `core/version.py` is now the public release/update source, and `.github/workflows/release-mirror.yml` machine-checks `tag == v{VERSION}` before publishing manifest metadata; remaining drift is limited to unsigned/unverified artifact metadata and release-history dependence on GitHub release assets. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
 | Repo-local mutable state | Drifted | Some live state is stored in repo `data/` instead of AppData. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |

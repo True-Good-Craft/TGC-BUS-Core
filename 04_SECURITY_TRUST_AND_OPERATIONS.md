@@ -112,8 +112,8 @@
 | `BUS_POLICY_ENFORCE` | Canonical | Environment | Enables strict owner/plan enforcement. |
 | `BUS_DEV` | Canonical | Environment | Enables dev routes and unsanitized error detail behavior. |
 | `updates.manifest_url` | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` | Outbound update-manifest location. |
-| `writes_enabled` | Canonical | `%LOCALAPPDATA%\\BUSCore\\config.json` `dev.writes_enabled`, with app state as runtime mirror and `%LOCALAPPDATA%\\BUSCore\\app\\config.json` as legacy fallback only | Durable write gate now lives under the canonical root config file. |
-| `role`, `plan_only` | Canonical | `%LOCALAPPDATA%\\BUSCore\\config.json` `policy.*`, with `%LOCALAPPDATA%\\BUSCore\\app\\config.json` as legacy fallback only | Commit-policy inputs, only strictly enforced when `BUS_POLICY_ENFORCE=1`. |
+| `writes_enabled` | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` `dev.writes_enabled`, with app state as runtime mirror and `%LOCALAPPDATA%\BUSCore\app\config.json` as legacy fallback only | Durable write gate now lives under the canonical root config file. |
+| `role`, `plan_only` | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` `policy.*`, with `%LOCALAPPDATA%\BUSCore\app\config.json` as legacy fallback only | Commit-policy inputs, only strictly enforced when `BUS_POLICY_ENFORCE=1`. |
 | Google client ID / secret / refresh token | Canonical | OS keyring or `%LOCALAPPDATA%\BUSCore\secrets\secrets.json.enc` | OAuth and Drive access. |
 | Capability HMAC key | Canonical | `%LOCALAPPDATA%\BUSCore\state\capabilities_hmac.key` | Signs capability manifest. |
 

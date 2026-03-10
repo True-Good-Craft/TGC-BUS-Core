@@ -14,8 +14,8 @@
 | Inventory, vendors/contacts, ledger, finance, recipes, manufacturing | DB-backed | Canonical | SQLite schema in `core/appdb/models.py` and `core/appdb/models_recipes.py` | Main durable business state. |
 | DB path selection | Config/env-derived | Canonical | `core/appdata/paths.py::resolve_db_path()` | Uses `BUS_DB` override or bus mode. |
 | Bus mode (`demo` / `prod`) | File/env-backed | Canonical | `core/appdata/paths.py::resolve_bus_mode()` | Priority: `bus_mode.json`, env var, flag file, default. |
-| App runtime config | File-backed | Canonical | `%LOCALAPPDATA%\\BUSCore\\config.json` via `core/config/manager.py` | Single app-runtime authority for launcher, UI, backup, updates, write gate, and persisted policy fields. |
-| Legacy app-local config fallback | File-backed | Legacy | `%LOCALAPPDATA%\\BUSCore\\app\\config.json` via compatibility reads in `core/config/manager.py` | Read-only fallback for recognized old keys (`writes_enabled`, `role`, `plan_only`) when canonical values are absent. |
+| App runtime config | File-backed | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` via `core/config/manager.py` | Single app-runtime authority for launcher, UI, backup, updates, write gate, and persisted policy fields. |
+| Legacy app-local config fallback | File-backed | Legacy | `%LOCALAPPDATA%\BUSCore\app\config.json` via compatibility reads in `core/config/manager.py` | Read-only fallback for recognized old keys (`writes_enabled`, `role`, `plan_only`) when canonical values are absent. |
 | Reader roots / Drive include settings | File-backed | Canonical | `%LOCALAPPDATA%\BUSCore\settings_reader.json` via `core/settings/reader_state.py` | Governs local FS and Drive provider behavior. |
 | Plugin enabled flags | Repo-local file-backed | Drifted | `data/settings_plugins.json` via `core/plugins/loader.py` | Lives outside AppData tree. |
 | Background index freshness | Repo-local file-backed | Drifted | `data/index_state.json` via `core/api/http.py` | Also outside AppData tree. |
@@ -65,8 +65,8 @@
 
 | Path | Status | Purpose |
 | --- | --- | --- |
-| `%LOCALAPPDATA%\\BUSCore\\config.json` | Canonical | Main app-runtime config for UI, launcher, updates, write gate, and persisted policy fields. |
-| `%LOCALAPPDATA%\\BUSCore\\app\\config.json` | Legacy | Non-authoritative compatibility input for recognized pre-reconciliation keys only. |
+| `%LOCALAPPDATA%\BUSCore\config.json` | Canonical | Main app-runtime config for UI, launcher, updates, write gate, and persisted policy fields. |
+| `%LOCALAPPDATA%\BUSCore\app\config.json` | Legacy | Non-authoritative compatibility input for recognized pre-reconciliation keys only. |
 | `%LOCALAPPDATA%\BUSCore\app\bus_mode.json` | Canonical | Primary persisted bus mode selector. |
 | `%LOCALAPPDATA%\BUSCore\app\bus_mode.flag` | Legacy | Alternate bus mode source. |
 | `%LOCALAPPDATA%\BUSCore\app\app.db` | Canonical | Production DB. |
@@ -109,8 +109,8 @@
 
 | Config authority | Status | Stored keys | Owner |
 | --- | --- | --- | --- |
-| `%LOCALAPPDATA%\\BUSCore\\config.json` | Canonical | `launcher.*`, `ui.theme`, `backup.default_directory`, `dev.writes_enabled`, `updates.*`, `policy.role`, `policy.plan_only` | `core/config/manager.py` |
-| `%LOCALAPPDATA%\\BUSCore\\app\\config.json` | Legacy compatibility input | Read-only fallback for `writes_enabled`, `role`, `plan_only` only when canonical values are absent | `core/config/manager.py` compatibility read path |
+| `%LOCALAPPDATA%\BUSCore\config.json` | Canonical | `launcher.*`, `ui.theme`, `backup.default_directory`, `dev.writes_enabled`, `updates.*`, `policy.role`, `policy.plan_only` | `core/config/manager.py` |
+| `%LOCALAPPDATA%\BUSCore\app\config.json` | Legacy compatibility input | Read-only fallback for `writes_enabled`, `role`, `plan_only` only when canonical values are absent | `core/config/manager.py` compatibility read path |
 | `%LOCALAPPDATA%\BUSCore\settings_reader.json` | Canonical | `enabled`, `local_roots`, `drive_includes.*` | `core/settings/reader_state.py` |
 | `config/policy.json` | Canonical | `version`, `mode`, `rules[]` | `core/runtime/policy.py` |
 | `config/plugins.json` | Canonical repo-shipped config | Discovery/command-bus plugin registry toggles | `core/registry/plugins_json.py` |
@@ -128,7 +128,7 @@
 
 ## Objective state risks
 
-- Canonical: durable app-runtime config authority is `%LOCALAPPDATA%\\BUSCore\\config.json`; `%LOCALAPPDATA%\\BUSCore\\app\\config.json` remains legacy compatibility input only.
+- Canonical: durable app-runtime config authority is `%LOCALAPPDATA%\BUSCore\config.json`; `%LOCALAPPDATA%\BUSCore\app\config.json` remains legacy compatibility input only.
 - Drifted: some live mutable state (`data/index_state.json`, `data/settings_plugins.json`) lives in repo `data/`, not AppData.
 - Drifted: session/auth state is split across cookie, AppState token manager, global `SESSION_TOKEN`, and a token file.
 - Drifted: `vendors.name` is declared unique in ORM metadata, but startup migration logic drops the unique-name index and recreates a non-unique one.

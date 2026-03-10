@@ -317,7 +317,7 @@
 
 
 * 
-**Config:** Update settings live in `%LOCALAPPDATA%\\BUSCore\\config.json` under `updates` (`enabled`, `channel`, `manifest_url`, `check_on_startup`). Strict SemVer required, and fetches time out at 4 seconds.
+**Config:** Update settings live in `%LOCALAPPDATA%\BUSCore\config.json` under `updates` (`enabled`, `channel`, `manifest_url`, `check_on_startup`). Strict SemVer required, and fetches time out at 4 seconds.
 
 
 * 
