@@ -3,18 +3,16 @@
 ## [Unreleased]
 
 ### Added
-- Introduced `internal_version` as a separate working-revision field in the canonical version source, initialized to `1.0.2.0`.
+- Added release/update drift guards that verify release tooling reads `core/version.py`, targets the real `BUS-Core-<VERSION>.exe` artifact name, and keeps `INTERNAL_VERSION` out of public SemVer consumers.
 
 ### Changed
-- Preserved strict SemVer `version` for release/update surfaces while documenting owner-only `version` bumps and agent-only `internal_version` bumps.
-- Locked runtime authority to one supported path set: `launcher.py` for native, `core.api.http:create_app` for HTTP/container, and Docker/Uvicorn `--factory` for container startup.
-- Removed legacy alternate runtime/package surfaces: `app.py`, `tgc/http.py`, `core/main.py`, and `tgc_controller.spec`.
-- Removed the conflicting alternate `/session/token` surface that existed only on non-canonical runtime files.
-- Clarified and enforced dev-route authority: `/dev/*` stays session-protected when `BUS_DEV=1` and is hidden as `404` when `BUS_DEV!=1`.
-- Synced the middleware/protected-router session token mirror to the AppState bootstrap token so `/session/token`, cookie validation, and persisted token state share one runtime value.
+- Bumped `INTERNAL_VERSION` from `1.0.2.2` to `1.0.2.3` without changing public `VERSION`.
+- Reconciled release authority so `.github/workflows/release-mirror.yml` reads `core/version.py`, fails unless the release tag equals `v{VERSION}`, and publishes manifest `latest.version` from canonical `VERSION`.
+- Repaired `scripts/release-check.ps1` to validate the real current release chain: `smoke_isolated.ps1`, `build_core.ps1`, and the expected `dist/BUS-Core.exe` plus `dist/BUS-Core-<VERSION>.exe` artifacts.
+- Aligned release/update documentation and README wording with actual behavior: Lighthouse remains the default manifest URL, checksum metadata may be published, and the app does not verify checksum or signature before surfacing `download_url`.
 
 ### Tests
-- Corrected the session-guard integration test so the unauthorized `/dev/writes` request is truly unauthenticated and added `/dev/paths` guard coverage in dev/prod mode.
+- Extended version drift coverage to assert release workflow tag/version checks, canonical asset naming, and truthful `release-check.ps1` wiring.
 
 ## [0.11.1] - 2026-03-08
 
@@ -220,5 +218,6 @@ Future releases will prioritize stability, bug fixes, and incremental polish rat
 - Deleted `/dev/license` and license.json handling.
 - Removed Pro-only features (RFQ, batch automation, scheduled runs).
 - **UI:** Removed license/tier badge and all “Pro/Upgrade” wording.
+
 
 

@@ -113,7 +113,7 @@
 | --- | --- | --- | --- |
 | Config split (`config.json` vs `app\config.json`) | Drifted | Settings, writes, and policy do not share one durable authority. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Session/token split | Drifted | Middleware, AppState token manager, global `SESSION_TOKEN`, and token file all participate. | `04_SECURITY_TRUST_AND_OPERATIONS.md` |
-| Version/update authority drift | Drifted | Release tags and manifest generation still derive public version from tag discipline instead of reading `core/version.py` directly; update manifest URL history also diverges in older docs. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
+| Version/update authority drift | Narrowed drift | `core/version.py` is now the public release/update source, and `.github/workflows/release-mirror.yml` machine-checks `tag == v{VERSION}` before publishing manifest metadata; remaining drift is limited to unsigned/unverified artifact metadata and release-history dependence on GitHub release assets. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
 | Repo-local mutable state | Drifted | Some live state is stored in repo `data/` instead of AppData. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Placeholder/stale UI surfaces | Drifted | `#/runs`, `#/import`, backup UI, and stub transaction widgets can mislead contract assumptions. | `02_API_AND_UI_CONTRACT_MAP.md` |
 | Runtime authority | Canonical | Legacy alternate entry surfaces were removed; `scripts/launch.ps1` remains dev/smoke-only around the canonical factory. | This file |
@@ -123,6 +123,7 @@
 - Refresh on: entrypoint changes, router remounting, new runtime services, trust-boundary changes, or path-authority changes.
 - Fastest invalidators: switching the canonical entrypoint, consolidating config/session authority, changing mounted route roots, or replacing the SPA shell.
 - Check alongside: `02_API_AND_UI_CONTRACT_MAP.md` for route truth, `03_DATA_CONFIG_AND_STATE_MODEL.md` for storage authority, `04_SECURITY_TRUST_AND_OPERATIONS.md` for auth/trust splits, `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for version/update authority.
+
 
 
 

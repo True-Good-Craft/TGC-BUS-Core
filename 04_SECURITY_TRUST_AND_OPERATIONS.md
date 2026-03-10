@@ -18,7 +18,7 @@
 | Dev-only gate | Canonical | `session_guard` path check plus `require_dev()` | `/dev/*` routes and detailed health | `/dev/*` stays hidden as 404 when disabled; when enabled, session auth still applies. |
 | Capability manifest validation | Canonical | HMAC signature in `core/services/capabilities/registry.py` | `/capabilities`, `/nodes.manifest.sync` | Local manifest trust only. |
 | Update manifest validation | Canonical | `core/services/update.py` | `/app/update/check` | URL/content-type/size/SemVer validation only. |
-| Release artifact validation | Drifted | No code path found | Update/install surface | Download URL is surfaced without checksum/signature verification. |
+| Release artifact validation | Drifted | No code path found | Update/install surface | Manifest metadata may include `sha256`, but the app still surfaces `download_url` without checksum or signature verification. |
 
 ## Trust model
 
@@ -126,7 +126,7 @@
 - Canonical: legacy alternate `/session/token` surfaces (`app.py`, `tgc/http.py`) were removed; `core/api/http.py` is the only supported bootstrap route.
 - Canonical: backup import/export paths enforce password-based decryption, exports-root path confinement, maintenance mode, and journal archiving during restore.
 - Canonical: update manifest fetch blocks localhost and literal private/loopback/link-local/unspecified IP hosts, rejects redirects, and caps response size.
-- Drifted: update/download path does not validate release artifact checksum or signature before surfacing `download_url` to the UI.
+- Drifted: update/download path does not validate release artifact checksum or signature before surfacing `download_url` to the UI; current docs must describe checksum/signature fields as informational only.
 
 ## Limited-confidence inference
 
@@ -137,4 +137,5 @@
 - Refresh on: token/session flow changes, route-guard changes, provider integration changes, restore/export changes, or policy enforcement changes.
 - Fastest invalidators: consolidating token authority, moving ledger/finance to explicit route-local guards, changing secrets storage, or altering update validation behavior.
 - Check alongside: `02_API_AND_UI_CONTRACT_MAP.md` for route ownership and `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for update-path release validation details.
+
 

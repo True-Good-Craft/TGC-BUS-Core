@@ -1,6 +1,6 @@
 # 🛠️ TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.0.2 **Updated:** 2026-03-09 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.0.2 **Updated:** 2026-03-10 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -88,6 +88,10 @@
 * Strict SemVer consumers MUST continue reading `VERSION` only.
 
 * `INTERNAL_VERSION` is not part of release tags, manifest generation, `latest.version`, update-check comparison logic, or any other strict SemVer validation path.
+
+* Release tags MUST equal `v{VERSION}`, and `.github/workflows/release-mirror.yml` machine-checks `tag == core/version.py::VERSION` before publishing manifest metadata.
+
+* Published manifest `latest.version` MUST come from `core/version.py::VERSION`; tags remain a checked release boundary, not a second public version authority.
 
 ---
 
@@ -1237,7 +1241,7 @@ https://lighthouse.buscore.ca/update/check
 
 4.2 Canonical manifest schema (minimum required fields)
 
-The stable manifest MUST be valid JSON and MUST include:
+The stable manifest MUST be valid JSON. Lighthouse may publish richer metadata, but BUS Core currently consumes only strict SemVer `latest.version` and `latest.download.url` during in-app update checks. Current hosted manifests include:
 
 min_supported (string, SemVer x.y.z)
 
@@ -1255,9 +1259,9 @@ latest.size_bytes (integer)
 
 The manifest is the single source of truth for “latest release” metadata.
 
-Updating to a new release requires changing only manifest fields (version/hash/size/url/notes link).
+Publishing a new release requires `core/version.py::VERSION`, the strict external release tag `v{VERSION}`, and hosted manifest metadata to agree. The release mirror workflow machine-checks that tag/version match before publishing manifest metadata.
 
-Manifest must never contain placeholders or non-JSON tokens.
+Manifest must never contain placeholders or non-JSON tokens. Checksum, size, and release-notes fields are currently informational to the app unless future code explicitly starts enforcing them.
 
 (5) LIGHTHOUSE SERVICE CONTRACT
 
@@ -1404,6 +1408,7 @@ This delta documents the implemented in-app Update Check system behavior and har
   - literal private, link-local, loopback, and `0.0.0.0` IP hosts
 - Manifest is JSON-only (`Content-Type` must include `application/json` when present).
 - Manifest read is streaming with a hard 64KB cap (`65536` bytes).
+- No checksum or signature verification is performed before surfacing `download_url` to the UI.
 
 ## UI Behavior
 - Settings includes update controls and manual “Check now”.
@@ -1709,6 +1714,9 @@ EULA viewer and settings layout styles updated to use BUS Core theme tokens:
 
 --border-color  
 --card-bg
+
+
+
 
 
 
