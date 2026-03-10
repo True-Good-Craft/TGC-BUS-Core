@@ -20,6 +20,7 @@
 import { apiGetJson } from '../token.js';
 
 let activeType = null; // 'in' | 'out' | null
+const STUB_NOTICE = 'Home transaction dashboard is placeholder only until the transactions module lands.';
 
 function drawDonut(el, totalCents, categories, color) {
   if (!el) return;
@@ -57,27 +58,72 @@ function drawDonut(el, totalCents, categories, color) {
   el.appendChild(svg);
 }
 
+function formatCurrency(cents) {
+  return `$${(Number(cents || 0) / 100).toFixed(2)}`;
+}
+
 async function fetchSummary() {
   return apiGetJson('/app/transactions/summary?window=30d');
 }
+
 async function fetchLast10() {
   const res = await apiGetJson('/app/transactions?limit=10');
-  return res.items || [];
+  return {
+    stub: !!res?.stub,
+    items: res?.items || [],
+  };
+}
+
+function setNetLine(text) {
+  const netLine = document.querySelector('[data-role="net-30"]');
+  if (netLine) netLine.textContent = text;
+}
+
+function renderStubDonuts() {
+  const placeholder = '<div style="display:grid;place-items:center;height:100%;font-size:12px;text-align:center;color:#9ca3af;">Placeholder only</div>';
+  const din  = document.querySelector('[data-role="donut-in"]');
+  const dout = document.querySelector('[data-role="donut-out"]');
+  if (din) din.innerHTML = placeholder;
+  if (dout) dout.innerHTML = placeholder;
+}
+
+function renderStubTable() {
+  const tbody = document.querySelector('[data-role="recent-transactions"] tbody');
+  if (!tbody) return;
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="4" style="color:#9ca3af;text-align:center;">Transaction dashboard pending. Home data is placeholder only.</td>
+    </tr>
+  `;
 }
 
 async function render() {
   const sum = await fetchSummary();
+  const recent = await fetchLast10();
+
+  if (sum?.stub || recent.stub) {
+    activeType = null;
+    setNetLine(STUB_NOTICE);
+    renderStubDonuts();
+    renderStubTable();
+    return;
+  }
+
   const din  = document.querySelector('[data-role="donut-in"]');
   const dout = document.querySelector('[data-role="donut-out"]');
-  drawDonut(din,  sum?.income?.total_cents,  sum?.income?.categories,  '#22c55e');
-  drawDonut(dout, sum?.expense?.total_cents, sum?.expense?.categories, '#ef4444');
-  await renderTable();
+  const income = Number(sum?.income?.total_cents || 0);
+  const expense = Number(sum?.expense?.total_cents || 0);
+
+  setNetLine(`Net (Last 30 Days): ${formatCurrency(income - expense)}`);
+  drawDonut(din, income, sum?.income?.categories, '#22c55e');
+  drawDonut(dout, expense, sum?.expense?.categories, '#ef4444');
+  await renderTable(recent.items);
 }
 
-async function renderTable() {
+async function renderTable(initialRows = null) {
   const tbody = document.querySelector('[data-role="recent-transactions"] tbody');
   if (!tbody) return;
-  let rows = await fetchLast10();
+  let rows = Array.isArray(initialRows) ? initialRows : (await fetchLast10()).items;
   if (activeType === 'in')  rows = rows.filter(r => r.type === 'revenue');
   if (activeType === 'out') rows = rows.filter(r => r.type === 'expense');
   tbody.innerHTML = '';
@@ -106,4 +152,3 @@ window.addEventListener('hashchange', async () => {
   const route = (location.hash || '#/home').replace(/^#\/?/, '').split(/[\/?]/)[0] || 'home';
   if (route === 'home') { try { await render(); } catch (_) {} }
 });
-

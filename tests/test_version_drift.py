@@ -101,6 +101,13 @@ def test_release_check_validates_current_canonical_chain():
     assert "smoke_isolated.ps1" in script, (
         "scripts/release-check.ps1 must run the canonical isolated smoke script."
     )
+    assert "Smoke script failed:" in script, (
+        "scripts/release-check.ps1 must hard-fail when smoke_isolated.ps1 exits non-zero."
+    )
+    assert "Build script failed:" in script, (
+        "scripts/release-check.ps1 must hard-fail when build_core.ps1 exits non-zero."
+    )
     assert "BUS-Core.exe" in script and "BUS-Core-{0}.exe" in script, (
         "scripts/release-check.ps1 must assert the real current build artifact names."
     )
+

@@ -23,7 +23,8 @@
 VERSION = "1.0.2"
 
 # Internal working revision. Agents may bump this on meaningful repo changes.
-INTERNAL_VERSION = "1.0.2.7"
+INTERNAL_VERSION = "1.0.2.8"
 
 __all__ = ["VERSION", "INTERNAL_VERSION"]
+
 

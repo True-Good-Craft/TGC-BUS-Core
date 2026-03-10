@@ -39,7 +39,14 @@ Write-Host 'BUS Core Release Check (smoke -> build -> artifact assertions)' -For
 Write-Host "[INFO] Canonical VERSION: $Version" -ForegroundColor DarkGray
 
 powershell -NoProfile -ExecutionPolicy Bypass -File $SmokeScript
+if ($LASTEXITCODE -ne 0) {
+  throw "Smoke script failed: $SmokeScript (exit code $LASTEXITCODE)"
+}
+
 powershell -NoProfile -ExecutionPolicy Bypass -File $BuildScript
+if ($LASTEXITCODE -ne 0) {
+  throw "Build script failed: $BuildScript (exit code $LASTEXITCODE)"
+}
 
 $PrimaryArtifact = Join-Path $DistDir 'BUS-Core.exe'
 $VersionedArtifact = Join-Path $DistDir ("BUS-Core-{0}.exe" -f $Version)
@@ -55,5 +62,3 @@ Write-Host '[PASS] Release check passed.' -ForegroundColor Green
 Write-Host '[INFO] Verified artifacts:' -ForegroundColor DarkGray
 Write-Host "  $PrimaryArtifact"
 Write-Host "  $VersionedArtifact"
-
-

@@ -221,8 +221,15 @@ function Extract-Movements {
   return @()
 }
 
+function Get-LocalAppDataPath {
+  if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    return $env:LOCALAPPDATA
+  }
+  return [Environment]::GetFolderPath('LocalApplicationData')
+}
+
 $script:RunLabel = (Get-Date -Format "yyyyMMddHHmmss")
-$localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+$localAppData = Get-LocalAppDataPath
 
 # Establish session first (avoid 401s on protected endpoints)
 $tokResp = Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") -WebSession $script:Session
@@ -281,6 +288,10 @@ function Get-MovementsByItem {
 }
 
 function Get-JournalDir {
+  if (-not [string]::IsNullOrWhiteSpace($env:BUS_DB)) {
+    $appDir = Split-Path -Parent $env:BUS_DB
+    return Join-Path $appDir 'data\\journals'
+  }
   $appDir = Join-Path $localAppData 'BUSCore\\app'
   return Join-Path $appDir 'data\\journals'
 }
@@ -747,7 +758,7 @@ Step "8. v0.8.3 Journals + Encrypted Backup/Restore"
 # A) Export DB (AES-GCM, password)
 Info "Exporting encrypted backup..."
 $pw = "smoke-083!"
-$localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+$localAppData = Get-LocalAppDataPath
 # --- Export & path assertions (PS 5.1-safe, case/slash agnostic) ------------
 $resp = Invoke-Json 'POST' "$BaseUrl/app/db/export" @{ password = $pw }
 if (-not $resp.ok) {
@@ -869,8 +880,7 @@ if ($mvAfterRestore -eq $mvBaseline) { Pass "Movement id reverted to baseline af
 
 # F) Journal archiving on restore
 Info "Checking journal archiving..."
-$appDir = Join-Path $localAppData 'BUSCore\\app'
-$journalDir = Join-Path $appDir 'data\\journals'
+$journalDir = Get-JournalDir
 $invArchive = Get-ChildItem -Path $journalDir -Filter 'inventory.jsonl.pre-restore*' -ErrorAction SilentlyContinue
 if (-not $invArchive -or $invArchive.Count -lt 1) {
   $archiveDir = Join-Path $journalDir 'archive'
