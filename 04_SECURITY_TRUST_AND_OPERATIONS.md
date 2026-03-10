@@ -15,7 +15,7 @@
 | Route-local token checks | Drifted | `tgc.security.require_token_ctx` and `core.api.http.require_token_ctx` | Selected modules/routes | Two live token-check implementations exist. |
 | Write gate | Canonical | `require_write_access()` / `require_writes()` | Writes and selected admin routes | Controlled by app state plus env/config. |
 | Owner/tester commit gate | Canonical | `require_owner_commit()` | Selected write operations | Strict role/plan enforcement activates only when `BUS_POLICY_ENFORCE=1`. |
-| Dev-only gate | Canonical | `require_dev()` | Dev routes and detailed health | Hidden as 404 when disabled. |
+| Dev-only gate | Canonical | `session_guard` path check plus `require_dev()` | `/dev/*` routes and detailed health | `/dev/*` stays hidden as 404 when disabled; when enabled, session auth still applies. |
 | Capability manifest validation | Canonical | HMAC signature in `core/services/capabilities/registry.py` | `/capabilities`, `/nodes.manifest.sync` | Local manifest trust only. |
 | Update manifest validation | Canonical | `core/services/update.py` | `/app/update/check` | URL/content-type/size/SemVer validation only. |
 | Release artifact validation | Drifted | No code path found | Update/install surface | Download URL is surfaced without checksum/signature verification. |
@@ -45,10 +45,14 @@
 | Session bootstrap route | Canonical | `GET /session/token` in `core/api/http.py` | Returns `{ token }` and sets cookie. |
 | AppState token manager | Canonical | `tgc/tokens.py`, `tgc/state.py` | `TokenManager.current()` is the token source for `GET /session/token`. |
 | Route-local token dependency in domain modules | Canonical | `tgc/security.py` | Checks against `AppState.tokens`. |
-| Route-local token dependency in protected router | Drifted | `core/api/http.py::require_token_ctx()` | Checks against global `SESSION_TOKEN`. |
-| Global session token | Drifted | `core/api/http.py::SESSION_TOKEN` | Separate live authority from AppState token manager. |
+| Route-local token dependency in protected router | Drifted | `core/api/http.py::require_token_ctx()` | Checks against mirrored `SESSION_TOKEN`; normal bootstrap keeps it aligned with `AppState.tokens`. |
+| Global session token | Secondary | `core/api/http.py::SESSION_TOKEN` | Runtime mirror persisted to `session_token.txt` for middleware/protected-router validation; not a separate public bootstrap surface. |
 | Token file | Secondary | `%LOCALAPPDATA%\BUSCore\app\data\session_token.txt` | Written by `build_app()` / bootstrap path. |
 | Legacy alternate token surfaces | Removed | `app.py`, `tgc/http.py` | Conflicting parallel `/session/token` contracts were removed from the repo. |
+
+- Intended session contract: `GET /session/token` is the only bootstrap surface, it sets the `bus_session` cookie, and non-public routes remain cookie-authenticated even when `BUS_DEV=1`.
+- Intended dev-route contract: `/dev/*` returns `404` whenever `BUS_DEV!=1`; when `BUS_DEV=1`, those routes are available but still require a valid session cookie.
+
 
 ### Route-level enforcement inconsistencies
 

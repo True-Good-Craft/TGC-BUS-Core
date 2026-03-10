@@ -367,7 +367,11 @@
 
 ## 9. Security & Diagnostics
 
-* **Dev Mode:** Enabled via `BUS_DEV=1`. Enables `/dev/*` routes and detailed error traces.
+* **Session Authority:** `GET /session/token` is the canonical session bootstrap surface. It returns the current token and sets the `bus_session` cookie. Non-public routes require that cookie via the global session guard.
+
+* **Dev Mode:** `BUS_DEV=1` exposes dev-only surfaces and detailed error traces, but it does NOT bypass session auth.
+
+* **`/dev/*` Guarding:** When `BUS_DEV` is not `1`, `/dev/*` routes MUST return `404` to stay hidden. When `BUS_DEV=1`, `/dev/*` routes still require a valid session cookie. `GET /health/detailed` follows the same dev-only policy even though it is not under `/dev/*`.
 
 
 * **Backups:** Encrypted AES-GCM backups. Restore process triggers maintenance mode and journal archiving.

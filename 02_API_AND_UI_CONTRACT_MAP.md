@@ -147,11 +147,12 @@
 | `GET` | `/oauth/google/callback` | Canonical | Exchange code for refresh token. | `core/api/http.py` |
 | `POST` | `/oauth/google/revoke` | Canonical | Revoke/clear refresh token. | `core/api/http.py` |
 | `GET` | `/oauth/google/status` | Canonical | Return Google connection status. | `core/api/http.py` |
-| `GET` | `/dev/writes` | Secondary | Dev-only writes-enabled flag. | `core/api/routes/dev.py` |
-| `POST` | `/dev/writes` | Secondary | Stubbed dev endpoint; returns 404. | `core/api/routes/dev.py` |
-| `GET` | `/dev/db/where` | Secondary | Dev-only DB path diagnostic. | `core/api/routes/dev.py` |
-| `GET` | `/dev/journal/info` | Secondary | Tail inventory journal. | `core/api/http.py` |
-| `GET` | `/dev/ping_plugin` | Secondary | Windows sandbox/plugin-host handshake check. | `core/api/http.py` |
+| `GET` | `/dev/writes` | Secondary | Dev-only writes-enabled flag; `404` when `BUS_DEV!=1`, session auth required when `BUS_DEV=1`. | `core/api/routes/dev.py` |
+| `POST` | `/dev/writes` | Secondary | Stubbed dev endpoint; returns `404`; same dev/auth guard model as other `/dev/*` routes. | `core/api/routes/dev.py` |
+| `GET` | `/dev/db/where` | Secondary | Dev-only DB path diagnostic; `404` when `BUS_DEV!=1`, session auth required when `BUS_DEV=1`. | `core/api/routes/dev.py` |
+| `GET` | `/dev/paths` | Secondary | Dev-only path diagnostic; `404` when `BUS_DEV!=1`, session auth required when `BUS_DEV=1`. | `core/api/http.py` |
+| `GET` | `/dev/journal/info` | Secondary | Tail inventory journal; `404` when `BUS_DEV!=1`, session auth required when `BUS_DEV=1`. | `core/api/http.py` |
+| `GET` | `/dev/ping_plugin` | Secondary | Windows sandbox/plugin-host handshake check; `404` when `BUS_DEV!=1`, session auth required when `BUS_DEV=1`. | `core/api/http.py` |
 
 ## Legacy wrappers and aliases
 

@@ -10,6 +10,11 @@
 - Locked runtime authority to one supported path set: `launcher.py` for native, `core.api.http:create_app` for HTTP/container, and Docker/Uvicorn `--factory` for container startup.
 - Removed legacy alternate runtime/package surfaces: `app.py`, `tgc/http.py`, `core/main.py`, and `tgc_controller.spec`.
 - Removed the conflicting alternate `/session/token` surface that existed only on non-canonical runtime files.
+- Clarified and enforced dev-route authority: `/dev/*` stays session-protected when `BUS_DEV=1` and is hidden as `404` when `BUS_DEV!=1`.
+- Synced the middleware/protected-router session token mirror to the AppState bootstrap token so `/session/token`, cookie validation, and persisted token state share one runtime value.
+
+### Tests
+- Corrected the session-guard integration test so the unauthorized `/dev/writes` request is truly unauthenticated and added `/dev/paths` guard coverage in dev/prod mode.
 
 ## [0.11.1] - 2026-03-08
 

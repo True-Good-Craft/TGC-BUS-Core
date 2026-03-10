@@ -401,6 +401,9 @@ PUBLIC_PREFIXES = (
 )
 
 
+def _is_dev_route_path(path: str) -> bool:
+    return path == "/dev" or path.startswith("/dev/")
+
 def _buscore_writeflag_startup() -> None:
     app.state.allow_writes = _calc_default_allow_writes()
 
@@ -486,24 +489,53 @@ def _root():
 TOKEN_FILE = DATA_DIR / "session_token.txt"
 
 
+def _persist_session_token(token: str) -> str:
+    global SESSION_TOKEN
+    SESSION_TOKEN = token
+    try:
+        TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TOKEN_FILE.write_text(token, encoding="utf-8")
+    except Exception:
+        pass
+    return token
+
+
+def _runtime_session_token() -> str | None:
+    state = getattr(app.state, "app_state", None)
+    tokens = getattr(state, "tokens", None)
+    if tokens is None:
+        return None
+    try:
+        token = tokens.current()
+    except Exception:
+        return None
+    token_text = str(token or "").strip()
+    return token_text or None
+
+
 def _load_or_create_token() -> str:
+    runtime_token = _runtime_session_token()
+    if runtime_token:
+        return _persist_session_token(runtime_token)
     try:
         if TOKEN_FILE.exists():
-            return TOKEN_FILE.read_text(encoding="utf-8").strip()
+            token = TOKEN_FILE.read_text(encoding="utf-8").strip()
+            if token:
+                return _persist_session_token(token)
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
         tok = secrets.token_urlsafe(32)
-        TOKEN_FILE.write_text(tok, encoding="utf-8")
-        return tok
+        return _persist_session_token(tok)
     except Exception:
-        return secrets.token_urlsafe(32)
-
+        tok = secrets.token_urlsafe(32)
+        global SESSION_TOKEN
+        SESSION_TOKEN = tok
+        return tok
 
 @app.get("/session/token")
 def session_token(request: Request):
     state = get_state(request)
     tok = state.tokens.current()
-    global SESSION_TOKEN
-    SESSION_TOKEN = tok
+    _persist_session_token(tok)
     resp = JSONResponse({"token": tok})
     resp.set_cookie(
         key=state.settings.session_cookie_name,
@@ -763,6 +795,8 @@ async def _require_session(req: Request):
 @app.middleware("http")
 async def session_guard(request: Request, call_next):
     p = request.url.path
+    if _is_dev_route_path(p) and not is_dev():
+        return JSONResponse(status_code=404, content=normalize_http_exc("Not found"))
     if request.method == "OPTIONS":
         return await call_next(request)
     # Make static UI, session bootstrap, and brand assets public
@@ -2186,9 +2220,8 @@ def build_app():
     policy_path = Path("config/policy.json")
     CORE = CoreAlpha(policy_path=policy_path)
     RUN_ID = CORE.run_id
-    SESSION_TOKEN = secrets.token_urlsafe(24)
+    SESSION_TOKEN = _load_or_create_token()
     DATA.mkdir(parents=True, exist_ok=True)
-    (DATA / "session_token.txt").write_text(SESSION_TOKEN, encoding="utf-8")
     CORE.configure_session_token(SESSION_TOKEN)
     app.state.broker = get_broker()
     LOG_FILE = LOGS / f"core_{RUN_ID}.log"
