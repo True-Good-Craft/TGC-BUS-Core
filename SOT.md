@@ -377,6 +377,10 @@
 
 * **Session Authority:** `GET /session/token` is the canonical session bootstrap surface. It returns the current token and sets the `bus_session` cookie. Non-public routes require that cookie via the global session guard.
 
+* **Validator Authority:** `core.api.http` (`session_guard`, `validate_session_token`, `require_token_ctx`) is the canonical protected-route validator. `tgc.security.require_token_ctx` is a compatibility wrapper and must delegate to the canonical path.
+
+* **Token Mirrors:** `SESSION_TOKEN` and `session_token.txt` are secondary/bootstrap mirrors and are not the canonical runtime validation authority.
+
 * **Dev Mode:** `BUS_DEV=1` exposes dev-only surfaces and detailed error traces, but it does NOT bypass session auth.
 
 * **`/dev/*` Guarding:** When `BUS_DEV` is not `1`, `/dev/*` routes MUST return `404` to stay hidden. When `BUS_DEV=1`, `/dev/*` routes still require a valid session cookie. `GET /health/detailed` follows the same dev-only policy even though it is not under `/dev/*`.

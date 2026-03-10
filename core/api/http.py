@@ -513,6 +513,18 @@ def _runtime_session_token() -> str | None:
     return token_text or None
 
 
+def _expected_session_token() -> str | None:
+    # AppState.tokens is the canonical runtime source. Global/file mirrors remain
+    # as bootstrap compatibility only when app state is unavailable.
+    runtime_token = _runtime_session_token()
+    if runtime_token:
+        return runtime_token
+    expected = str(SESSION_TOKEN or "").strip()
+    if expected:
+        return expected
+    return _load_or_create_token()
+
+
 def _load_or_create_token() -> str:
     runtime_token = _runtime_session_token()
     if runtime_token:
@@ -731,14 +743,26 @@ def _require_core() -> CoreAlpha:
     return CORE
 
 
+def _session_cookie_names(req: Request) -> tuple[str, ...]:
+    req_app = req.scope.get("app")
+    state = getattr(getattr(req_app, "state", None), "app_state", None)
+    settings = getattr(state, "settings", None)
+    configured_name = str(getattr(settings, "session_cookie_name", "") or "").strip()
+    names: list[str] = []
+    for name in (configured_name, "bus_session", "session", "sessionid"):
+        if name and name not in names:
+            names.append(name)
+    return tuple(names)
+
+
 def _extract_token(req: Request) -> str | None:
-    # Cookie-only session per SoT
-    token = (
-        req.cookies.get("bus_session")
-        or req.cookies.get("session")
-        or req.cookies.get("sessionid")
-    )
-    return token
+    # Cookie-only session per SoT. The configured cookie name stays aligned with
+    # the bootstrap route, while legacy fallbacks remain accepted.
+    for cookie_name in _session_cookie_names(req):
+        token = req.cookies.get(cookie_name)
+        if token:
+            return token
+    return None
 
 
 def get_session_token(request: Request) -> str | None:
@@ -751,7 +775,9 @@ def get_session_token(request: Request) -> str | None:
 def validate_session_token(token: Optional[str]) -> bool:
     if not token:
         return False
-    expected = SESSION_TOKEN or _load_or_create_token()
+    expected = _expected_session_token()
+    if not expected:
+        return False
     try:
         return hmac.compare_digest(token, expected)
     except Exception:
@@ -2244,4 +2270,3 @@ __all__ = [
     "create_app",
     "SESSION_TOKEN",
 ]
-

@@ -21,7 +21,7 @@
 | Background index freshness | Repo-local file-backed | Drifted | `data/index_state.json` via `core/api/http.py` | Also outside AppData tree. |
 | First-run / demo readiness | Derived runtime state | Canonical | `GET /app/system/state` from DB counts + bus mode | UI adds secondary local flags on top. |
 | Onboarding complete / EULA accepted / imperial mode | localStorage/UI state | Secondary | `core/ui/app.js` | UI-facing state only; not the source of business truth. |
-| Session/auth state | Cookie + in-memory + file-backed | Drifted | `session_guard`, `AppState.tokens`, global `SESSION_TOKEN`, `session_token.txt` | Split across multiple live authorities. |
+| Session/auth state | Cookie + in-memory + file-backed | Narrowed drift | `core.api.http`, `AppState.tokens`, global `SESSION_TOKEN`, `session_token.txt`, `tgc.security.require_token_ctx` | `core.api.http` is the canonical validator authority, `tgc.security.require_token_ctx` is a compatibility wrapper, and the global/file tokens remain secondary mirrors. |
 | Capability manifest | File-backed generated state | Canonical | `%LOCALAPPDATA%\BUSCore\state\system_manifest.json` | Signed with local HMAC key. |
 
 ## Persistence model
@@ -130,7 +130,7 @@
 
 - Canonical: durable app-runtime config authority is `%LOCALAPPDATA%\BUSCore\config.json`; `%LOCALAPPDATA%\BUSCore\app\config.json` remains legacy compatibility input only.
 - Drifted: some live mutable state (`data/index_state.json`, `data/settings_plugins.json`) lives in repo `data/`, not AppData.
-- Drifted: session/auth state is split across cookie, AppState token manager, global `SESSION_TOKEN`, and a token file.
+- Narrowed drift: validator authority is canonical in `core.api.http`, but session/auth state still spans cookie, `AppState.tokens`, global `SESSION_TOKEN`, and a token file.
 - Drifted: `vendors.name` is declared unique in ORM metadata, but startup migration logic drops the unique-name index and recreates a non-unique one.
 - Secondary: onboarding suppression and EULA acceptance are localStorage flags layered on top of backend first-run truth.
 - Secondary: SQL migration snippets exist, but runtime schema authority is still primarily code-driven startup logic.
@@ -140,4 +140,3 @@
 - Refresh on: schema changes, path helper changes, config-key additions/removals, onboarding/first-run logic changes, or state-file relocations.
 - Fastest invalidators: changing canonical config load rules, moving repo-local state into AppData, changing bus-mode resolution, or replacing startup migration logic.
 - Check alongside: `01_SYSTEM_MAP.md` for high-level authority location and `04_SECURITY_TRUST_AND_OPERATIONS.md` for session/token and write-gate implications.
-

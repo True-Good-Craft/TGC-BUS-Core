@@ -12,7 +12,7 @@
 | Concern | Status | Enforced by | Scope | Notes |
 | --- | --- | --- | --- | --- |
 | Session gate for non-public routes | Canonical | `session_guard` middleware | Broad route surface | Main route-entry auth barrier. |
-| Route-local token checks | Drifted | `tgc.security.require_token_ctx` and `core.api.http.require_token_ctx` | Selected modules/routes | Two live token-check implementations exist. |
+| Route-local token checks | Canonical with compatibility wrapper | `core.api.http.require_token_ctx` plus `tgc.security.require_token_ctx` | Selected modules/routes | `core.api.http` owns validation; `tgc.security.require_token_ctx` is a compatibility wrapper only. |
 | Write gate | Canonical | `require_write_access()` / `require_writes()` | Writes and selected admin routes | Controlled by app state plus env/config. |
 | Owner/tester commit gate | Canonical | `require_owner_commit()` | Selected write operations | Strict role/plan enforcement activates only when `BUS_POLICY_ENFORCE=1`. |
 | Dev-only gate | Canonical | `session_guard` path check plus `require_dev()` | `/dev/*` routes and detailed health | `/dev/*` stays hidden as 404 when disabled; when enabled, session auth still applies. |
@@ -43,10 +43,10 @@
 | Authority | Status | Location | Notes |
 | --- | --- | --- | --- |
 | Session bootstrap route | Canonical | `GET /session/token` in `core/api/http.py` | Returns `{ token }` and sets cookie. |
-| AppState token manager | Canonical | `tgc/tokens.py`, `tgc/state.py` | `TokenManager.current()` is the token source for `GET /session/token`. |
-| Route-local token dependency in domain modules | Canonical | `tgc/security.py` | Checks against `AppState.tokens`. |
-| Route-local token dependency in protected router | Drifted | `core/api/http.py::require_token_ctx()` | Checks against mirrored `SESSION_TOKEN`; normal bootstrap keeps it aligned with `AppState.tokens`. |
-| Global session token | Secondary | `core/api/http.py::SESSION_TOKEN` | Runtime mirror persisted to `session_token.txt` for middleware/protected-router validation; not a separate public bootstrap surface. |
+| AppState token manager | Canonical | `tgc/tokens.py`, `tgc/state.py` | `TokenManager.current()` is the runtime token source that the canonical validator compares against. |
+| Validator authority | Canonical | `core.api.http::{session_guard, validate_session_token, require_token_ctx}` | Middleware, protected-router deps, and direct auth deps all flow through this path. |
+| Route-local token dependency compatibility shim | Compatibility wrapper | `tgc.security.require_token_ctx` | Delegates to `core.api.http.require_token_ctx()` and carries no independent validation logic. |
+| Global session token | Secondary | `core/api/http.py::SESSION_TOKEN` | Runtime mirror persisted to `session_token.txt`; fallback/bootstrap state only, not the normal validator authority. |
 | Token file | Secondary | `%LOCALAPPDATA%\BUSCore\app\data\session_token.txt` | Written by `build_app()` / bootstrap path. |
 | Legacy alternate token surfaces | Removed | `app.py`, `tgc/http.py` | Conflicting parallel `/session/token` contracts were removed from the repo. |
 
@@ -119,7 +119,7 @@
 
 ## Evidence-backed findings
 
-- Drifted: token/session authority is split between middleware cookie checks, `AppState.tokens`, global `SESSION_TOKEN`, and a token file.
+- Narrowed drift: `core.api.http` now owns validator authority, but runtime token state still spans `AppState.tokens`, global `SESSION_TOKEN`, and a token file.
 - Drifted: `ledger_api` and `finance_api` rely on global middleware rather than the explicit route-local auth/write pattern used by other write domains.
 - Drifted: CORS is configured with `allow_origins=["*"]` and `allow_methods=["*"]` on the local server.
 - Drifted: `core/services/capabilities/registry.py` injects a `license` block with `PolyForm-Noncommercial-1.0.0`, which conflicts with the repo-wide AGPL labeling elsewhere.
@@ -137,4 +137,3 @@
 - Refresh on: token/session flow changes, route-guard changes, provider integration changes, restore/export changes, or policy enforcement changes.
 - Fastest invalidators: consolidating token authority, moving ledger/finance to explicit route-local guards, changing secrets storage, or altering update validation behavior.
 - Check alongside: `02_API_AND_UI_CONTRACT_MAP.md` for route ownership and `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for update-path release validation details.
-

@@ -6,9 +6,12 @@
 - Added config-authority drift guards that assert `%LOCALAPPDATA%\BUSCore\config.json` is the canonical app-runtime config file, `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only, and startup/write-policy code follows that contract.
 - Added targeted config behavior tests for canonical write-gate persistence, canonical policy persistence, and one-way legacy fallback reads.
 - Added release/update drift guards that verify release tooling reads `core/version.py`, targets the real `BUS-Core-<VERSION>.exe` artifact name, and keeps `INTERNAL_VERSION` out of public SemVer consumers.
+- Added auth-authority drift guards that verify `core.api.http` remains the canonical validator path, `tgc.security.require_token_ctx` is compatibility-only, and the authority docs stay aligned.
 
 ### Changed
-- Bumped `INTERNAL_VERSION` from `1.0.2.4` to `1.0.2.5` without changing public `VERSION`.
+- Bumped `INTERNAL_VERSION` from `1.0.2.5` to `1.0.2.6` without changing public `VERSION`.
+- Reconciled auth validator authority so `core.api.http` owns protected-route validation, `AppState.tokens` is the canonical runtime token source, and `tgc.security.require_token_ctx` now delegates as a compatibility wrapper.
+- Demoted `SESSION_TOKEN` and `session_token.txt` to secondary bootstrap/runtime mirrors instead of the normal request-validation authority.
 - Reconciled config authority so `%LOCALAPPDATA%\BUSCore\config.json` is the single app-runtime settings authority, while `%LOCALAPPDATA%\BUSCore\app\config.json` is read only as a one-way legacy fallback for recognized older keys.
 - Moved durable `writes_enabled`, `role`, and `plan_only` persistence under the canonical root config file without changing public `/app/config` or `/policy` route shapes.
 - Aligned `SOT.md`, the config/security authority maps, and the Settings UI copy with the exact canonical Windows path strings the config-authority drift guards enforce.
@@ -18,6 +21,7 @@
 
 ### Tests
 - Extended config drift coverage to assert canonical path ownership, one-way legacy fallback behavior, and config startup wiring.
+- Added auth-authority coverage for wrapper delegation, runtime-token precedence, configured session cookie extraction, shared route protection behavior, and code/docs drift alignment.
 - Extended version drift coverage to assert release workflow tag/version checks, canonical asset naming, and truthful `release-check.ps1` wiring.
 
 ## [0.11.1] - 2026-03-08
@@ -224,4 +228,3 @@ Future releases will prioritize stability, bug fixes, and incremental polish rat
 - Deleted `/dev/license` and license.json handling.
 - Removed Pro-only features (RFQ, batch automation, scheduled runs).
 - **UI:** Removed license/tier badge and all “Pro/Upgrade” wording.
-

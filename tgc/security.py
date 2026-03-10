@@ -3,18 +3,14 @@
 
 from __future__ import annotations
 
-from fastapi import HTTPException, Request, Response, status
-
-from tgc.tokens import TokenManager  # reserved for typing/future helpers
-from tgc.state import get_state
+from fastapi import Request, Response
 
 
 async def require_token_ctx(request: Request):
-    state = get_state(request)
-    s = state.settings
-    tok = getattr(request.state, "session", None) or request.cookies.get(s.session_cookie_name) or request.cookies.get("session") or request.cookies.get("sessionid")
-    if not state.tokens.check(tok):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    # Compatibility wrapper: core.api.http owns request auth validation.
+    from core.api.http import require_token_ctx as canonical_require_token_ctx
+
+    canonical_require_token_ctx(request)
     return None  # context placeholder
 
 
