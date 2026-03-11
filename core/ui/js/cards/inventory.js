@@ -132,19 +132,10 @@ function formatItemPrice(item) {
 function toast(message, tone = 'ok') {
   const el = document.createElement('div');
   el.textContent = message;
-  el.style.position = 'fixed';
-  el.style.bottom = '20px';
-  el.style.right = '20px';
-  el.style.padding = '12px 14px';
-  el.style.borderRadius = '10px';
-  el.style.background = tone === 'error' ? '#5b1f1f' : '#1f3b2f';
-  el.style.color = 'var(--fg)';
-  el.style.boxShadow = '0 8px 20px rgba(0,0,0,0.4)';
-  el.style.zIndex = '9999';
+  el.className = `inventory-toast inventory-toast--${tone === 'error' ? 'error' : 'ok'}`;
   document.body.appendChild(el);
   setTimeout(() => {
-    el.style.opacity = '0';
-    el.style.transition = 'opacity 0.3s ease';
+    el.classList.add('inventory-toast--hide');
     setTimeout(() => el.remove(), 300);
   }, 2000);
 }
@@ -187,6 +178,10 @@ function formatOnHandDisplay(item) {
 function renderTable(state) {
   const tbody = state.tableBody;
   tbody.innerHTML = '';
+  if (state.countEl) {
+    const n = state.items.length;
+    state.countEl.textContent = `${n} item${n === 1 ? '' : 's'}`;
+  }
   state.items.forEach((item) => {
     const row = el('tr', { 'data-role': 'item-row', 'data-id': item.id });
     const vendorText = item.vendor?.name || item.vendor || '—';
@@ -246,11 +241,7 @@ export async function _mountInventory(container) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     const card = document.createElement('div');
-    card.className = 'modal-card';
-    card.style.maxWidth = '420px';
-    card.style.background = 'var(--surface)';
-    card.style.border = '1px solid var(--border)';
-    card.style.borderRadius = '10px';
+    card.className = 'modal-card inventory-modal-card inventory-modal-card--narrow';
 
     const title = document.createElement('div');
     title.className = 'modal-title';
@@ -278,6 +269,7 @@ export async function _mountInventory(container) {
       opt.value = it.id;
       opt.textContent = it.name || `Item #${it.id}`;
       opt.dataset.uom = (it.uom ?? it.display_unit ?? '').trim();
+      opt.dataset.dimension = String(it.dimension || '').trim().toLowerCase();
       itemSelect.appendChild(opt);
     });
     if (prefill?.item_id) itemSelect.value = String(prefill.item_id);
@@ -368,7 +360,16 @@ export async function _mountInventory(container) {
 
     function updatePriceVisibility() {
       const reason = String(reasonSelect.value || 'sold');
-      priceRow.style.display = (reason === 'sold') ? '' : 'none';
+      priceRow.classList.toggle('hidden', reason !== 'sold');
+      const opt = itemSelect.options[itemSelect.selectedIndex];
+      const dim = String(opt?.dataset?.dimension || '').trim().toLowerCase();
+      if (reason === 'sold' && dim && dim !== 'count') {
+        errorBanner.textContent = 'Sold reason is only supported for count items. Use loss/theft/other for non-count stock out.';
+        errorBanner.hidden = false;
+      } else if (errorBanner.textContent.startsWith('Sold reason is only supported for count items')) {
+        errorBanner.textContent = '';
+        errorBanner.hidden = true;
+      }
       if (reason === 'sold') {
         const itemId = Number(itemSelect.value || 0);
         const item = (window.__inventory_items || []).find((x) => Number(x.id) === itemId);
@@ -410,16 +411,22 @@ export async function _mountInventory(container) {
       const qtyVal = String(decimalString(qtyInput.value));
       const reason = String(reasonSelect.value || 'sold');
       const note = noteInput.value ? noteInput.value : null;
+      const opt = itemSelect.options[itemSelect.selectedIndex];
+      const dim = String(opt?.dataset?.dimension || '').trim().toLowerCase();
 
       if (!Number.isInteger(itemId) || Number(qtyVal) <= 0) {
         errorBanner.textContent = 'Select an item and enter a positive quantity.';
         errorBanner.hidden = false;
         return;
       }
+      if (reason === 'sold' && dim && dim !== 'count') {
+        errorBanner.textContent = 'Sold reason is only supported for count items. Use loss/theft/other for non-count stock out.';
+        errorBanner.hidden = false;
+        return;
+      }
 
       try {
         await ensureToken();
-        const opt = itemSelect.options[itemSelect.selectedIndex];
         const uom = (opt?.dataset?.uom || opt?.dataset?.display_unit || opt?.dataset?.unit || '').trim();
         if (!uom) {
           errorBanner.textContent = 'UoM missing; cannot proceed.';
@@ -456,11 +463,7 @@ export async function _mountInventory(container) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     const card = document.createElement('div');
-    card.className = 'modal-card';
-    card.style.maxWidth = '460px';
-    card.style.background = 'var(--surface)';
-    card.style.border = '1px solid var(--border)';
-    card.style.borderRadius = '10px';
+    card.className = 'modal-card inventory-modal-card inventory-modal-card--wide';
 
     const title = document.createElement('div');
     title.className = 'modal-title';
@@ -586,7 +589,7 @@ export async function _mountInventory(container) {
     function updateRestockVisibility() {
       const restock = restockInput.checked;
       const related = relatedInput.value.trim();
-      restockCostRow.style.display = (restock && !related) ? '' : 'none';
+      restockCostRow.classList.toggle('hidden', !(restock && !related));
     }
 
     const updateRefundUomState = () => {
@@ -674,6 +677,15 @@ export async function _mountInventory(container) {
 
   container.innerHTML = '';
   const root = container;
+  root.classList.add('inventory-shell');
+
+  const countEl = el('span', { class: 'inventory-count-pill', text: '0 items' });
+  const header = el('header', { class: 'inventory-header' }, [
+    el('div', { class: 'inventory-title', text: 'Inventory' }),
+    el('p', { class: 'inventory-kicker', text: 'Track materials, quantity on hand, and pricing context.' }),
+    countEl,
+  ]);
+
   const addBtn = el('button', { id: 'add-item-btn', class: 'btn', 'data-role': 'btn-add-item' }, '+ Add Item');
   const stockOutBtn = el('button', { class: 'btn secondary', type: 'button' }, '− Stock Out');
   const refundBtn = el('button', { class: 'btn' }, 'Refund');
@@ -702,8 +714,10 @@ export async function _mountInventory(container) {
     ]),
   ]);
   table.append(colgroup, thead, el('tbody'));
-  container.append(controls, table);
+  const tableWrap = el('div', { class: 'inventory-table-wrap' }, [table]);
+  container.append(header, controls, tableWrap);
   state.tableBody = table.querySelector('tbody');
+  state.countEl = countEl;
 
   reloadInventory = async () => {
     await fetchItems(state);
@@ -852,7 +866,7 @@ function enhanceDetailsPanel(panel) {
   panel.querySelectorAll('.kv').forEach((kv) => {
     const label = (kv.querySelector('.k')?.textContent || '').trim().toLowerCase();
     if (label === 'price' || label === 'location') {
-      kv.style.display = 'none';
+      kv.classList.add('hidden');
     }
   });
 
@@ -881,13 +895,12 @@ function enhanceDetailsPanel(panel) {
     const txt = (noteEl.textContent || '').trim();
     const block = document.createElement('div');
     block.className = 'inv-note';
-    block.style.cssText = 'margin:8px 0 10px; padding:8px 10px; border:1px solid rgba(36,48,65,.6); border-radius:8px; background:rgba(0,0,0,.12); color:#a9b7c8; max-width:70ch;';
     const h = document.createElement('div');
     h.textContent = 'Notes';
-    h.style.cssText = 'font-weight:600; margin-bottom:4px; color:#e7eef7;';
+    h.className = 'inv-note-title';
     const p = document.createElement('div');
     p.textContent = txt;
-    p.style.cssText = 'white-space:normal; overflow-wrap:anywhere;';
+    p.className = 'inv-note-body';
     block.append(h, p);
     noteEl.replaceWith(block);
   }
@@ -939,11 +952,7 @@ export function openItemModal(item = null) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   const card = document.createElement('div');
-  card.className = 'modal-card';
-  card.style.maxWidth = '460px';           // spec width
-  card.style.background = 'var(--surface)';
-  card.style.border = '1px solid var(--border)';
-  card.style.borderRadius = '10px';
+  card.className = 'modal-card inventory-modal-card inventory-modal-card--wide';
 
   const title = document.createElement('div');
   title.className = 'modal-title';
@@ -975,10 +984,7 @@ export function openItemModal(item = null) {
   qtyChip.className = 'pill';
   qtyChip.textContent = '';
   const qtyWrap = document.createElement('div');
-  qtyWrap.className = 'field-input';
-  qtyWrap.style.display = 'flex';
-  qtyWrap.style.alignItems = 'center';
-  qtyWrap.style.gap = '8px';
+  qtyWrap.className = 'field-input field-input-row';
   qtyWrap.append(qtyInput, qtyChip);
   const qtyRow = document.createElement('div');
   qtyRow.className = 'field-row';
@@ -1005,10 +1011,7 @@ export function openItemModal(item = null) {
   costUnitLockLabel.htmlFor = 'item-lock-cost-unit';
   costUnitLockLabel.append(lockCostUnit, document.createTextNode('Lock cost to unit'));
   const costWrap = document.createElement('div');
-  costWrap.className = 'field-input';
-  costWrap.style.display = 'flex';
-  costWrap.style.alignItems = 'center';
-  costWrap.style.gap = '8px';
+  costWrap.className = 'field-input field-input-row';
   const slash = document.createElement('span');
   slash.textContent = '/';
   costWrap.append(costInput, slash, costUnitSelect, costUnitLockLabel);
@@ -1074,13 +1077,12 @@ export function openItemModal(item = null) {
   // Elements – Hinge
   const hinge = document.createElement('button');
   hinge.type = 'button';
-  hinge.className = 'link';
+  hinge.className = 'link inventory-hinge';
   hinge.textContent = '+ Add Details (SKU, Vendor, Notes)';
-  hinge.style.margin = '8px 0';
 
   // Elements – Ledger Surface (hidden by default)
   const ledger = document.createElement('div');
-  ledger.style.display = expanded ? 'block' : 'none';
+  ledger.classList.toggle('hidden', !expanded);
   const fSku = inputRow('SKU', 'text', item?.sku ?? '');
 
   const vendorRow = document.createElement('div');
@@ -1091,8 +1093,11 @@ export function openItemModal(item = null) {
   const vendorInputWrap = document.createElement('div');
   vendorInputWrap.className = 'field-input';
   const vendorSelect = document.createElement('select');
-  vendorSelect.style.width = '100%';
-  vendorSelect.innerHTML = '<option value="">—</option>';
+  vendorSelect.className = 'field-input-full';
+  const vendorEmptyOpt = document.createElement('option');
+  vendorEmptyOpt.value = '';
+  vendorEmptyOpt.textContent = '—';
+  vendorSelect.appendChild(vendorEmptyOpt);
   vendorInputWrap.appendChild(vendorSelect);
   vendorRow.appendChild(vendorInputWrap);
 
@@ -1103,10 +1108,12 @@ export function openItemModal(item = null) {
   const typeWrap = document.createElement('div');
   typeWrap.className = 'field-input';
   const typeSelect = document.createElement('select');
-  typeSelect.innerHTML = `
-    <option value="Product">Product</option>
-    <option value="Material">Material</option>
-    <option value="Component">Component</option>`;
+  [['Product', 'Product'], ['Material', 'Material'], ['Component', 'Component']].forEach(([value, label]) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    typeSelect.appendChild(opt);
+  });
   typeSelect.value = item?.type ?? 'Product';
   typeWrap.appendChild(typeSelect);
   typeRow.append(typeLabel, typeWrap);
@@ -1162,7 +1169,11 @@ export function openItemModal(item = null) {
   initAddItemFormDefaults();
 
   const populateVendors = (vendorsList, selectedId = null) => {
-    vendorSelect.innerHTML = '<option value="">—</option>';
+    vendorSelect.textContent = '';
+    const baseOpt = document.createElement('option');
+    baseOpt.value = '';
+    baseOpt.textContent = '—';
+    vendorSelect.appendChild(baseOpt);
     vendorsList.forEach(v => {
       const opt = document.createElement('option');
       opt.value = v.id;
@@ -1254,7 +1265,7 @@ export function openItemModal(item = null) {
     if (batchFields) batchFields.hidden = !showBatch;
     qtyRow.hidden = batchFields ? !showBatch : false;
     if (costRow && batchFields) costRow.hidden = !showBatch;
-    qtyPreview.style.display = showBatch ? 'block' : 'none';
+    qtyPreview.classList.toggle('hidden', !showBatch);
     qtyInput.required = isEdit ? true : showBatch;
   }
 
@@ -1301,7 +1312,7 @@ export function openItemModal(item = null) {
   // Hinge toggle
   hinge.addEventListener('click', () => {
     expanded = !expanded;
-    ledger.style.display = expanded ? 'block' : 'none';
+    ledger.classList.toggle('hidden', !expanded);
     hinge.textContent = expanded ? '– Hide Details' : '+ Add Details (SKU, Vendor, Notes)';
   });
 
@@ -1477,11 +1488,7 @@ export function openItemModal(item = null) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     const card = document.createElement('div');
-    card.className = 'modal-card';
-    card.style.maxWidth = '420px';
-    card.style.background = 'var(--surface)';
-    card.style.border = '1px solid var(--border)';
-    card.style.borderRadius = '10px';
+    card.className = 'modal-card inventory-modal-card inventory-modal-card--narrow';
 
     const title = document.createElement('div');
     title.className = 'modal-title';
@@ -1500,7 +1507,13 @@ export function openItemModal(item = null) {
     const dim = item.dimension || 'count';
     const unitOptions = [...(UNIT_OPTIONS[dim] || ['ea'])];
     if (item.uom && !unitOptions.includes(item.uom)) unitOptions.push(item.uom);
-    stockUnitSelect.innerHTML = unitOptions.map((u) => `<option value="${u}">${UNIT_LABEL[u] || u}</option>`).join('');
+    stockUnitSelect.textContent = '';
+    unitOptions.forEach((u) => {
+      const opt = document.createElement('option');
+      opt.value = u;
+      opt.textContent = UNIT_LABEL[u] || u;
+      stockUnitSelect.appendChild(opt);
+    });
     stockUnitSelect.value = item.uom && unitOptions.includes(item.uom) ? item.uom : unitOptions[0];
     const stockUnitRow = fieldRowWithElement('Unit', stockUnitSelect);
 
@@ -1588,8 +1601,11 @@ export function openItemModal(item = null) {
   }
 
   function markInvalid(el) {
-    el.style.borderColor = '#ef4444';
-    setTimeout(() => { el.style.borderColor = 'var(--border)'; }, 1500);
+    if (!el) return;
+    el.classList.add('inventory-field-invalid');
+    setTimeout(() => {
+      el.classList.remove('inventory-field-invalid');
+    }, 1500);
   }
 
   // Save handler (works in collapsed or expanded)
@@ -1608,19 +1624,35 @@ export function openItemModal(item = null) {
     const unitVal = unitSelect.value;
     const priceUnitSel = lockCostUnit.checked ? unitVal : (costUnitSelect.value || unitVal);
     const qtyVal = qtyInput.value;
+    const qtyNum = qtyVal === '' ? null : Number(decimalString(qtyVal));
     const addOpeningBatch = addBatchToggle ? addBatchToggle.checked : false;
     const dimensionVal = currentDimension();
 
     if (!unitVal) return markInvalid(unitSelect);
     if (addOpeningBatch && qtyVal === '') return markInvalid(qtyInput);
 
-    if (isEdit && qtyVal === '' && errorBanner) {
-      errorBanner.textContent = 'Quantity left blank — saving metadata only (quantity unchanged).';
-      errorBanner.hidden = false;
-    }
     if (!isEdit && !addOpeningBatch && qtyVal === '' && errorBanner) {
       errorBanner.textContent = 'Quantity is blank — item will start at 0 unless you add an opening batch.';
       errorBanner.hidden = false;
+    }
+    if (!isEdit && !addOpeningBatch && qtyNum !== null && qtyNum > 0) {
+      if (errorBanner) {
+        errorBanner.textContent = 'Opening quantity requires "Add opening batch now". Enable it or clear quantity.';
+        errorBanner.hidden = false;
+      }
+      markInvalid(qtyInput);
+      return;
+    }
+    if (isEdit && qtyNum !== null && qtyNum > 0) {
+      const originalQty = Number(decimalString(item?.quantity_display?.value ?? item?.quantity_decimal ?? item?.quantity ?? '0'));
+      if (Number.isFinite(originalQty) && Math.abs(originalQty - qtyNum) > 1e-9) {
+        if (errorBanner) {
+          errorBanner.textContent = 'Quantity edits are not saved via item metadata. Use Add Batch or Stock Out to change quantity.';
+          errorBanner.hidden = false;
+        }
+        markInvalid(qtyInput);
+        return;
+      }
     }
 
     const priceVal = (() => {
@@ -1630,10 +1662,12 @@ export function openItemModal(item = null) {
       return 0;
     })();
 
+    const vendorIdValue = (vendorSelect && vendorSelect.tagName === 'SELECT') ? Number(vendorSelect.value) : NaN;
+
     const payload = {
       name,
       sku: (fieldValue(fSku) || '').trim() || undefined,
-      vendor_id: vendorSelect && vendorSelect.tagName === 'SELECT' ? (vendorSelect.value || undefined) : undefined,
+      vendor_id: Number.isInteger(vendorIdValue) && vendorIdValue > 0 ? vendorIdValue : undefined,
       location: (fieldValue(fLocation) || '').trim() || undefined,
       type: (expanded ? fieldValue(typeRow) : 'Product') || 'Product',
       notes: expanded ? (notes.value.trim() || undefined) : undefined,
@@ -1642,12 +1676,7 @@ export function openItemModal(item = null) {
       unit: unitVal,
       display_unit: unitVal,
       is_product: isProductInput.checked,
-      quantity_decimal: isEdit ? qtyVal : '0',
     };
-
-    if (isEdit && qtyVal === '') {
-      delete payload.quantity_decimal;
-    }
 
     if (isProductInput.checked) {
       payload.price_decimal = priceInput?.value ?? String(priceVal ?? 0);

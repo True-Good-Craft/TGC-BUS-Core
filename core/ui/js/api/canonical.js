@@ -8,10 +8,16 @@ function toDecimalString(value) {
   return raw.startsWith('.') ? `0${raw}` : raw;
 }
 
-function normalizeOptionalInt(value) {
+function normalizeOptionalPositiveInt(value) {
   if (value === undefined || value === null || value === '') return undefined;
   const parsed = Math.trunc(Number(value));
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function normalizeOptionalNonNegativeInt(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = Math.trunc(Number(value));
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function normalizeOptionalString(value) {
@@ -27,7 +33,7 @@ export function stockIn({ item_id, quantity_decimal, uom, unit_cost_cents, sourc
     uom: String(uom || ''),
   };
 
-  const unitCost = normalizeOptionalInt(unit_cost_cents);
+  const unitCost = normalizeOptionalNonNegativeInt(unit_cost_cents);
   if (unitCost !== undefined) payload.unit_cost_cents = unitCost;
 
   const sourceId = normalizeOptionalString(source_id);
@@ -49,7 +55,7 @@ export function stockOut({ item_id, quantity_decimal, uom, reason, note, record_
 
   if (record_cash_event !== undefined) payload.record_cash_event = !!record_cash_event;
 
-  const sellPrice = normalizeOptionalInt(sell_unit_price_cents);
+  const sellPrice = normalizeOptionalNonNegativeInt(sell_unit_price_cents);
   if (sellPrice !== undefined) payload.sell_unit_price_cents = sellPrice;
 
   return apiPost('/app/stock/out', payload);
@@ -75,8 +81,8 @@ export function purchase({ item_id, quantity_decimal, uom, unit_cost_cents, sour
 
 export function ledgerHistory({ item_id, limit } = {}) {
   const params = new URLSearchParams();
-  const itemId = normalizeOptionalInt(item_id);
-  const cap = normalizeOptionalInt(limit);
+  const itemId = normalizeOptionalPositiveInt(item_id);
+  const cap = normalizeOptionalPositiveInt(limit);
   if (itemId !== undefined) params.set('item_id', String(itemId));
   if (cap !== undefined) params.set('limit', String(cap));
   const qs = params.toString();

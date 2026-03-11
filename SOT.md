@@ -1,6 +1,6 @@
 # 🛠️ TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.0.2 **Updated:** 2026-03-10 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.0.2 **Updated:** 2026-03-11 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -142,6 +142,14 @@
 ### Human Units (UI Input/Output)
 
 * Permitted human units include `mm`, `cm`, `m` (length); `mm2`, `cm2`, `m2` (area); `mm3`, `cm3`, `ml`, `l` (volume); `mg`, `g`, `kg` (weight); and `mc`, `ea` (count).
+
+### UI Count Presentation Policy
+
+* `mc` remains a canonical backend/storage-supported count unit.
+
+* User-facing UI selectors should treat `mc` as internal-only and present operator-facing count units (for example `ea`) unless an explicit advanced/internal workflow is intended.
+
+* Hiding `mc` in UI presentation MUST NOT change backend unit authority, conversion rules, or API contract support for `mc`.
 
 
 
@@ -618,6 +626,62 @@ POST   /app/manufacture => PRESENT
 
 ## (4) NOTES / KNOWN FOLLOW-UPS (NON-BLOCKING)
 - Cost authority corrections (per_output_unit_cost_cents derived from human qty) are Phase 2B.
+
+---
+
+## 13. UI Authority Freeze (fortheemperor)
+
+### Canonical UI Authority Status
+
+* `core/ui/css/app.css` is the canonical styling authority for shared shell, cards, forms, buttons, status, and page composition patterns.
+
+* `core/ui/shell.html` remains primarily structural and route-hosting; meaningful style authority has been substantially reduced via staged migration.
+
+* `core/ui/app.js` and route cards should render semantic class hooks and avoid new inline presentation authority.
+
+### Active Module Standardization Snapshot
+
+* Standardized for presentation authority: settings, contacts/vendors, recipes, finance, logs.
+
+* Partially standardized with scoped deferred work: inventory, manufacturing.
+
+### Legacy/Removal Truth
+
+* Removed dead modules: `core/ui/js/cards/dev.js`, `core/ui/js/cards/fixkit.js`, `core/ui/js/cards/organizer.js`, `core/ui/js/cards/tasks.js`, `core/ui/js/cards/writes.js`.
+
+* Deferred quarantine/legacy candidates still unresolved: `core/ui/js/cards/home_donuts.js`, `core/ui/js/cards/tools.js`, `core/ui/js/cards/backup.js`.
+
+### Contract-to-Form Parity Truth (Completed Modules)
+
+* Inventory parity remediation completed for documented Step 1 scope (quantity intent correction, sold non-count guard, cents normalization, vendor coercion).
+
+* Contacts parity remediation completed for documented Step 2 scope (name-only required parity, organization controls, role-derivation alignment).
+
+* Manufacturing parity remediation completed for documented Step 3 scope (run quantity input and structured shortage/error display), while ad-hoc UI remains intentionally deferred.
+
+* Recipes parity remediation completed for documented Step 4 scope (item-compatible UOM selection, strict numeric validation, safer backend error rendering, explicit component-row policy).
+
+### Write Gate Authority Finding
+
+* Runtime write blocking is enforced by backend gate authority (`require_write_access` / `require_writes`) with persisted authority via `dev.writes_enabled` and startup runtime resolution.
+
+* Fresh-install default truth is write-enabled unless explicitly overridden by persisted config (`dev.writes_enabled`) or environment read-only controls.
+
+* Active UI does not expose a direct writes toggle control even though persisted authority exists.
+
+### Deferred Follow-on Work (Explicit)
+
+* Small Settings pass: admin/export-restore guard/error-display polish where contract-backed.
+
+* Active Settings UI no longer owns `close_to_tray`; launcher close behavior remains compatibility config only unless explicitly reintroduced.
+
+* Theme control is currently system-only/stubbed in active UI until alternate theme systems are intentionally shipped.
+
+* Update-check display/settings logic cleanup pass (UI behavior/presentation-level only).
+
+* Legacy/quarantine resolution decisions and implementation for remaining deferred cards (`home_donuts`, `tools`, `backup`).
+
+* UI-vs-backend count-unit authority reconciliation follow-up for `core/ui/js/lib/units.js` vs canonical backend/SOT count base model.
 - Finance COGS authority corrections are Phase 2C.
 
 ### v0.11.0 — 2026-02-22 — Phase 2B Manufacturing Cost Authority

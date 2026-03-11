@@ -26,23 +26,24 @@ export function mountFinance() {
   const fromDefault = new Date(now);
   fromDefault.setDate(now.getDate() - 30);
 
+  host.classList.add('finance-shell');
   host.innerHTML = `
-    <div class="card">
+    <div class="card finance-card">
       <h2>Finance</h2>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-        <label>From<br/><input data-role="finance-from" type="date" value="${isoDate(fromDefault)}"></label>
-        <label>To<br/><input data-role="finance-to" type="date" value="${isoDate(now)}"></label>
-        <button data-role="finance-refresh" type="button">Refresh</button>
+      <div class="finance-controls">
+        <label class="finance-field">From<br/><input class="finance-input" data-role="finance-from" type="date" value="${isoDate(fromDefault)}"></label>
+        <label class="finance-field">To<br/><input class="finance-input" data-role="finance-to" type="date" value="${isoDate(now)}"></label>
+        <button class="finance-refresh-btn" data-role="finance-refresh" type="button">Refresh</button>
       </div>
-      <div data-role="finance-summary" style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;"></div>
-      <div style="margin-top:14px;overflow:auto;">
-        <table style="width:100%;border-collapse:collapse;">
+      <div data-role="finance-summary" class="finance-summary-grid"></div>
+      <div class="finance-table-wrap">
+        <table class="finance-table">
           <thead>
             <tr>
-              <th style="text-align:left;padding:8px;border-bottom:1px solid #333;">Date</th>
-              <th style="text-align:left;padding:8px;border-bottom:1px solid #333;">Type</th>
-              <th style="text-align:left;padding:8px;border-bottom:1px solid #333;">Amount</th>
-              <th style="text-align:left;padding:8px;border-bottom:1px solid #333;">Details</th>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Amount</th>
+              <th>Details</th>
             </tr>
           </thead>
           <tbody data-role="finance-tx"></tbody>
@@ -58,7 +59,7 @@ export function mountFinance() {
   const txEl = host.querySelector('[data-role="finance-tx"]');
 
   function summaryTile(name, value) {
-    return `<div style="border:1px solid #2f3541;padding:10px;border-radius:10px;background:#111318;"><div style="font-size:12px;color:#a4aabc;">${name}</div><div style="font-size:17px;font-weight:700;">${value}</div></div>`;
+    return `<div class="finance-summary-tile"><div class="finance-summary-name">${name}</div><div class="finance-summary-value">${value}</div></div>`;
   }
 
   function txRow(tx) {
@@ -73,13 +74,12 @@ export function mountFinance() {
       detail = `Qty: ${tx.quantity_decimal || "0"} ${tx.uom || ""} · Unit Cost: ${fmtMoney(tx.unit_cost_cents || 0)}`.trim();
     }
     return `<tr>
-      <td style="padding:8px;border-bottom:1px solid #252a34;white-space:nowrap;">${escapeHtml(String(tx.created_at || "").slice(0, 19).replace("T", " "))}</td>
-      <td style="padding:8px;border-bottom:1px solid #252a34;">${escapeHtml(tx.kind)}</td>
-      <td style="padding:8px;border-bottom:1px solid #252a34;">${fmtMoney(tx.amount_cents || 0)}</td>
-      <td style="padding:8px;border-bottom:1px solid #252a34;">${escapeHtml(detail)}</td>
+      <td class="finance-td finance-td-date">${escapeHtml(String(tx.created_at || "").slice(0, 19).replace("T", " "))}</td>
+      <td class="finance-td">${escapeHtml(tx.kind)}</td>
+      <td class="finance-td">${fmtMoney(tx.amount_cents || 0)}</td>
+      <td class="finance-td">${escapeHtml(detail)}</td>
     </tr>`;
   }
-
 
   function sumEaQty(units) {
     return (Array.isArray(units) ? units : []).reduce((acc, row) => {
@@ -100,7 +100,7 @@ export function mountFinance() {
     const to = toInput?.value;
     if (!from || !to) return;
 
-    summaryEl.innerHTML = "<div>Loading...</div>";
+    summaryEl.innerHTML = "<div class=\"finance-loading\">Loading...</div>";
     txEl.innerHTML = "";
 
     try {
@@ -128,10 +128,12 @@ export function mountFinance() {
       ].join("");
 
       const rows = Array.isArray(txPayload.transactions) ? txPayload.transactions : [];
-      txEl.innerHTML = rows.length ? rows.map(txRow).join("") : '<tr><td colspan="4" style="padding:8px;">No transactions</td></tr>';
+      txEl.innerHTML = rows.length
+        ? rows.map(txRow).join("")
+        : '<tr><td colspan="4" class="finance-td finance-empty">No transactions</td></tr>';
     } catch (_) {
-      summaryEl.innerHTML = '<div style="color:#ff6b6b;">Finance report failed.</div>';
-      txEl.innerHTML = '<tr><td colspan="4" style="padding:8px;color:#ff6b6b;">Failed to load transactions</td></tr>';
+      summaryEl.innerHTML = '<div class="finance-error">Finance report failed.</div>';
+      txEl.innerHTML = '<tr><td colspan="4" class="finance-td finance-error">Failed to load transactions</td></tr>';
     }
   }
 
