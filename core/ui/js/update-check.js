@@ -4,6 +4,7 @@ import { apiGet, ensureToken } from './api.js';
 const LAST_SUCCESS_KEY = 'bus.updates.last_success_ms';
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 const AUTO_TIMER_MS = 15 * 60 * 1000;
+const LIGHTHOUSE_BASE_URL = 'https://lighthouse.buscore.ca';
 
 let startupCheckDone = false;
 let autoTimerId = null;
@@ -24,16 +25,25 @@ function setSidebarStatus(text = '', tone = 'neutral') {
   status.dataset.tone = tone;
 }
 
+function resolveDownloadUrl(downloadUrl) {
+  if (!downloadUrl || typeof downloadUrl !== 'string') return null;
+  if (/^https?:\/\//i.test(downloadUrl)) return downloadUrl;
+
+  const normalizedPath = downloadUrl.startsWith('/') ? downloadUrl : `/${downloadUrl}`;
+  return `${LIGHTHOUSE_BASE_URL}${normalizedPath}`;
+}
+
 function setDownloadLink(downloadUrl) {
   const { download } = sidebarEls();
   if (!download) return;
-  if (!downloadUrl) {
+  const resolvedDownloadUrl = resolveDownloadUrl(downloadUrl);
+  if (!resolvedDownloadUrl) {
     download.classList.add('hidden');
     download.removeAttribute('href');
     return;
   }
   download.classList.remove('hidden');
-  download.href = downloadUrl;
+  download.href = resolvedDownloadUrl;
 }
 
 function getLastSuccessMs() {
