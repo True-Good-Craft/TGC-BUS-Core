@@ -117,7 +117,7 @@ export async function maybeRunStartupUpdateCheck() {
   try {
     const enabled = await getAutoPolicyEnabled();
     if (!enabled) {
-      setSidebarStatus('Automatic checks disabled', 'neutral');
+      setSidebarStatus('Automatic update checks disabled\n(enable in settings)', 'neutral');
       setDownloadLink(null);
       return;
     }
