@@ -3,12 +3,6 @@
 
 import { apiDelete, apiGet, apiPost, apiPut, ensureToken } from '../api.js';
 
-const BG = '#1e1f22';
-const FG = '#e6e6e6';
-const PANEL = '#23262b';
-const INPUT_BG = '#2a2c30';
-const BORDER = '#2f3239';
-
 const ROLE_FILTERS = [
   { key: 'all', label: 'All', is_vendor: null },
   { key: 'vendors', label: 'Vendors', is_vendor: true },
@@ -29,15 +23,7 @@ function formatDate(val) {
 function chip(text, tone = 'default') {
   const span = document.createElement('span');
   span.textContent = text;
-  span.style.display = 'inline-flex';
-  span.style.alignItems = 'center';
-  span.style.gap = '6px';
-  span.style.padding = '4px 10px';
-  span.style.borderRadius = '999px';
-  span.style.fontSize = '12px';
-  span.style.border = `1px solid ${BORDER}`;
-  span.style.background = tone === 'accent' ? '#2f3542' : '#1f2227';
-  span.style.color = FG;
+  span.className = `contacts-chip contacts-chip--${tone}`;
   return span;
 }
 
@@ -45,41 +31,20 @@ function button(label) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.textContent = label;
-  btn.style.background = '#2a3040';
-  btn.style.color = FG;
-  btn.style.border = `1px solid ${BORDER}`;
-  btn.style.padding = '10px 14px';
-  btn.style.borderRadius = '10px';
-  btn.style.cursor = 'pointer';
-  btn.style.transition = 'background 0.15s ease, transform 0.15s ease';
-  btn.onmouseenter = () => (btn.style.background = '#32384a');
-  btn.onmouseleave = () => (btn.style.background = '#2a3040');
-  btn.onfocus = () => (btn.style.outline = '2px solid #4b6bfb');
-  btn.onblur = () => (btn.style.outline = 'none');
+  btn.className = 'contacts-btn';
   return btn;
 }
 
 function input(label, type = 'text') {
   const wrap = document.createElement('label');
-  wrap.style.display = 'flex';
-  wrap.style.flexDirection = 'column';
-  wrap.style.gap = '6px';
-  wrap.style.color = FG;
-  wrap.style.fontSize = '13px';
+  wrap.className = 'contacts-field';
 
   const span = document.createElement('span');
   span.textContent = label;
+  span.className = 'contacts-field-label';
   const field = document.createElement('input');
   field.type = type;
-  field.style.background = INPUT_BG;
-  field.style.color = FG;
-  field.style.border = `1px solid ${BORDER}`;
-  field.style.borderRadius = '10px';
-  field.style.padding = '10px 12px';
-  field.style.fontSize = '14px';
-  field.style.outline = 'none';
-  field.onfocus = () => (field.style.borderColor = '#4b6bfb');
-  field.onblur = () => (field.style.borderColor = BORDER);
+  field.className = 'contacts-input';
 
   wrap.append(span, field);
   return { wrap, field };
@@ -87,24 +52,13 @@ function input(label, type = 'text') {
 
 function select(label) {
   const wrap = document.createElement('label');
-  wrap.style.display = 'flex';
-  wrap.style.flexDirection = 'column';
-  wrap.style.gap = '6px';
-  wrap.style.color = FG;
-  wrap.style.fontSize = '13px';
+  wrap.className = 'contacts-field';
 
   const span = document.createElement('span');
   span.textContent = label;
+  span.className = 'contacts-field-label';
   const field = document.createElement('select');
-  field.style.background = INPUT_BG;
-  field.style.color = FG;
-  field.style.border = `1px solid ${BORDER}`;
-  field.style.borderRadius = '10px';
-  field.style.padding = '10px 12px';
-  field.style.fontSize = '14px';
-  field.style.outline = 'none';
-  field.onfocus = () => (field.style.borderColor = '#4b6bfb');
-  field.onblur = () => (field.style.borderColor = BORDER);
+  field.className = 'contacts-input';
 
   wrap.append(span, field);
   return { wrap, field };
@@ -113,19 +67,10 @@ function select(label) {
 function toast(message, tone = 'ok') {
   const el = document.createElement('div');
   el.textContent = message;
-  el.style.position = 'fixed';
-  el.style.bottom = '20px';
-  el.style.right = '20px';
-  el.style.padding = '12px 14px';
-  el.style.borderRadius = '10px';
-  el.style.background = tone === 'error' ? '#5b1f1f' : '#1f3b2f';
-  el.style.color = FG;
-  el.style.boxShadow = '0 8px 20px rgba(0,0,0,0.4)';
-  el.style.zIndex = '9999';
+  el.className = `contacts-toast contacts-toast--${tone === 'error' ? 'error' : 'ok'}`;
   document.body.appendChild(el);
   setTimeout(() => {
-    el.style.opacity = '0';
-    el.style.transition = 'opacity 0.3s ease';
+    el.classList.add('contacts-toast--hide');
     setTimeout(() => el.remove(), 300);
   }, 2000);
 }
@@ -140,6 +85,9 @@ function buildContactPayload(modalEl) {
   const phone = modalEl.querySelector('[data-field="phone"]')?.value?.trim() || '';
   const extend = modalEl.querySelector('[data-field="extend"]')?.checked || false;
   const isVendor = modalEl.querySelector('[data-field="is_vendor"]')?.checked || false;
+  const isOrg = modalEl.querySelector('[data-field="is_org"]')?.checked || false;
+  const orgRaw = modalEl.querySelector('[data-field="organization_id"]')?.value;
+  const organizationId = Number.isInteger(Number(orgRaw)) && Number(orgRaw) > 0 ? Number(orgRaw) : undefined;
 
   const addr1 = modalEl.querySelector('[data-field="addr1"]')?.value?.trim() || '';
   const addr2 = modalEl.querySelector('[data-field="addr2"]')?.value?.trim() || '';
@@ -177,12 +125,14 @@ function buildContactPayload(modalEl) {
 
   const payload = {
     name,
-    role: 'contact',
     contact: email || phone || null,
     is_vendor: !!isVendor,
-    // allow future org nesting without breaking today
-    is_org: null,
+    is_org: !!isOrg,
   };
+
+  if (!isOrg && organizationId !== undefined) {
+    payload.organization_id = organizationId;
+  }
 
   if (Object.keys(meta).length) {
     payload.meta = meta;
@@ -194,25 +144,9 @@ function buildContactPayload(modalEl) {
 function buildModal() {
   const overlay = document.createElement('div');
   overlay.className = 'contacts-modal';
-  overlay.style.position = 'fixed';
-  overlay.style.inset = '0';
-  overlay.style.background = 'rgba(0,0,0,0.55)';
-  overlay.style.display = 'flex';
-  overlay.style.alignItems = 'center';
-  overlay.style.justifyContent = 'center';
-  overlay.style.zIndex = '5000';
 
   const box = document.createElement('div');
-  box.style.background = PANEL;
-  box.style.borderRadius = '12px';
-  box.style.width = '520px';
-  box.style.padding = '20px';
-  box.style.boxShadow = '0 18px 36px rgba(0,0,0,0.5)';
-  box.style.display = 'flex';
-  box.style.flexDirection = 'column';
-  box.style.gap = '14px';
-  box.style.maxHeight = '85vh';
-  box.style.overflow = 'auto';
+  box.className = 'contacts-modal-box';
 
   overlay.appendChild(box);
   return { overlay, box };
@@ -221,11 +155,7 @@ function buildModal() {
 export function mountContacts(host) {
   if (!host) return;
   host.innerHTML = '';
-  host.style.background = BG;
-  host.style.color = FG;
-  host.style.padding = '16px';
-  host.style.borderRadius = '12px';
-  host.style.boxSizing = 'border-box';
+  host.className = 'contacts-shell';
 
   const state = {
     list: [],
@@ -236,26 +166,18 @@ export function mountContacts(host) {
   };
 
   const header = document.createElement('div');
-  header.style.display = 'flex';
-  header.style.justifyContent = 'space-between';
-  header.style.alignItems = 'center';
-  header.style.gap = '12px';
-  header.style.marginBottom = '10px';
+  header.className = 'contacts-header';
 
   const headLeft = document.createElement('div');
-  headLeft.style.display = 'flex';
-  headLeft.style.flexDirection = 'column';
-  headLeft.style.gap = '4px';
+  headLeft.className = 'contacts-head-left';
 
   const title = document.createElement('h2');
   title.textContent = 'Contacts';
-  title.style.margin = '0';
-  title.style.color = FG;
+  title.className = 'contacts-title';
 
   const subtitle = document.createElement('div');
   subtitle.textContent = 'Vendors & people you deal with';
-  subtitle.style.color = '#b9bcc5';
-  subtitle.style.fontSize = '13px';
+  subtitle.className = 'contacts-subtitle';
 
   headLeft.append(title, subtitle);
 
@@ -264,18 +186,13 @@ export function mountContacts(host) {
   header.append(headLeft, newBtn);
 
   const filtersRow = document.createElement('div');
-  filtersRow.style.display = 'flex';
-  filtersRow.style.alignItems = 'center';
-  filtersRow.style.gap = '10px';
-  filtersRow.style.flexWrap = 'wrap';
-  filtersRow.style.marginBottom = '12px';
+  filtersRow.className = 'contacts-filters-row';
 
   ROLE_FILTERS.forEach((f) => {
     const b = button(f.label);
-    b.style.padding = '8px 12px';
+    b.classList.add('contacts-filter-btn');
     const setActive = () => {
-      b.style.background = state.filterRole === f.key ? '#34405c' : '#2a3040';
-      b.style.borderColor = state.filterRole === f.key ? '#4b6bfb' : BORDER;
+      b.classList.toggle('active', state.filterRole === f.key);
     };
     setActive();
     b.addEventListener('click', () => {
@@ -287,20 +204,12 @@ export function mountContacts(host) {
   });
 
   const searchWrap = document.createElement('div');
-  searchWrap.style.display = 'flex';
-  searchWrap.style.flex = '1';
-  searchWrap.style.justifyContent = 'flex-end';
+  searchWrap.className = 'contacts-search-wrap';
 
   const searchField = document.createElement('input');
   searchField.type = 'search';
   searchField.placeholder = 'Search name or contact…';
-  searchField.style.background = INPUT_BG;
-  searchField.style.color = FG;
-  searchField.style.border = `1px solid ${BORDER}`;
-  searchField.style.borderRadius = '10px';
-  searchField.style.padding = '10px 12px';
-  searchField.style.flex = '1';
-  searchField.style.maxWidth = '280px';
+  searchField.className = 'contacts-search-input';
   searchField.addEventListener('input', () => {
     state.search = searchField.value.trim();
     void loadData();
@@ -310,19 +219,10 @@ export function mountContacts(host) {
   filtersRow.appendChild(searchWrap);
 
   const table = document.createElement('div');
-  table.style.background = PANEL;
-  table.style.border = `1px solid ${BORDER}`;
-  table.style.borderRadius = '12px';
-  table.style.overflow = 'hidden';
+  table.className = 'contacts-table';
 
   const headerRow = document.createElement('div');
-  headerRow.style.display = 'grid';
-    headerRow.style.gridTemplateColumns = '2fr 2fr 1fr';
-  headerRow.style.padding = '10px 14px';
-  headerRow.style.background = '#2b2d31';
-  headerRow.style.color = '#cdd1dc';
-  headerRow.style.fontSize = '13px';
-  headerRow.style.fontWeight = '600';
+  headerRow.className = 'contacts-table-head';
     ['Name', 'Contact', 'Flags'].forEach((col) => {
       const c = document.createElement('div');
       c.textContent = col;
@@ -330,8 +230,7 @@ export function mountContacts(host) {
     });
 
   const body = document.createElement('div');
-  body.style.display = 'flex';
-  body.style.flexDirection = 'column';
+  body.className = 'contacts-table-body';
 
   table.append(headerRow, body);
 
@@ -350,29 +249,18 @@ export function mountContacts(host) {
 
   function renderRow(entry) {
     const row = document.createElement('div');
-    row.style.display = 'grid';
-    row.style.gridTemplateColumns = '2fr 2fr 1fr';
-    row.style.padding = '10px 14px';
-    row.style.borderTop = `1px solid ${BORDER}`;
-    row.style.cursor = 'pointer';
-    row.style.alignItems = 'center';
-    row.onmouseenter = () => (row.style.background = '#262a31');
-    row.onmouseleave = () => (row.style.background = 'transparent');
+    row.className = 'contacts-row';
 
     const nameCol = document.createElement('div');
-    nameCol.style.display = 'flex';
-    nameCol.style.flexDirection = 'column';
-    nameCol.style.gap = '4px';
+    nameCol.className = 'contacts-name-col';
 
     const nameLine = document.createElement('div');
-    nameLine.style.display = 'flex';
-    nameLine.style.alignItems = 'center';
-    nameLine.style.gap = '8px';
+    nameLine.className = 'contacts-name-line';
     const nm = document.createElement('div');
     nm.textContent = entry.name || '(unnamed)';
-    nm.style.fontWeight = '600';
+    nm.className = 'contacts-name-text';
     const vendorBadge = chip(vendorLabel(Boolean(entry.is_vendor)), entry.is_vendor ? 'accent' : 'default');
-    vendorBadge.style.opacity = entry.is_vendor ? '1' : '0.8';
+    if (!entry.is_vendor) vendorBadge.classList.add('contacts-chip--muted');
     nameLine.append(nm, vendorBadge);
     if (entry.is_org) {
       const orgBadge = chip('Organization');
@@ -380,8 +268,7 @@ export function mountContacts(host) {
     }
 
     const metaLine = document.createElement('div');
-    metaLine.style.fontSize = '12px';
-    metaLine.style.color = '#b5b8c2';
+    metaLine.className = 'contacts-meta-line';
     const org = orgName(entry.organization_id);
     metaLine.textContent = [contactSummary(entry), org ? `Org: ${org}` : '']
       .filter(Boolean)
@@ -391,12 +278,10 @@ export function mountContacts(host) {
 
     const contactCol = document.createElement('div');
     contactCol.textContent = contactSummary(entry) || '—';
-    contactCol.style.color = '#cdd1dc';
+    contactCol.className = 'contacts-contact-col';
 
     const flagsCol = document.createElement('div');
-    flagsCol.style.display = 'flex';
-    flagsCol.style.gap = '6px';
-    flagsCol.style.flexWrap = 'wrap';
+    flagsCol.className = 'contacts-flags-col';
     flagsCol.append(chip(vendorLabel(Boolean(entry.is_vendor)), entry.is_vendor ? 'accent' : 'default'));
     if (entry.is_org) {
       flagsCol.append(chip('Organization'));
@@ -406,38 +291,26 @@ export function mountContacts(host) {
     row.append(nameCol, contactCol, flagsCol);
 
     const expanded = document.createElement('div');
-    expanded.style.gridColumn = '1 / -1';
-    expanded.style.background = '#1e2025';
-    expanded.style.borderRadius = '10px';
-    expanded.style.marginTop = '10px';
-    expanded.style.padding = '12px 12px 10px';
-    expanded.style.display = state.expandedId === entry.id ? 'grid' : 'none';
-    expanded.style.gridTemplateColumns = '1fr 1fr';
-    expanded.style.gap = '12px';
+    expanded.className = 'contacts-expanded';
+    expanded.classList.toggle('is-open', state.expandedId === entry.id);
 
     const left = document.createElement('div');
-    left.style.display = 'flex';
-    left.style.flexDirection = 'column';
-    left.style.gap = '8px';
+    left.className = 'contacts-expanded-left';
     const nameLabel = document.createElement('div');
     nameLabel.textContent = entry.name || '(unnamed)';
-    nameLabel.style.fontWeight = '600';
+    nameLabel.className = 'contacts-expanded-name';
     const chipsRow = document.createElement('div');
-    chipsRow.style.display = 'flex';
-    chipsRow.style.gap = '8px';
+    chipsRow.className = 'contacts-expanded-chips';
     chipsRow.append(chip(vendorLabel(Boolean(entry.is_vendor)), entry.is_vendor ? 'accent' : 'default'));
     if (entry.is_org) chipsRow.append(chip('Organization'));
     const orgLine = document.createElement('div');
-    orgLine.style.fontSize = '12px';
-    orgLine.style.color = '#b5b8c2';
+    orgLine.className = 'contacts-expanded-org';
     const orgLabel = orgName(entry.organization_id);
     orgLine.textContent = orgLabel ? `Organization: ${orgLabel}` : 'No organization linked';
     left.append(nameLabel, chipsRow, orgLine);
 
     const right = document.createElement('div');
-    right.style.display = 'flex';
-    right.style.flexDirection = 'column';
-    right.style.gap = '6px';
+    right.className = 'contacts-expanded-right';
     const contactLine = document.createElement('div');
     contactLine.textContent = `Contact: ${contactSummary(entry) || '—'}`;
     const createdLine = document.createElement('div');
@@ -445,10 +318,7 @@ export function mountContacts(host) {
     right.append(contactLine, createdLine);
 
     const footer = document.createElement('div');
-    footer.style.gridColumn = '1 / -1';
-    footer.style.display = 'flex';
-    footer.style.justifyContent = 'flex-end';
-    footer.style.gap = '8px';
+    footer.className = 'contacts-expanded-footer';
     const edit2 = button('Edit');
     edit2.addEventListener('click', (ev) => {
       ev.stopPropagation();
@@ -476,9 +346,7 @@ export function mountContacts(host) {
   function renderEmpty() {
     const empty = document.createElement('div');
     empty.textContent = 'No contacts yet.';
-    empty.style.padding = '18px';
-    empty.style.color = '#b5b8c2';
-    empty.style.textAlign = 'center';
+    empty.className = 'contacts-empty';
     return empty;
   }
 
@@ -548,15 +416,13 @@ export function mountContacts(host) {
 
   function buildToggle(label, initial = false) {
     const wrap = document.createElement('label');
-    wrap.style.display = 'flex';
-    wrap.style.alignItems = 'center';
-    wrap.style.gap = '8px';
+    wrap.className = 'contacts-toggle';
     const box = document.createElement('input');
     box.type = 'checkbox';
     box.checked = !!initial;
     const text = document.createElement('span');
     text.textContent = label;
-    text.style.fontSize = '13px';
+    text.className = 'contacts-toggle-label';
     wrap.append(box, text);
     return {
       wrap,
@@ -593,23 +459,18 @@ export function mountContacts(host) {
     );
 
     const titleRow = document.createElement('div');
-    titleRow.style.display = 'flex';
-    titleRow.style.justifyContent = 'space-between';
-    titleRow.style.alignItems = 'center';
+    titleRow.className = 'contacts-modal-title-row';
 
     const heading = document.createElement('div');
     heading.textContent = isEdit ? 'Edit Contact' : 'New Contact';
-    heading.style.fontSize = '18px';
-    heading.style.fontWeight = '700';
+    heading.className = 'contacts-modal-title';
 
     const closeBtn = button('Cancel');
 
     titleRow.append(heading, closeBtn);
 
     const form = document.createElement('div');
-    form.style.display = 'flex';
-    form.style.flexDirection = 'column';
-    form.style.gap = '12px';
+    form.className = 'contacts-modal-form';
 
     const { wrap: nameWrap, field: nameField } = input('Name *');
     nameField.required = true;
@@ -628,22 +489,53 @@ export function mountContacts(host) {
     phoneField.dataset.field = 'phone';
 
     const togglesRow = document.createElement('div');
-    togglesRow.style.display = 'grid';
-    togglesRow.style.gap = '8px';
+    togglesRow.className = 'contacts-toggles-row';
 
     const extendToggle = buildToggle('Add Address & Notes', initialExtended);
     const vendorToggle = buildToggle('Treat as Vendor', entry?.is_vendor ?? entry?.facade === 'vendors');
+    const orgToggle = buildToggle('Treat as Organization', !!entry?.is_org);
 
     extendToggle.input.dataset.field = 'extend';
     vendorToggle.input.dataset.field = 'is_vendor';
+    orgToggle.input.dataset.field = 'is_org';
 
-    togglesRow.append(extendToggle.wrap, vendorToggle.wrap);
+    const orgSelectWrap = document.createElement('label');
+    orgSelectWrap.className = 'contacts-field';
+    const orgSelectLabel = document.createElement('span');
+    orgSelectLabel.className = 'contacts-field-label';
+    orgSelectLabel.textContent = 'Parent Organization';
+    const orgSelect = document.createElement('select');
+    orgSelect.className = 'contacts-input';
+    orgSelect.dataset.field = 'organization_id';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = 'None';
+    orgSelect.appendChild(noneOpt);
+    (state.orgs || [])
+      .filter((o) => o && o.id != null && String(o.id) !== String(entry?.id))
+      .forEach((o) => {
+        const opt = document.createElement('option');
+        opt.value = String(o.id);
+        opt.textContent = o.name || `Org #${o.id}`;
+        orgSelect.appendChild(opt);
+      });
+    if (entry?.organization_id != null) {
+      orgSelect.value = String(entry.organization_id);
+    }
+    orgSelectWrap.append(orgSelectLabel, orgSelect);
+    const syncOrgParentState = () => {
+      orgSelectWrap.classList.toggle('hidden', orgToggle.getValue());
+      orgSelect.disabled = orgToggle.getValue();
+      if (orgToggle.getValue()) orgSelect.value = '';
+    };
+    orgToggle.input.addEventListener('change', syncOrgParentState);
+    syncOrgParentState();
+
+    togglesRow.append(extendToggle.wrap, vendorToggle.wrap, orgToggle.wrap);
 
     const extendedSection = document.createElement('div');
-    extendedSection.style.display = extendToggle.getValue() ? 'flex' : 'none';
-    extendedSection.style.flexDirection = 'column';
-    extendedSection.style.gap = '10px';
-    extendedSection.style.paddingTop = '4px';
+    extendedSection.className = 'contacts-extended-section';
+    extendedSection.classList.toggle('is-open', extendToggle.getValue());
 
     const { wrap: addr1Wrap, field: addr1Field } = input('Address Line 1');
     addr1Field.placeholder = '123 Main St';
@@ -656,47 +548,31 @@ export function mountContacts(host) {
     addr2Field.dataset.field = 'addr2';
 
     const cityStateZip = document.createElement('div');
-    cityStateZip.style.display = 'grid';
-    cityStateZip.style.gap = '8px';
-    cityStateZip.style.gridTemplateColumns = '1fr 120px 120px';
+    cityStateZip.className = 'contacts-city-grid';
 
     const { wrap: cityWrap, field: cityField } = input('City');
     cityField.placeholder = 'City';
-    cityWrap.style.marginBottom = '0';
     cityField.dataset.field = 'city';
 
     const { wrap: stateWrap, field: stateField } = input('State');
     stateField.placeholder = 'State';
-    stateWrap.style.marginBottom = '0';
     stateField.dataset.field = 'state';
 
     const { wrap: zipWrap, field: zipField } = input('Zip');
     zipField.placeholder = 'Zip';
-    zipWrap.style.marginBottom = '0';
     zipField.dataset.field = 'zip';
 
     cityStateZip.append(cityWrap, stateWrap, zipWrap);
 
     const notesWrap = document.createElement('label');
-    notesWrap.style.display = 'flex';
-    notesWrap.style.flexDirection = 'column';
-    notesWrap.style.gap = '6px';
-    notesWrap.style.color = FG;
-    notesWrap.style.fontSize = '13px';
+    notesWrap.className = 'contacts-field';
     const notesLabel = document.createElement('span');
     notesLabel.textContent = 'Notes';
+    notesLabel.className = 'contacts-field-label';
     const notesField = document.createElement('textarea');
     notesField.rows = 3;
     notesField.placeholder = 'Anything helpful…';
-    notesField.style.background = INPUT_BG;
-    notesField.style.color = FG;
-    notesField.style.border = `1px solid ${BORDER}`;
-    notesField.style.borderRadius = '10px';
-    notesField.style.padding = '10px 12px';
-    notesField.style.fontSize = '14px';
-    notesField.style.outline = 'none';
-    notesField.onfocus = () => (notesField.style.borderColor = '#4b6bfb');
-    notesField.onblur = () => (notesField.style.borderColor = BORDER);
+    notesField.className = 'contacts-input contacts-textarea';
     notesField.value = initialNotes;
     notesField.dataset.field = 'notes';
     notesWrap.append(notesLabel, notesField);
@@ -704,16 +580,13 @@ export function mountContacts(host) {
     extendedSection.append(addr1Wrap, addr2Wrap, cityStateZip, notesWrap);
 
     extendToggle.input.addEventListener('change', () => {
-      extendedSection.style.display = extendToggle.getValue() ? 'flex' : 'none';
+      extendedSection.classList.toggle('is-open', extendToggle.getValue());
     });
 
-    form.append(nameWrap, emailWrap, phoneWrap, togglesRow, extendedSection);
+    form.append(nameWrap, emailWrap, phoneWrap, togglesRow, orgSelectWrap, extendedSection);
 
     const actions = document.createElement('div');
-    actions.style.display = 'flex';
-    actions.style.justifyContent = 'flex-end';
-    actions.style.gap = '10px';
-    actions.style.marginTop = '6px';
+    actions.className = 'contacts-modal-actions';
 
     const saveBtn = button('Save');
     saveBtn.disabled = !nameField.value.trim();
@@ -727,14 +600,10 @@ export function mountContacts(host) {
 
     async function save() {
       const nameVal = box.querySelector('[data-field="name"]')?.value?.trim() || '';
-      const emailVal = box.querySelector('[data-field="email"]')?.value?.trim() || '';
-      const phoneVal = box.querySelector('[data-field="phone"]')?.value?.trim() || '';
       const payload = buildContactPayload(box);
 
       const errors = [];
       if (!nameVal) errors.push('Name is required.');
-      if (!emailVal && !phoneVal) errors.push('Provide at least Email or Phone.');
-      if (!payload.contact) errors.push('Contact (email or phone) is required.');
       if (errors.length) {
         toast(errors.join(' '), 'error');
         return;
@@ -747,7 +616,6 @@ export function mountContacts(host) {
         let saved;
         if (isEdit) {
           const facade = entry.facade || (entry.is_vendor ? 'vendors' : 'contacts');
-          if (facade !== 'contacts') delete payload.role;
           saved = await apiPut(`/app/${facade}/${entry.id}`, payload);
           toast('Saved');
         } else {
@@ -813,23 +681,17 @@ export function mountContacts(host) {
     const { overlay, box } = buildModal();
     const heading = document.createElement('div');
     heading.textContent = 'Delete contact/vendor';
-    heading.style.fontSize = '18px';
-    heading.style.fontWeight = '700';
+    heading.className = 'contacts-modal-title';
 
     const bodyText = document.createElement('div');
-    bodyText.style.color = '#cdd1dc';
-    bodyText.style.fontSize = '14px';
+    bodyText.className = 'contacts-modal-body';
     bodyText.textContent = `What should happen to ${entry.name || 'this record'}?`;
 
     const actions = document.createElement('div');
-    actions.style.display = 'flex';
-    actions.style.flexDirection = 'column';
-    actions.style.gap = '10px';
+    actions.className = 'contacts-delete-actions';
 
     const buttonsRow = document.createElement('div');
-    buttonsRow.style.display = 'flex';
-    buttonsRow.style.justifyContent = 'flex-end';
-    buttonsRow.style.gap = '8px';
+    buttonsRow.className = 'contacts-delete-buttons';
 
     const cancel = button('Cancel');
     cancel.addEventListener('click', () => document.body.removeChild(overlay));
@@ -839,15 +701,11 @@ export function mountContacts(host) {
 
     if (entry.is_org) {
       const notice = document.createElement('div');
-      notice.style.fontSize = '13px';
-      notice.style.color = '#cdd1dc';
+      notice.className = 'contacts-modal-body';
       notice.textContent = 'Delete this organization. Optionally cascade to linked contacts.';
 
       const cascadeWrap = document.createElement('label');
-      cascadeWrap.style.display = 'flex';
-      cascadeWrap.style.alignItems = 'center';
-      cascadeWrap.style.gap = '8px';
-      cascadeWrap.style.marginTop = '6px';
+      cascadeWrap.className = 'contacts-toggle';
       const cascadeBox = document.createElement('input');
       cascadeBox.type = 'checkbox';
       const cascadeLabel = document.createElement('span');

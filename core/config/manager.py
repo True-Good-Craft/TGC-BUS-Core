@@ -26,7 +26,7 @@ class BackupConfig(BaseModel):
 
 
 class DevConfig(BaseModel):
-    writes_enabled: bool = False
+    writes_enabled: bool = True
 
 
 class UpdatesConfig(BaseModel):
