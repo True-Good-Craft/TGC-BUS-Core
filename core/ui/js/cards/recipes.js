@@ -5,6 +5,7 @@ import { RecipesAPI } from '../api/recipes.js';
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   Object.entries(attrs).forEach(([k, v]) => {
+    if (v == null) return;
     if (k === 'class') node.className = v;
     else if (k === 'text') node.textContent = v;
     else node.setAttribute(k, v);
@@ -21,6 +22,14 @@ let _recipes = [];
 let _activeId = null;
 let _draft = null;
 
+const UOMS_BY_DIMENSION = {
+  length: ['mm', 'cm', 'm'],
+  area: ['mm2', 'cm2', 'm2'],
+  volume: ['mm3', 'cm3', 'ml', 'l', 'm3'],
+  weight: ['mg', 'g', 'kg'],
+  count: ['ea'],
+};
+
 function findItem(itemId) {
   return _items.find((i) => String(i.id) === String(itemId));
 }
@@ -29,6 +38,79 @@ function decimalString(v) {
   const s = String(v ?? '').trim().replace(/,/g, '');
   if (s === '' || s === '.' || s === '-.') return '0';
   return s.startsWith('.') ? `0${s}` : s;
+}
+
+function scaleDecimalString(value, factor) {
+  const n = Number(String(value ?? '').trim());
+  if (!Number.isFinite(n)) return decimalString(value);
+  return decimalString(String(n * factor));
+}
+
+function toUiCountUom(uom) {
+  return String(uom || '').trim().toLowerCase() === 'mc' ? 'ea' : String(uom || '').trim();
+}
+
+function toUiCountQuantity(quantityDecimal, uom) {
+  return String(uom || '').trim().toLowerCase() === 'mc'
+    ? scaleDecimalString(quantityDecimal, 1 / 1000)
+    : String(quantityDecimal ?? '');
+}
+
+function normalizeDimension(dim) {
+  const d = String(dim || '').trim().toLowerCase();
+  if (d === 'mass') return 'weight';
+  return d;
+}
+
+function uomOptionsForItem(item) {
+  const dim = normalizeDimension(item?.dimension) || 'count';
+  const options = [...(UOMS_BY_DIMENSION[dim] || ['ea'])];
+  const itemUom = toUiCountUom(item?.uom);
+  if (itemUom && !options.includes(itemUom)) options.unshift(itemUom);
+  return options;
+}
+
+function setSelectOptions(selectEl, options, selectedValue, placeholder = null) {
+  selectEl.innerHTML = '';
+  if (placeholder !== null) {
+    selectEl.append(el('option', { value: '' }, placeholder));
+  }
+  options.forEach((u) => {
+    const label = u === 'mc' ? 'mc (1/1000 ea)' : u;
+    selectEl.append(el('option', { value: u }, label));
+  });
+
+  if (selectedValue && options.includes(selectedValue)) {
+    selectEl.value = selectedValue;
+  } else if (placeholder !== null) {
+    selectEl.value = '';
+  } else if (options.length) {
+    selectEl.value = options[0];
+  }
+}
+
+function isStrictPositiveDecimal(value) {
+  const raw = String(value ?? '').trim().replace(/,/g, '');
+  if (!raw) return false;
+  if (!/^(?:\d+|\d*\.\d+)$/.test(raw)) return false;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0;
+}
+
+function formatRecipeError(e) {
+  const data = e?.data ?? e?.payload ?? {};
+  const detail = data?.detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => d?.msg || d?.message || JSON.stringify(d)).join(' | ');
+  }
+  if (detail && typeof detail === 'object') {
+    if (detail.error && detail.keys) return `${detail.error}: ${detail.keys.join(', ')}`;
+    if (detail.error) return String(detail.error);
+    if (detail.message) return String(detail.message);
+    return JSON.stringify(detail);
+  }
+  if (typeof detail === 'string') return detail;
+  return e?.message || 'Save failed';
 }
 
 function newRecipeDraft() {
@@ -55,18 +137,20 @@ function blankRecipeItem(sort = 0) {
 }
 
 function normalizeRecipe(data) {
+  const outputUomRaw = data.uom || '';
+  const outputUomUi = toUiCountUom(outputUomRaw);
   return {
     id: data.id,
     name: data.name || '',
     output_item_id: data.output_item_id ?? null,
-    quantity_decimal: data.quantity_decimal ? String(data.quantity_decimal) : '1',
-    uom: data.uom || '',
+    quantity_decimal: data.quantity_decimal ? toUiCountQuantity(String(data.quantity_decimal), outputUomRaw) : '1',
+    uom: outputUomUi || '',
     archived: data.archived === true || data.is_archived === true,
     notes: data.notes || '',
     items: (data.items || []).map((it, idx) => ({
       item_id: it.item_id ?? null,
-      quantity_decimal: it.quantity_decimal != null ? String(it.quantity_decimal) : '',
-      uom: it.uom || (it.item?.uom || ''),
+      quantity_decimal: it.quantity_decimal != null ? toUiCountQuantity(String(it.quantity_decimal), it.uom || it.item?.uom) : '',
+      uom: toUiCountUom(it.uom || (it.item?.uom || '')),
       optional: it.optional === true || it.is_optional === true,
       sort: Number.isFinite(it.sort ?? it.sort_order) ? (it.sort ?? it.sort_order) : idx,
     })),
@@ -105,6 +189,7 @@ export async function mountRecipes() {
   const container = document.querySelector('[data-tab-panel="recipes"]');
   if (!container) return;
   container.innerHTML = '';
+  container.classList.add('recipes-shell');
 
   try {
     await refreshData();
@@ -113,9 +198,9 @@ export async function mountRecipes() {
     return;
   }
 
-  const grid = el('div', { style: 'display:grid;grid-template-columns:1fr 2fr;gap:20px;min-height:calc(100vh - 160px);' });
-  const listPanel = el('div', { class: 'card', style: 'overflow:auto;background:#1e1f22;border-radius:10px;border:1px solid #2f3136;' });
-  const editorPanel = el('div', { class: 'card', style: 'overflow:auto;background:#1e1f22;border-radius:10px;border:1px solid #2f3136;' });
+  const grid = el('div', { class: 'recipes-grid' });
+  const listPanel = el('div', { class: 'card recipes-list-panel' });
+  const editorPanel = el('div', { class: 'card recipes-editor-panel' });
 
   grid.append(listPanel, editorPanel);
   container.append(grid);
@@ -137,9 +222,9 @@ export function unmountRecipes() {
 function renderList(container, editor) {
   container.innerHTML = '';
 
-  const header = el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px' }, [
-    el('h2', { text: 'Recipes', style: 'margin:0;' }),
-    el('button', { class: 'btn primary small', text: '+ New', style: 'border-radius:10px;padding:8px 12px;' }),
+  const header = el('div', { class: 'recipes-list-header' }, [
+    el('h2', { class: 'recipes-list-title', text: 'Recipes' }),
+    el('button', { class: 'btn primary small recipes-new-btn', text: '+ New' }),
   ]);
   header.lastChild.onclick = () => {
     _activeId = null;
@@ -149,10 +234,10 @@ function renderList(container, editor) {
 
   const search = el('input', {
     type: 'search',
-    placeholder: 'Filter…',
-    style: 'width:100%;margin:6px 0 12px 0;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
+    class: 'recipes-filter-input',
+    placeholder: 'Filter...',
   });
-  const list = el('div', { style: 'display:flex;flex-direction:column;gap:8px' });
+  const list = el('div', { class: 'recipes-list' });
 
   const paint = (term = '') => {
     list.innerHTML = '';
@@ -160,14 +245,11 @@ function renderList(container, editor) {
     _recipes
       .filter((r) => !q || String(r.name || '').toLowerCase().includes(q))
       .forEach((r) => {
-        const row = el('div', {
-          class: 'recipe-row',
-          style: 'padding:10px 12px;background:#23262b;border-radius:10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border:1px solid #2f3136;',
-        }, [
-          el('span', { text: r.name, style: 'color:#e6e6e6' }),
-          el('span', { text: '→', style: 'color:#6b7280' }),
+        const row = el('div', { class: 'recipe-row' }, [
+          el('span', { class: 'recipe-row-name', text: r.name }),
+          el('span', { class: 'recipe-row-arrow', text: '→' }),
         ]);
-        if (r.id === _activeId) row.style.background = '#2f333b';
+        if (r.id === _activeId) row.classList.add('active');
         row.onclick = async () => {
           _activeId = r.id;
           _draft = normalizeRecipe(await RecipesAPI.get(r.id));
@@ -184,7 +266,12 @@ function renderList(container, editor) {
 
 function renderEmpty(editor) {
   editor.innerHTML = '';
-  editor.append(el('div', { style: 'color:#666;text-align:center;margin-top:50px' }, 'Select a recipe to edit.'));
+  editor.append(el('div', { class: 'recipes-empty', text: 'Select a recipe to edit.' }));
+}
+
+function setStatus(statusEl, text = '', tone = 'neutral') {
+  statusEl.textContent = text;
+  statusEl.dataset.tone = tone;
 }
 
 function renderEditor(editor, leftPanel) {
@@ -194,80 +281,83 @@ function renderEditor(editor, leftPanel) {
     return;
   }
 
-  const status = el('div', { style: 'min-height:18px;font-size:13px;margin-bottom:6px;color:#9ca3af' });
+  const status = el('div', { class: 'recipes-status', 'data-tone': 'neutral' });
 
-  const nameRow = el('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:10px' });
+  const nameRow = el('div', { class: 'recipes-row' });
   const nameInput = el('input', {
     type: 'text',
+    class: 'recipes-input recipes-input--grow',
     value: _draft.name,
-    style: 'flex:1;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
   });
   nameInput.addEventListener('input', () => { _draft.name = nameInput.value; });
-  nameRow.append(el('label', { text: 'Name', style: 'width:90px;color:#cdd1dc' }), nameInput);
+  nameRow.append(el('label', { class: 'recipes-row-label', text: 'Name' }), nameInput);
 
-  const outputRow = el('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap' });
-  const outSel = el('select', {
-    id: 'recipe-output',
-    style: 'flex:1;min-width:200px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
-  });
-  outSel.append(el('option', { value: '', disabled: 'true', selected: _draft.output_item_id == null ? 'selected' : undefined }, '— Output Item —'));
+  const outputRow = el('div', { class: 'recipes-row recipes-row--wrap' });
+  const outSel = el('select', { id: 'recipe-output', class: 'recipes-input recipes-input--grow' });
+  outSel.append(el('option', {
+    value: '',
+    disabled: 'true',
+    selected: _draft.output_item_id == null ? 'selected' : null,
+  }, '— Output Item —'));
   _items.forEach((i) => outSel.append(el('option', { value: String(i.id) }, i.name)));
   if (_draft.output_item_id != null) outSel.value = String(_draft.output_item_id);
+
+  const outUomInput = el('select', {
+    class: 'recipes-input recipes-input--uom',
+  });
+  const initialOutItem = findItem(_draft.output_item_id);
+  setSelectOptions(outUomInput, uomOptionsForItem(initialOutItem), _draft.uom || initialOutItem?.uom || '', null);
+  outUomInput.addEventListener('change', () => { _draft.uom = outUomInput.value; });
+
   outSel.addEventListener('change', () => {
     const parsed = parseInt(outSel.value, 10);
     _draft.output_item_id = Number.isFinite(parsed) ? parsed : null;
     const outItem = findItem(_draft.output_item_id);
-    _draft.uom = outItem?.uom || _draft.uom;
-    outUomInput.value = _draft.uom || '';
+    const preferred = _draft.uom || outItem?.uom || '';
+    setSelectOptions(outUomInput, uomOptionsForItem(outItem), preferred, null);
+    _draft.uom = outUomInput.value || '';
   });
 
   const outQtyInput = el('input', {
     type: 'text',
+    class: 'recipes-input recipes-input--qty',
     value: _draft.quantity_decimal || '1',
-    style: 'width:120px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
   });
   outQtyInput.addEventListener('input', () => { _draft.quantity_decimal = outQtyInput.value; });
 
-  const outUomInput = el('input', {
-    type: 'text',
-    value: _draft.uom || '',
-    style: 'width:100px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
-  });
-  outUomInput.addEventListener('input', () => { _draft.uom = outUomInput.value; });
-
   outputRow.append(
-    el('label', { text: 'Output', style: 'width:90px;color:#cdd1dc' }),
+    el('label', { class: 'recipes-row-label', text: 'Output' }),
     outSel,
     outQtyInput,
     outUomInput,
   );
 
-  const flagsRow = el('div', { style: 'display:flex;gap:16px;align-items:center;margin-bottom:10px' });
+  const flagsRow = el('div', { class: 'recipes-flags-row' });
   const archivedToggle = el('input', { type: 'checkbox' });
   archivedToggle.checked = _draft.archived === true;
   archivedToggle.addEventListener('change', () => { _draft.archived = archivedToggle.checked; });
-  flagsRow.append(archivedToggle, el('span', { text: 'Archived', style: 'color:#cdd1dc' }));
+  flagsRow.append(archivedToggle, el('span', { class: 'recipes-flag-label', text: 'Archived' }));
 
   const notes = el('textarea', {
-    value: _draft.notes || '',
+    class: 'recipes-textarea',
     placeholder: 'Notes',
-    style: 'width:100%;min-height:80px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6;margin-bottom:10px;',
+    value: _draft.notes || '',
   });
   notes.addEventListener('input', () => { _draft.notes = notes.value; });
 
-  const itemsBox = el('div', { style: 'background:#23262b;padding:14px;border-radius:10px;border:1px solid #2f3136;margin-bottom:12px' });
-  const itemsHeader = el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px' }, [
-    el('h4', { text: 'Input Items', style: 'margin:0;color:#e6e6e6' }),
-    el('button', { class: 'btn small', text: '+ Add', style: 'border-radius:10px;padding:8px 12px;' }),
+  const itemsBox = el('div', { class: 'recipes-items-box' });
+  const itemsHeader = el('div', { class: 'recipes-items-header' }, [
+    el('h4', { class: 'recipes-items-title', text: 'Input Items' }),
+    el('button', { class: 'btn small recipes-add-item-btn', text: '+ Add' }),
   ]);
 
-  const table = el('table', { style: 'width:100%;border-collapse:collapse;background:#1e1f22;border:1px solid #2f3136;border-radius:10px;overflow:hidden;' });
-  const thead = el('thead', { style: 'background:#202226' }, el('tr', {}, [
-    el('th', { style: 'text-align:left;padding:10px;color:#e6e6e6' }, 'Item'),
-    el('th', { style: 'text-align:right;padding:10px;color:#e6e6e6' }, 'Quantity'),
-    el('th', { style: 'text-align:right;padding:10px;color:#e6e6e6' }, 'UOM'),
-    el('th', { style: 'text-align:center;padding:10px;color:#e6e6e6' }, 'Optional'),
-    el('th', { style: 'width:60px;text-align:right' }, ''),
+  const table = el('table', { class: 'recipes-items-table' });
+  const thead = el('thead', { class: 'recipes-items-thead' }, el('tr', {}, [
+    el('th', { class: 'recipes-th-left' }, 'Item'),
+    el('th', { class: 'recipes-th-right' }, 'Quantity'),
+    el('th', { class: 'recipes-th-right' }, 'UOM'),
+    el('th', { class: 'recipes-th-center' }, 'Optional'),
+    el('th', { class: 'recipes-th-actions' }, ''),
   ]));
   const tbody = el('tbody');
   table.append(thead, tbody);
@@ -275,35 +365,40 @@ function renderEditor(editor, leftPanel) {
   function renderItemRows() {
     tbody.innerHTML = '';
     _draft.items.forEach((ri, idx) => {
-      const row = el('tr', { style: 'border-bottom:1px solid #2f3136' });
+      const row = el('tr', { class: 'recipes-item-row' });
 
-      const itemSel = el('select', { style: 'width:100%;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-      itemSel.append(el('option', { value: '', selected: ri.item_id == null ? 'selected' : undefined }, '— Select —'));
-      _items.forEach((i) => itemSel.append(el('option', { value: String(i.id), selected: String(i.id) === String(ri.item_id) ? 'selected' : undefined }, i.name)));
+      const itemSel = el('select', { class: 'recipes-input recipes-input--full' });
+      itemSel.append(el('option', {
+        value: '',
+        selected: ri.item_id == null ? 'selected' : null,
+      }, '— Select —'));
+      _items.forEach((i) => itemSel.append(el('option', {
+        value: String(i.id),
+        selected: String(i.id) === String(ri.item_id) ? 'selected' : null,
+      }, i.name)));
       itemSel.addEventListener('change', () => {
         ri.item_id = itemSel.value ? Number(itemSel.value) : null;
         const meta = findItem(ri.item_id);
-        if (meta?.uom) {
-          ri.uom = meta.uom;
-          uomInput.value = meta.uom;
-        }
+        const preferred = meta?.uom || ri.uom || '';
+        setSelectOptions(uomInput, uomOptionsForItem(meta), preferred, '— Select —');
+        ri.uom = uomInput.value;
       });
 
       const qtyInput = el('input', {
         type: 'text',
+        class: 'recipes-input recipes-input--qty recipes-input--right',
         value: ri.quantity_decimal ?? '',
-        style: 'width:120px;text-align:right;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
       });
       qtyInput.addEventListener('input', () => {
         ri.quantity_decimal = qtyInput.value;
       });
 
-      const uomInput = el('input', {
-        type: 'text',
-        value: ri.uom ?? '',
-        style: 'width:100px;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
+      const uomInput = el('select', {
+        class: 'recipes-input recipes-input--uom',
       });
-      uomInput.addEventListener('input', () => {
+      const currentItem = findItem(ri.item_id);
+      setSelectOptions(uomInput, uomOptionsForItem(currentItem), ri.uom ?? currentItem?.uom ?? '', '— Select —');
+      uomInput.addEventListener('change', () => {
         ri.uom = uomInput.value;
       });
 
@@ -313,7 +408,7 @@ function renderEditor(editor, leftPanel) {
         ri.optional = optBox.checked;
       });
 
-      const delBtn = el('button', { class: 'btn small', text: '✕', style: 'border-radius:10px;padding:6px 10px;' });
+      const delBtn = el('button', { class: 'btn small recipes-del-item-btn', text: '✕' });
       delBtn.onclick = () => {
         _draft.items.splice(idx, 1);
         _draft.items = _draft.items.map((it, sidx) => ({ ...it, sort: sidx }));
@@ -321,11 +416,11 @@ function renderEditor(editor, leftPanel) {
       };
 
       row.append(
-        el('td', { style: 'padding:10px' }, itemSel),
-        el('td', { style: 'padding:10px;text-align:right' }, qtyInput),
-        el('td', { style: 'padding:10px;text-align:right' }, uomInput),
-        el('td', { style: 'padding:10px;text-align:center' }, optBox),
-        el('td', { style: 'padding:10px;text-align:right' }, delBtn),
+        el('td', { class: 'recipes-td' }, itemSel),
+        el('td', { class: 'recipes-td recipes-td-right' }, qtyInput),
+        el('td', { class: 'recipes-td recipes-td-right' }, uomInput),
+        el('td', { class: 'recipes-td recipes-td-center' }, optBox),
+        el('td', { class: 'recipes-td recipes-td-right' }, delBtn),
       );
       tbody.append(row);
     });
@@ -339,60 +434,70 @@ function renderEditor(editor, leftPanel) {
   renderItemRows();
   itemsBox.append(itemsHeader, table);
 
-  const actions = el('div', { style: 'display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:6px' });
-  const saveBtn = el('button', { class: 'btn primary', text: 'Save Recipe', style: 'border-radius:10px;padding:10px 14px;' });
+  const actions = el('div', { class: 'recipes-actions' });
+  const saveBtn = el('button', { class: 'btn primary recipes-save-btn', text: 'Save Recipe' });
   const deleteBtn = el('button', {
     id: 'recipe-delete',
-    class: 'btn',
+    class: 'btn recipes-delete-btn',
     text: 'Delete',
-    style: 'border-radius:10px;padding:10px 14px;background:#3a3d43;color:#e6e6e6;border:1px solid #2f3136',
   });
   deleteBtn.disabled = !_draft.id;
 
   function serializeDraft() {
     const nameVal = (_draft.name || '').trim();
     const outItemId = Number(_draft.output_item_id);
-    const outQty = decimalString(_draft.quantity_decimal || '0');
+    const outQtyRaw = String(_draft.quantity_decimal || '').trim();
+    const outQty = decimalString(outQtyRaw || '0');
     const outUom = String(_draft.uom || '').trim();
+    const itemErrors = [];
 
     const cleanedItems = (_draft.items || [])
-      .map((it, idx) => ({
-        item_id: Number(it.item_id),
-        quantity_decimal: decimalString(it.quantity_decimal || '0'),
-        uom: String(it.uom || '').trim(),
-        optional: it.optional === true,
-        sort: idx,
-      }))
+      .map((it, idx) => {
+        const itemId = Number(it.item_id);
+        const qtyRaw = String(it.quantity_decimal || '').trim();
+        const qty = decimalString(qtyRaw || '0');
+        const uom = String(it.uom || '').trim();
+        if (!Number.isInteger(itemId) || itemId <= 0) itemErrors.push(`Input row ${idx + 1}: select an item.`);
+        if (!isStrictPositiveDecimal(qtyRaw)) itemErrors.push(`Input row ${idx + 1}: quantity must be a positive decimal.`);
+        if (!uom) itemErrors.push(`Input row ${idx + 1}: UOM is required.`);
+        return {
+          item_id: itemId,
+          quantity_decimal: qty,
+          uom,
+          optional: it.optional === true,
+          sort: idx,
+        };
+      })
       .filter((it) => Number.isInteger(it.item_id) && it.item_id > 0 && Number(it.quantity_decimal) > 0 && it.uom);
 
     const errors = [];
     if (!nameVal) errors.push('Name is required.');
     if (!Number.isInteger(outItemId) || outItemId <= 0) errors.push('Choose an output item.');
-    if (!outUom) errors.push('Output UOM is required.');
-    if (Number(outQty) <= 0) errors.push('Output quantity must be positive.');
+    if (!isStrictPositiveDecimal(outQtyRaw)) errors.push('Output quantity must be a positive decimal.');
+    errors.push(...itemErrors);
+    // Intentional UI policy: require at least one component row even though backend permits empty items.
     if (cleanedItems.length === 0) errors.push('Add at least one input item with quantity and uom.');
     if (errors.length) throw new Error(errors.join(' '));
 
-    return {
+    const payload = {
       name: nameVal,
       output_item_id: outItemId,
       quantity_decimal: outQty,
-      uom: outUom,
       archived: !!_draft.archived,
       notes: (_draft.notes || '').trim() || null,
       items: cleanedItems,
     };
+    if (outUom) payload.uom = outUom;
+    return payload;
   }
 
   saveBtn.onclick = async () => {
-    status.textContent = '';
-    status.style.color = '#9ca3af';
+    setStatus(status, '', 'neutral');
     let payload;
     try {
       payload = serializeDraft();
     } catch (err) {
-      status.textContent = err?.message || 'Please complete required fields.';
-      status.style.color = '#ff6666';
+      setStatus(status, err?.message || 'Please complete required fields.', 'error');
       return;
     }
 
@@ -403,22 +508,19 @@ function renderEditor(editor, leftPanel) {
       _activeId = _draft.id;
       await refreshData();
       renderList(leftPanel, editor);
-      status.textContent = 'Saved';
-      status.style.color = '#4caf50';
+      setStatus(status, 'Saved', 'success');
     } catch (e) {
-      status.textContent = (e?.data?.detail?.message || e?.message || 'Save failed');
-      status.style.color = '#ff6666';
+      setStatus(status, formatRecipeError(e), 'error');
     }
   };
 
   deleteBtn.onclick = async () => {
     if (!_draft?.id) return;
     if (!confirm('Delete this recipe? This cannot be undone.')) return;
-    status.textContent = '';
-    status.style.color = '#9ca3af';
+    setStatus(status, '', 'neutral');
     deleteBtn.disabled = true;
     const resetLabel = deleteBtn.textContent;
-    deleteBtn.textContent = 'Deleting…';
+    deleteBtn.textContent = 'Deleting...';
     try {
       await ensureToken();
       await RecipesAPI.delete(_draft.id);
@@ -427,11 +529,9 @@ function renderEditor(editor, leftPanel) {
       _draft = null;
       renderList(leftPanel, editor);
       renderEmpty(editor);
-      status.textContent = 'Deleted';
-      status.style.color = '#4caf50';
+      setStatus(status, 'Deleted', 'success');
     } catch (e) {
-      status.textContent = (e?.detail?.message || e?.detail || e?.message || 'Delete failed');
-      status.style.color = '#ff6666';
+      setStatus(status, (e?.detail?.message || e?.detail || e?.message || 'Delete failed'), 'error');
     } finally {
       deleteBtn.disabled = false;
       deleteBtn.textContent = resetLabel;

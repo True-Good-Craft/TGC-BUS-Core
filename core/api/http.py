@@ -71,7 +71,7 @@ from core.services.capabilities.registry import MANIFEST_PATH
 from core.policy.guard import require_owner_commit
 from core.policy.model import Policy
 from core.policy.store import load_policy, save_policy
-from core.config.writes import require_writes
+from core.config.writes import get_writes_enabled, require_writes
 from core.plans.commit import commit_local
 from core.plans.model import Plan, PlanStatus
 from core.plans.preview import preview_plan
@@ -109,7 +109,7 @@ from core.api.routes import transactions as transactions_routes
 from core.api.routes import config as config_routes
 from core.api.routes import update as update_routes
 from core.api.routes import system_state as system_state_routes
-from core.api.security import _calc_default_allow_writes
+
 from core.api.errors import error_envelope, normalize_http_exc, normalize_validation_err
 from core.config.paths import (
     APP_DIR,
@@ -401,8 +401,11 @@ PUBLIC_PREFIXES = (
 )
 
 
+def _is_dev_route_path(path: str) -> bool:
+    return path == "/dev" or path.startswith("/dev/")
+
 def _buscore_writeflag_startup() -> None:
-    app.state.allow_writes = _calc_default_allow_writes()
+    app.state.allow_writes = get_writes_enabled()
 
 
 def ensure_core_initialized():
@@ -486,24 +489,65 @@ def _root():
 TOKEN_FILE = DATA_DIR / "session_token.txt"
 
 
+def _persist_session_token(token: str) -> str:
+    global SESSION_TOKEN
+    SESSION_TOKEN = token
+    try:
+        TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TOKEN_FILE.write_text(token, encoding="utf-8")
+    except Exception:
+        pass
+    return token
+
+
+def _runtime_session_token() -> str | None:
+    state = getattr(app.state, "app_state", None)
+    tokens = getattr(state, "tokens", None)
+    if tokens is None:
+        return None
+    try:
+        token = tokens.current()
+    except Exception:
+        return None
+    token_text = str(token or "").strip()
+    return token_text or None
+
+
+def _expected_session_token() -> str | None:
+    # AppState.tokens is the canonical runtime source. Global/file mirrors remain
+    # as bootstrap compatibility only when app state is unavailable.
+    runtime_token = _runtime_session_token()
+    if runtime_token:
+        return runtime_token
+    expected = str(SESSION_TOKEN or "").strip()
+    if expected:
+        return expected
+    return _load_or_create_token()
+
+
 def _load_or_create_token() -> str:
+    runtime_token = _runtime_session_token()
+    if runtime_token:
+        return _persist_session_token(runtime_token)
     try:
         if TOKEN_FILE.exists():
-            return TOKEN_FILE.read_text(encoding="utf-8").strip()
+            token = TOKEN_FILE.read_text(encoding="utf-8").strip()
+            if token:
+                return _persist_session_token(token)
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
         tok = secrets.token_urlsafe(32)
-        TOKEN_FILE.write_text(tok, encoding="utf-8")
-        return tok
+        return _persist_session_token(tok)
     except Exception:
-        return secrets.token_urlsafe(32)
-
+        tok = secrets.token_urlsafe(32)
+        global SESSION_TOKEN
+        SESSION_TOKEN = tok
+        return tok
 
 @app.get("/session/token")
 def session_token(request: Request):
     state = get_state(request)
     tok = state.tokens.current()
-    global SESSION_TOKEN
-    SESSION_TOKEN = tok
+    _persist_session_token(tok)
     resp = JSONResponse({"token": tok})
     resp.set_cookie(
         key=state.settings.session_cookie_name,
@@ -699,14 +743,26 @@ def _require_core() -> CoreAlpha:
     return CORE
 
 
+def _session_cookie_names(req: Request) -> tuple[str, ...]:
+    req_app = req.scope.get("app")
+    state = getattr(getattr(req_app, "state", None), "app_state", None)
+    settings = getattr(state, "settings", None)
+    configured_name = str(getattr(settings, "session_cookie_name", "") or "").strip()
+    names: list[str] = []
+    for name in (configured_name, "bus_session", "session", "sessionid"):
+        if name and name not in names:
+            names.append(name)
+    return tuple(names)
+
+
 def _extract_token(req: Request) -> str | None:
-    # Cookie-only session per SoT
-    token = (
-        req.cookies.get("bus_session")
-        or req.cookies.get("session")
-        or req.cookies.get("sessionid")
-    )
-    return token
+    # Cookie-only session per SoT. The configured cookie name stays aligned with
+    # the bootstrap route, while legacy fallbacks remain accepted.
+    for cookie_name in _session_cookie_names(req):
+        token = req.cookies.get(cookie_name)
+        if token:
+            return token
+    return None
 
 
 def get_session_token(request: Request) -> str | None:
@@ -719,7 +775,9 @@ def get_session_token(request: Request) -> str | None:
 def validate_session_token(token: Optional[str]) -> bool:
     if not token:
         return False
-    expected = SESSION_TOKEN or _load_or_create_token()
+    expected = _expected_session_token()
+    if not expected:
+        return False
     try:
         return hmac.compare_digest(token, expected)
     except Exception:
@@ -763,6 +821,8 @@ async def _require_session(req: Request):
 @app.middleware("http")
 async def session_guard(request: Request, call_next):
     p = request.url.path
+    if _is_dev_route_path(p) and not is_dev():
+        return JSONResponse(status_code=404, content=normalize_http_exc("Not found"))
     if request.method == "OPTIONS":
         return await call_next(request)
     # Make static UI, session bootstrap, and brand assets public
@@ -2143,6 +2203,8 @@ async def _stop_indexer_event() -> None:
         pass
 
 
+# Canonical HTTP runtime surface. Native entry is launcher.py; containers use
+# `uvicorn core.api.http:create_app --factory`.
 def create_app():
     init_app_state(app)
     app.state.pause_indexer = pause_indexer
@@ -2169,6 +2231,8 @@ def create_app():
     return app
 
 
+# Convenience in-process app instance for launcher/test internals. This is not
+# the advertised runtime entry surface.
 APP = create_app()
 
 # Resolve license path correctly when running under PyInstaller ONEFILE
@@ -2182,9 +2246,8 @@ def build_app():
     policy_path = Path("config/policy.json")
     CORE = CoreAlpha(policy_path=policy_path)
     RUN_ID = CORE.run_id
-    SESSION_TOKEN = secrets.token_urlsafe(24)
+    SESSION_TOKEN = _load_or_create_token()
     DATA.mkdir(parents=True, exist_ok=True)
-    (DATA / "session_token.txt").write_text(SESSION_TOKEN, encoding="utf-8")
     CORE.configure_session_token(SESSION_TOKEN)
     app.state.broker = get_broker()
     LOG_FILE = LOGS / f"core_{RUN_ID}.log"

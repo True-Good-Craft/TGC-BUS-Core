@@ -95,7 +95,7 @@ It is not a full accounting system—and is not trying to be.
 2. Run the `.exe` file.
 3. No installer required.
 
-> Note: Until code signing is complete, Windows Defender may warn on first run.
+> Note: Windows Defender or SmartScreen may warn on first run. This repo does not currently guarantee automated code-signing for every Windows release.
 
 The application runs in the **system tray**.  
 Double-click the tray icon to open the dashboard.
@@ -122,7 +122,7 @@ Development scripts are included in the source tree.
 
 ## Architecture
 
-See [`docs/SOT.md`](docs/SOT.md) for the canonical Source of Truth and system architecture.
+See [`SOT.md`](SOT.md) for the canonical Source of Truth and system architecture.
 
 ---
 
@@ -197,11 +197,12 @@ Docker is optional.
 ```powershell
 pip install -r requirements.txt
 
-python -m uvicorn core.api.http:create_app \
-  --factory \
-  --host 0.0.0.0 \
-  --port 8765
+python launcher.py
+# or
+.\Run Core.bat
 ```
+
+`launcher.py` is the canonical native entry. It boots the canonical HTTP runtime from `core.api.http:create_app()` and opens `/ui/shell.html`.
 
 UI:
 
@@ -210,7 +211,6 @@ http://localhost:8765/ui/shell.html
 ```
 
 ---
-
 ## Data & Persistence
 
 * All data is stored locally in SQLite.
@@ -237,18 +237,17 @@ Software should serve small operators, not extract from them.
 
 ---
 
-## Security & Code Signing
+## Security & Release Verification
 
-BUS Core Windows releases are digitally signed with a trusted code-signing certificate
-issued to **True Good Craft**.
+BUS Core runs locally and does not require network access for normal use.
 
-- Publisher verification: True Good Craft
-- Timestamped signatures (DigiCert)
-- Builds are reproducible from source
-- No network calls required to run locally
+- Windows release builds are produced from `scripts/build_core.ps1` and `BUS-Core.spec`.
+- `scripts/build_core.ps1` prints optional manual `signtool` commands, but this repo does not currently guarantee automated code-signing for every release.
+- The update check path validates manifest URL, JSON shape, payload size, and strict SemVer only.
+- The app does not currently verify artifact checksum or signature before surfacing a release `download_url`.
+- Builds remain reproducible from source.
 
-Note: Windows SmartScreen warnings may appear for new releases until reputation is established.
-
+Note: Windows Defender or SmartScreen warnings may appear for new releases, especially when a binary is unsigned or has not yet built reputation.
 
 ## License
 
@@ -262,3 +261,7 @@ See `LICENSE` for details.
 https://buscore.ca
 
 Maintained by True Good Craft (Canada)
+
+
+
+

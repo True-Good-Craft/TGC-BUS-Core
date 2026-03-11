@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+"""Canonical native entrypoint for BUS Core."""
+
 from __future__ import annotations
 
 import os
@@ -154,11 +156,12 @@ def main():
         # Blocking Run with Reload (only from source, never from EXE)
         # NOTE: core.api.http initializes CORE on startup due to our fix
         uvicorn.run(
-            "core.api.http:APP",
+            "core.api.http:create_app",
             host="127.0.0.1",
             port=args.port,
             reload=(not is_frozen),
             log_config=uvicorn_log_config,
+            factory=True,
         )
         return
 
@@ -236,3 +239,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+

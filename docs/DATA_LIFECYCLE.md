@@ -9,9 +9,9 @@ This document explains how BUS Core handles data, where it is stored, and how op
 | `data/journal.log` | Write-ahead log (JSONL) | Append-only; records prepare phase details. |
 | `data/audit.log` | Audit chain (JSONL) | Hash chained; records commit/rollback/replay events. |
 | `logs/` | Runtime logs | Per-run file named `core_<run_id>.log`; `/logs` endpoint tails last 200 lines. |
-| `data/session_token.txt` | Current session token | Regenerated on each boot; can be cleared via `config clear --what data`. |
-| `~/.tgc/secrets` or `%LOCALAPPDATA%\BUSCore\secrets` | Encrypted secrets store | Managed by `core.secrets`; populated through `python app.py secrets set ...`. |
-| `plugins/<id>/settings.json` | Optional read-only plugin settings | Never written by plugins; toggle read-only via `python app.py config settings-ro`. |
+| `data/session_token.txt` | Current session token | Regenerated on each boot; operator-managed local state. |
+| `~/.tgc/secrets` or `%LOCALAPPDATA%\BUSCore\secrets` | Encrypted secrets store | Managed by `core.secrets` through the running BUS Core app and authenticated settings endpoints. |
+| `plugins/<id>/settings.json` | Optional read-only plugin settings | Operator-managed local settings file; never written by plugins. |
 | `~/.tgc/state/system_manifest.json` | Last capability manifest | Written asynchronously by `/capabilities`. |
 
 ## Lifecycle Principles
@@ -24,14 +24,14 @@ This document explains how BUS Core handles data, where it is stored, and how op
 
 ## Retention & Rotation
 
-* Journals and audits are retained until an operator deletes them. Suggested practice: archive after review, then remove with `python app.py config clear --what data`.
+* Journals and audits are retained until an operator deletes them from local storage.
 * Logs follow the same manual retention policy. Each boot creates a new file.
-* Session tokens are regenerated automatically and stored in `data/session_token.txt` for CLI convenience.
+* Session tokens are regenerated automatically and stored in `data/session_token.txt` for local tooling convenience.
 
 ## Operator Controls
 
-* **Secrets** – Run `python app.py secrets set --plugin <id> --key <name>` to write secrets. Remove them with `python app.py config clear --what secrets`.
-* **Data** – Run `python app.py config clear --what data` to clear journals, logs, and session tokens. This does not touch plugin settings.
+* **Secrets** – Manage through the running BUS Core app and authenticated settings endpoints.
+* **Data** – Clear or rotate journals, logs, and session tokens through direct local maintenance of the BUS Core data directories. This does not touch plugin settings.
 * **Transparency** – `/transparency.report` summarises active paths, retention mode, and plugin state. `/policy.simulate` lets operators inspect policy outcomes without performing an action.
 
 ## Data Flow Overview
@@ -42,3 +42,4 @@ This document explains how BUS Core handles data, where it is stored, and how op
 4. **Secrets**: Plugins retrieve secrets via `core.secrets.Secrets.get` on demand. They never cache or persist them.
 
 For additional context, review `docs/TRANSPARENCY.md` and inspect the live transparency endpoints.
+

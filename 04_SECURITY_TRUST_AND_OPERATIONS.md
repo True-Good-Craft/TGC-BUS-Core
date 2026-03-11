@@ -12,13 +12,13 @@
 | Concern | Status | Enforced by | Scope | Notes |
 | --- | --- | --- | --- | --- |
 | Session gate for non-public routes | Canonical | `session_guard` middleware | Broad route surface | Main route-entry auth barrier. |
-| Route-local token checks | Drifted | `tgc.security.require_token_ctx` and `core.api.http.require_token_ctx` | Selected modules/routes | Two live token-check implementations exist. |
+| Route-local token checks | Canonical with compatibility wrapper | `core.api.http.require_token_ctx` plus `tgc.security.require_token_ctx` | Selected modules/routes | `core.api.http` owns validation; `tgc.security.require_token_ctx` is a compatibility wrapper only. |
 | Write gate | Canonical | `require_write_access()` / `require_writes()` | Writes and selected admin routes | Controlled by app state plus env/config. |
 | Owner/tester commit gate | Canonical | `require_owner_commit()` | Selected write operations | Strict role/plan enforcement activates only when `BUS_POLICY_ENFORCE=1`. |
-| Dev-only gate | Canonical | `require_dev()` | Dev routes and detailed health | Hidden as 404 when disabled. |
+| Dev-only gate | Canonical | `session_guard` path check plus `require_dev()` | `/dev/*` routes and detailed health | `/dev/*` stays hidden as 404 when disabled; when enabled, session auth still applies. |
 | Capability manifest validation | Canonical | HMAC signature in `core/services/capabilities/registry.py` | `/capabilities`, `/nodes.manifest.sync` | Local manifest trust only. |
 | Update manifest validation | Canonical | `core/services/update.py` | `/app/update/check` | URL/content-type/size/SemVer validation only. |
-| Release artifact validation | Drifted | No code path found | Update/install surface | Download URL is surfaced without checksum/signature verification. |
+| Release artifact validation | Drifted | No code path found | Update/install surface | Manifest metadata may include `sha256`, but the app still surfaces `download_url` without checksum or signature verification. |
 
 ## Trust model
 
@@ -43,12 +43,16 @@
 | Authority | Status | Location | Notes |
 | --- | --- | --- | --- |
 | Session bootstrap route | Canonical | `GET /session/token` in `core/api/http.py` | Returns `{ token }` and sets cookie. |
-| AppState token manager | Canonical | `tgc/tokens.py`, `tgc/state.py` | `TokenManager.current()` is the token source for `GET /session/token`. |
-| Route-local token dependency in domain modules | Canonical | `tgc/security.py` | Checks against `AppState.tokens`. |
-| Route-local token dependency in protected router | Drifted | `core/api/http.py::require_token_ctx()` | Checks against global `SESSION_TOKEN`. |
-| Global session token | Drifted | `core/api/http.py::SESSION_TOKEN` | Separate live authority from AppState token manager. |
+| AppState token manager | Canonical | `tgc/tokens.py`, `tgc/state.py` | `TokenManager.current()` is the runtime token source that the canonical validator compares against. |
+| Validator authority | Canonical | `core.api.http::{session_guard, validate_session_token, require_token_ctx}` | Middleware, protected-router deps, and direct auth deps all flow through this path. |
+| Route-local token dependency compatibility shim | Compatibility wrapper | `tgc.security.require_token_ctx` | Delegates to `core.api.http.require_token_ctx()` and carries no independent validation logic. |
+| Global session token | Secondary | `core/api/http.py::SESSION_TOKEN` | Runtime mirror persisted to `session_token.txt`; fallback/bootstrap state only, not the normal validator authority. |
 | Token file | Secondary | `%LOCALAPPDATA%\BUSCore\app\data\session_token.txt` | Written by `build_app()` / bootstrap path. |
-| `app.py` token contract | Drifted | `app.py` | Uses `X-Session-Token` cookie name and different token path/behavior. |
+| Legacy alternate token surfaces | Removed | `app.py`, `tgc/http.py` | Conflicting parallel `/session/token` contracts were removed from the repo. |
+
+- Intended session contract: `GET /session/token` is the only bootstrap surface, it sets the `bus_session` cookie, and non-public routes remain cookie-authenticated even when `BUS_DEV=1`.
+- Intended dev-route contract: `/dev/*` returns `404` whenever `BUS_DEV!=1`; when `BUS_DEV=1`, those routes are available but still require a valid session cookie.
+
 
 ### Route-level enforcement inconsistencies
 
@@ -108,21 +112,21 @@
 | `BUS_POLICY_ENFORCE` | Canonical | Environment | Enables strict owner/plan enforcement. |
 | `BUS_DEV` | Canonical | Environment | Enables dev routes and unsanitized error detail behavior. |
 | `updates.manifest_url` | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` | Outbound update-manifest location. |
-| `writes_enabled` | Drifted | `%LOCALAPPDATA%\BUSCore\app\config.json` plus app state | Separate durable write gate authority. |
-| `role`, `plan_only` | Drifted | `%LOCALAPPDATA%\BUSCore\app\config.json` | Commit-policy inputs, only strictly enforced when `BUS_POLICY_ENFORCE=1`. |
+| `writes_enabled` | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` `dev.writes_enabled`, with app state as runtime mirror and `%LOCALAPPDATA%\BUSCore\app\config.json` as legacy fallback only | Durable write gate now lives under the canonical root config file. |
+| `role`, `plan_only` | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` `policy.*`, with `%LOCALAPPDATA%\BUSCore\app\config.json` as legacy fallback only | Commit-policy inputs, only strictly enforced when `BUS_POLICY_ENFORCE=1`. |
 | Google client ID / secret / refresh token | Canonical | OS keyring or `%LOCALAPPDATA%\BUSCore\secrets\secrets.json.enc` | OAuth and Drive access. |
 | Capability HMAC key | Canonical | `%LOCALAPPDATA%\BUSCore\state\capabilities_hmac.key` | Signs capability manifest. |
 
 ## Evidence-backed findings
 
-- Drifted: token/session authority is split between middleware cookie checks, `AppState.tokens`, global `SESSION_TOKEN`, and a token file.
+- Narrowed drift: `core.api.http` now owns validator authority, but runtime token state still spans `AppState.tokens`, global `SESSION_TOKEN`, and a token file.
 - Drifted: `ledger_api` and `finance_api` rely on global middleware rather than the explicit route-local auth/write pattern used by other write domains.
 - Drifted: CORS is configured with `allow_origins=["*"]` and `allow_methods=["*"]` on the local server.
 - Drifted: `core/services/capabilities/registry.py` injects a `license` block with `PolyForm-Noncommercial-1.0.0`, which conflicts with the repo-wide AGPL labeling elsewhere.
-- Drifted: `app.py` exposes an alternate `/session/token` contract that does not match the active runtime surface.
+- Canonical: legacy alternate `/session/token` surfaces (`app.py`, `tgc/http.py`) were removed; `core/api/http.py` is the only supported bootstrap route.
 - Canonical: backup import/export paths enforce password-based decryption, exports-root path confinement, maintenance mode, and journal archiving during restore.
 - Canonical: update manifest fetch blocks localhost and literal private/loopback/link-local/unspecified IP hosts, rejects redirects, and caps response size.
-- Drifted: update/download path does not validate release artifact checksum or signature before surfacing `download_url` to the UI.
+- Drifted: update/download path does not validate release artifact checksum or signature before surfacing `download_url` to the UI; current docs must describe checksum/signature fields as informational only.
 
 ## Limited-confidence inference
 

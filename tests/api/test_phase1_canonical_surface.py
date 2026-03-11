@@ -104,3 +104,12 @@ def test_route_modules_forbid_uom_guessing():
             if token in text:
                 offenders.append(f"{py_file}:{token}")
     assert not offenders, f"Forbidden UOM guessing found: {offenders}"
+
+
+def test_home_dashboard_stub_routes_are_explicitly_disclosed():
+    home_widget = Path("core/ui/js/cards/home_donuts.js").read_text(encoding="utf-8")
+
+    assert "/app/transactions/summary" in home_widget
+    assert "/app/transactions?limit=10" in home_widget
+    assert "placeholder only" in home_widget
+    assert "transactions module lands" in home_widget

@@ -16,6 +16,7 @@ from core.appdb.engine import get_session
 from core.appdb.ledger import InsufficientStock
 from core.appdb.models import Item, Recipe
 from core.config.writes import require_writes
+from core.config.paths import JOURNAL_DIR
 from core.manufacturing.service import execute_run_txn, format_shortages, validate_run
 from core.metrics.metric import default_unit_for, normalize_quantity_to_base_int
 from core.policy.guard import require_owner_commit
@@ -27,18 +28,19 @@ public_router = APIRouter(tags=["manufacturing"])
 logger = logging.getLogger(__name__)
 
 
-def _journals_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA")
-    if not root:
-        root = os.path.expanduser("~/.local/share")
-    d = Path(root) / "BUSCore" / "app" / "data" / "journals"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
 def _mf_journal_path() -> Path:
-    return _journals_dir() / "manufacturing.jsonl"
+    override = os.environ.get("BUS_MANUFACTURING_JOURNAL", "").strip()
+    if override:
+        path = Path(override)
+    else:
+        JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+        path = JOURNAL_DIR / "manufacturing.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
+
+def _journals_dir() -> Path:
+    return _mf_journal_path().parent
 
 def _parse_iso_utc(ts: str) -> datetime:
     if ts.endswith("Z"):

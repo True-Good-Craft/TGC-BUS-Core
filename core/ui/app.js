@@ -30,7 +30,7 @@ import { settingsCard } from "./js/cards/settings.js";
 import { mountLogsPage } from "./js/logs.js";
 import { mountFinance } from "./js/cards/finance.js";
 import { toMetricBase, DIM_DEFAULTS_IMPERIAL } from "./js/lib/units.js";
-import { maybeRunStartupUpdateCheck } from "./js/update-check.js";
+import { bindSidebarUpdateControls, maybeRunStartupUpdateCheck } from "./js/update-check.js";
 
 const ROUTES = {
   '#/welcome': showWelcome,
@@ -326,6 +326,7 @@ window.BUS_UNITS = {
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await ensureToken();
+    bindSidebarUpdateControls();
     // UI version stamp (from FastAPI OpenAPI info.version)
     {
       const el = document.querySelector('[data-role="ui-version"]');
@@ -600,7 +601,7 @@ async function showWelcome() {
 
   const renderEulaContent = () => {
     if (typeof eulaMarkdown !== 'string') {
-      return '<p style="margin:0; color:#9ca3af;">Loading EULA...</p>';
+      return '<p class="eula-loading">Loading EULA...</p>';
     }
     /*
 If a markdown renderer such as "marked" is present it will be used.
@@ -645,9 +646,9 @@ Otherwise the EULA is rendered as plain text inside a <pre> block.
     const eulaHtml = requireEula ? renderEulaContent() : '';
     const eulaReady = requireEula && typeof eulaMarkdown === 'string';
     host.innerHTML = `
-      <div class="card" style="max-width:760px; margin:0 auto;">
-        <h2 style="margin:0 0 8px;">${page.title}</h2>
-        <p style="margin:0 0 12px; color:#d1d5db;">${page.body}</p>
+      <div class="card welcome-card">
+        <h2 class="welcome-title">${page.title}</h2>
+        <p class="welcome-body">${page.body}</p>
         ${requireEula ? `
           <div class="eula-container">
             <div id="eula-scroll">${eulaHtml}</div>
@@ -657,8 +658,8 @@ Otherwise the EULA is rendered as plain text inside a <pre> block.
             </div>
           </div>
         ` : ''}
-        <p style="margin:0 0 18px; font-size:12px; color:#9ca3af;">Step ${idx + 1} of ${pages.length}</p>
-        <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <p class="welcome-step">Step ${idx + 1} of ${pages.length}</p>
+        <div class="welcome-actions">
           <button type="button" data-action="welcome-back" ${idx === 0 ? 'disabled' : ''}>Back</button>
           <button type="button" data-action="welcome-next" ${nextDisabled ? 'disabled' : ''}>${isLast ? 'Enter application' : 'Continue'}</button>
         </div>

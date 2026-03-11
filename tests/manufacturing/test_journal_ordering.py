@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
+import json
+
 import pytest
 
 pytestmark = pytest.mark.api
@@ -89,3 +91,26 @@ def test_append_failure_does_not_rollback(manufacturing_journal_setup, monkeypat
         assert movements.count() == 2
         qty_total = sum(m.qty_change for m in movements)
         assert abs(qty_total - 0) < 1e-9
+
+
+def test_canonical_manufacture_writes_configured_journal(manufacturing_journal_setup):
+    client = manufacturing_journal_setup["client"]
+    recipe_id = manufacturing_journal_setup["recipe_id"]
+    journal_path = manufacturing_journal_setup["journal_path"]
+
+    resp = client.post(
+        "/app/manufacture",
+        json={"recipe_id": recipe_id, "quantity_decimal": "1", "uom": "mc"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert journal_path.exists()
+
+    lines = [line for line in journal_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert lines
+
+    payload = json.loads(lines[-1])
+    assert payload["type"] == "manufacturing.run"
+    assert payload["recipe_id"] == recipe_id
+
+

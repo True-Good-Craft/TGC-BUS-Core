@@ -32,44 +32,44 @@ export function mountAdmin(container) {
   if (!container) return;
 
   container.innerHTML = `
-    <div class="card">
-      <h2 style="margin-top:0;margin-bottom:8px;">Backup Export</h2>
-      <p class="muted" style="margin-top:0;">Password-based AES-GCM export to %LOCALAPPDATA%\\BUSCore\\exports.</p>
+    <section class="admin-block">
+      <h2 class="admin-title">Backup Export</h2>
+      <p class="muted admin-muted">Password-based AES-GCM export to %LOCALAPPDATA%\\BUSCore\\exports.</p>
       <form data-form="export">
         <label class="section-title">Password</label>
         <input type="password" required data-field="export-password" placeholder="Enter export password" />
-        <div class="row-compact" style="gap:10px;margin-top:10px;align-items:center;">
+        <div class="row-compact admin-row admin-row--compact">
           <button type="submit">Export</button>
           <span data-status="export" class="muted"></span>
         </div>
       </form>
-    </div>
+    </section>
 
-    <div class="card" style="margin-top:16px;">
-      <h2 style="margin-top:0;margin-bottom:8px;">Restore (Preview then Commit)</h2>
-      <p class="muted" style="margin-top:0;">Preview validates schema before replacing the DB. Commit will archive existing journals and recreate empty ones.</p>
-      <div class="row-compact" style="gap:10px;align-items:flex-end;flex-wrap:wrap;">
-        <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:6px;">
-          <label class="section-title" style="margin:0;">Backup file</label>
+    <section class="admin-block admin-block--spaced">
+      <h2 class="admin-title">Restore (Preview then Commit)</h2>
+      <p class="muted admin-muted">Preview validates schema before replacing the DB. Commit will archive existing journals and recreate empty ones.</p>
+      <div class="row-compact admin-row admin-row--wrap-end">
+        <div class="admin-field-col admin-field-col--wide">
+          <label class="section-title admin-label-tight">Backup file</label>
           <input type="file" data-field="import-file" accept=".gcm,.db" />
           <input type="text" data-field="import-path" placeholder="Or paste a path under exports" />
         </div>
-        <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:6px;">
-          <label class="section-title" style="margin:0;">Password</label>
+        <div class="admin-field-col admin-field-col--narrow">
+          <label class="section-title admin-label-tight">Password</label>
           <input type="password" data-field="import-password" placeholder="Required to decrypt backup" />
         </div>
       </div>
-      <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <div class="admin-row admin-row--actions">
         <button type="button" data-action="preview">Preview</button>
         <button type="button" data-action="commit" class="danger">Commit (archives journals)</button>
         <span data-status="restore" class="muted"></span>
       </div>
-      <div data-role="preview-box" class="status-box hidden" style="margin-top:12px;"></div>
-      <div style="margin-top:12px;">
-        <div class="section-title" style="margin-top:0;">Available exports</div>
-        <div data-role="exports-list" class="status-box" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+      <div data-role="preview-box" class="status-box hidden admin-preview-box"></div>
+      <div class="admin-exports-wrap">
+        <div class="section-title admin-label-tight">Available exports</div>
+        <div data-role="exports-list" class="status-box admin-exports-list"></div>
       </div>
-    </div>
+    </section>
   `;
 
   const exportForm = container.querySelector('[data-form="export"]');
@@ -141,8 +141,8 @@ export function mountAdmin(container) {
       previewBox.innerHTML = `
         <div><strong>Path:</strong> ${path}</div>
         <div><strong>Schema version:</strong> ${res.schema_version ?? 'unknown'}</div>
-        <div style="margin-top:8px;">Table counts:</div>
-        <ul style="padding-left:18px;margin:4px 0;">
+        <div class="admin-preview-title">Table counts:</div>
+        <ul class="admin-preview-list">
           ${Object.entries(counts).map(([k, v]) => `<li>${k}: ${v}</li>`).join('')}
         </ul>
       `;
@@ -189,13 +189,8 @@ export function mountAdmin(container) {
       (res.exports || []).forEach((item) => {
         const pill = document.createElement('button');
         pill.type = 'button';
+        pill.className = 'admin-export-pill';
         pill.textContent = `${item.name} (${Math.round((item.bytes || 0) / 1024)} KB)`;
-        pill.style.background = '#2b2f36';
-        pill.style.border = '1px solid var(--border)';
-        pill.style.color = 'var(--text)';
-        pill.style.cursor = 'pointer';
-        pill.style.padding = '6px 10px';
-        pill.style.borderRadius = '10px';
         pill.title = `Updated ${fmtTs(item.modified || 0)}`;
         pill.addEventListener('click', () => {
           pathInput.value = item.path;

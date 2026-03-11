@@ -1,23 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { apiGet, apiPost, ensureToken } from '../api.js';
 import { mountAdmin } from './admin.js';
-import { runUpdateCheck } from '../update-check.js';
 
 export async function settingsCard(el) {
-  el.innerHTML = '<div style="padding:20px;">Loading settings...</div>';
+  el.innerHTML = '<div class="settings-loading">Loading settings...</div>';
 
   let config = {};
   try {
-      await ensureToken();
-      config = await apiGet('/app/config');
+    await ensureToken();
+    config = await apiGet('/app/config');
   } catch (e) {
-      console.error("Failed to load config", e);
-      el.innerHTML = `
-        <div class="card">
-          <div class="card-title">Error</div>
-          <p>Failed to load settings. Ensure server is running.</p>
-        </div>`;
-      return;
+    console.error('Failed to load config', e);
+    el.innerHTML = `
+      <div class="card">
+        <div class="card-title">Error</div>
+        <p>Failed to load settings. Ensure server is running.</p>
+      </div>`;
+    return;
   }
 
   const launcher = config.launcher || {};
@@ -28,75 +27,87 @@ export async function settingsCard(el) {
   el.innerHTML = '';
   const root = document.createElement('div');
   root.className = 'card settings-shell';
-  root.style.maxWidth = '980px';
 
   root.innerHTML = `
-    <div class="card-title" style="margin-bottom:20px; font-size:1.2em; font-weight:bold;">Settings</div>
+    <header class="settings-page-header">
+      <div class="card-title settings-page-title">Settings</div>
+      <p class="settings-page-kicker">Configure system behavior, updates, and recovery controls.</p>
+    </header>
 
-    <div class="settings-grid">
-      <div class="settings-card">
+    <section class="settings-primary-section">
+      <div class="settings-section-head">
+        <h2 class="settings-section-title">Primary Settings</h2>
+      </div>
+
+      <div class="settings-grid settings-grid--primary">
+      <div class="settings-card settings-card--primary">
         <h3>System</h3>
-        <label style="display:block; margin-bottom:8px; font-weight:600; color:#ccc;">Theme</label>
-        <select id="setting-theme" style="width:100%; max-width:300px; padding:10px; border-radius:10px; background:#2a2c30; color:#e6e6e6; border:1px solid #444; margin-bottom:16px;">
-          <option value="system">System</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
+        <label for="setting-theme" class="settings-label">Theme</label>
+        <select id="setting-theme" class="settings-select" disabled>
+          <option value="system">System (currently only mode)</option>
         </select>
-        <label style="display:block; margin-bottom:8px; font-weight:600; color:#ccc;">Launcher Behavior</label>
-        <div style="display:flex; flex-direction:column; gap:10px;">
-          <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-            <input type="checkbox" id="setting-start-tray" style="transform:scale(1.2);">
+        <p class="settings-subtext">Alternate themes are deferred. BUS Core uses system mode for now.</p>
+        <label class="settings-label">Launcher Behavior</label>
+        <div class="settings-stack">
+          <label class="settings-check-row">
+            <input type="checkbox" id="setting-start-tray" class="settings-check">
             <span>Start in Tray (do not open browser on launch)</span>
           </label>
-          <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-            <input type="checkbox" id="setting-close-tray" style="transform:scale(1.2);">
-            <span>Close to Tray (keep running when window closes)</span>
-          </label>
         </div>
       </div>
 
-      <div class="settings-card">
+      <div class="settings-card settings-card--primary">
         <h3>Updates</h3>
-        <div style="display:flex; flex-direction:column; gap:10px;">
-          <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-            <input type="checkbox" id="setting-updates-enabled" style="transform:scale(1.2);">
-            <span>Enable update checks</span>
+        <div class="settings-stack">
+          <label class="settings-check-row">
+            <input type="checkbox" id="setting-updates-enabled" class="settings-check">
+            <span>Enable automatic update checks</span>
           </label>
-          <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-            <input type="checkbox" id="setting-updates-startup" style="transform:scale(1.2);">
-            <span>Check on startup (only when update checks are enabled)</span>
-          </label>
-          <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-            <button id="btn-check-updates" class="btn" style="padding:8px 14px; border-radius:10px; background:#2e7d32; color:white; border:none; cursor:pointer;">Check now</button>
-            <span id="check-updates-feedback" style="color:#aaa;"></span>
-            <button id="btn-download-update" class="btn" style="display:none; padding:8px 14px; border-radius:10px; background:#1f6feb; color:white; border:none; cursor:pointer;">Download</button>
-          </div>
+          <p class="settings-subtext">Version and update status live in the sidebar, including manual "Check now".</p>
         </div>
       </div>
 
-      <div class="settings-card">
+      <div class="settings-card settings-card--primary">
         <h3>Interface</h3>
-        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:600; color:#ccc;">
-          <input type="checkbox" data-role="american-mode" style="transform:scale(1.2);">
+        <label class="settings-check-row settings-check-row-strong">
+          <input type="checkbox" data-role="american-mode" class="settings-check">
           <span>American mode (Imperial units)</span>
         </label>
-        <p class="sub" style="margin:6px 0 0; color:#aaa;">Show inches/feet, ounces, and fluid ounces in the UI. Values are converted to metric before saving.</p>
+        <p class="sub settings-subtext">Show inches/feet, ounces, and fluid ounces in the UI. Values are converted to metric before saving.</p>
       </div>
 
-      <div class="settings-card">
+      <div class="settings-card settings-card--primary">
         <h3>Data Management</h3>
-        <label style="display:block; margin-bottom:8px; font-weight:600; color:#ccc;">Backup Directory</label>
-        <input type="text" id="setting-backup-dir" readonly
-               style="width:100%; padding:10px; border-radius:10px; background:#232428; color:#888; border:1px solid #444;"
-               value="">
-        <div style="font-size:0.85em; color:#666; margin-top:4px;">To change this path, edit config.json directly.</div>
+        <label for="setting-backup-dir" class="settings-label">Backup Directory</label>
+        <input type="text" id="setting-backup-dir" readonly class="settings-input-readonly" value="">
+        <div class="settings-help-text">To change this path, edit %LOCALAPPDATA%\\BUSCore\\config.json directly.</div>
       </div>
-    </div>
+      </div>
 
-    <div class="settings-save-row" style="margin-top:20px;">
-       <button id="btn-save" class="btn btn-primary" style="padding:10px 20px; border-radius:10px; background:#007bff; color:white; border:none; cursor:pointer; font-weight:bold;">Save Changes</button>
-       <span id="save-feedback" style="margin-left:15px; opacity:0; transition:opacity 0.3s; color:#4caf50; font-weight:500;">Saved. Restart required for launcher changes.</span>
-    </div>
+      <div class="settings-save-row">
+        <button id="btn-save" class="btn btn-primary settings-btn-save">Save Changes</button>
+        <span id="save-feedback" class="settings-save-feedback">Saved. Restart required for launcher changes.</span>
+      </div>
+    </section>
+
+    <section class="settings-operational-section">
+      <div class="settings-section-head settings-section-head--operational">
+        <h2 class="settings-section-title">Operational Controls</h2>
+      </div>
+
+      <div class="settings-card settings-card--operational">
+        <h3 class="settings-section-title">Onboarding</h3>
+        <p class="settings-subtext">Restart the first-run onboarding wizard from Settings.</p>
+        <div class="settings-action-row">
+          <button type="button" data-action="run-onboarding" class="btn btn-secondary">Run onboarding</button>
+        </div>
+      </div>
+
+      <div class="settings-card settings-card--operational">
+        <h3 class="settings-section-title">Administration</h3>
+        <div data-role="admin-section" class="settings-admin-host"></div>
+      </div>
+    </section>
   `;
 
   el.appendChild(root);
@@ -109,16 +120,7 @@ export async function settingsCard(el) {
     });
   }
 
-  const onboardingSection = document.createElement('section');
-  onboardingSection.style.marginTop = '16px';
-  onboardingSection.innerHTML = `
-    <h2 style="margin:0 0 12px;font-size:1.15em;font-weight:700;">Onboarding</h2>
-    <p style="margin:0 0 12px;color:#aaa;">Restart the first-run onboarding wizard from Settings.</p>
-    <button type="button" data-action="run-onboarding" class="btn btn-secondary">Run onboarding</button>
-  `;
-  el.appendChild(onboardingSection);
-
-  onboardingSection.querySelector('[data-action="run-onboarding"]')?.addEventListener('click', () => {
+  root.querySelector('[data-action="run-onboarding"]')?.addEventListener('click', () => {
     try {
       if (window.BUS_ONBOARDING?.clear) {
         window.BUS_ONBOARDING.clear();
@@ -129,97 +131,57 @@ export async function settingsCard(el) {
     window.location.hash = '#/welcome';
   });
 
-  const adminSection = document.createElement('section');
-  adminSection.style.marginTop = '16px';
-  adminSection.innerHTML = `
-    <h2 style="margin:0 0 12px;font-size:1.15em;font-weight:700;">Administration</h2>
-    <div data-role="admin-section"></div>
-  `;
-
-  el.appendChild(adminSection);
-
-  const adminHost = adminSection.querySelector('[data-role="admin-section"]');
+  const adminHost = root.querySelector('[data-role="admin-section"]');
   if (adminHost) {
     mountAdmin(adminHost);
   }
 
   // Populate
   const themeSelect = root.querySelector('#setting-theme');
-  themeSelect.value = ui.theme || 'system';
+  themeSelect.value = 'system';
 
   root.querySelector('#setting-start-tray').checked = !!launcher.auto_start_in_tray;
-  root.querySelector('#setting-close-tray').checked = !!launcher.close_to_tray;
   root.querySelector('#setting-backup-dir').value = backup.default_directory || '';
-  root.querySelector('#setting-updates-enabled').checked = !!updates.enabled;
-  root.querySelector('#setting-updates-startup').checked = updates.check_on_startup !== false;
+  root.querySelector('#setting-updates-enabled').checked = updates.enabled !== false;
 
   // Handlers
   const btnSave = root.querySelector('#btn-save');
   const feedback = root.querySelector('#save-feedback');
-  const btnCheck = root.querySelector('#btn-check-updates');
-  const checkFeedback = root.querySelector('#check-updates-feedback');
-  const btnDownload = root.querySelector('#btn-download-update');
-
-  btnCheck.onclick = async () => {
-      btnCheck.disabled = true;
-      btnDownload.style.display = 'none';
-      btnDownload.onclick = null;
-      checkFeedback.textContent = 'Checking...';
-      try {
-          const res = await runUpdateCheck();
-          if (res.error_code) {
-              checkFeedback.textContent = `Check failed: ${res.error_message || res.error_code}`;
-          } else if (res.update_available) {
-              checkFeedback.textContent = `Update available: ${res.latest_version}`;
-              if (res.download_url) {
-                  btnDownload.style.display = 'inline-block';
-                  btnDownload.onclick = () => {
-                      window.open(res.download_url, '_blank', 'noopener');
-                  };
-              }
-          } else {
-              checkFeedback.textContent = 'You are up to date.';
-          }
-      } catch (e) {
-          console.error(e);
-          checkFeedback.textContent = 'Update check failed.';
-      } finally {
-          btnCheck.disabled = false;
-      }
-  };
 
   btnSave.onclick = async () => {
-      btnSave.disabled = true;
-      const originalText = btnSave.textContent;
-      btnSave.textContent = 'Saving...';
+    btnSave.disabled = true;
+    const originalText = btnSave.textContent;
+    btnSave.textContent = 'Saving...';
 
-      const payload = {
-          ui: {
-              theme: themeSelect.value
-          },
-          launcher: {
-              auto_start_in_tray: root.querySelector('#setting-start-tray').checked,
-              close_to_tray: root.querySelector('#setting-close-tray').checked
-          },
-          updates: {
-              enabled: root.querySelector('#setting-updates-enabled').checked,
-              check_on_startup: root.querySelector('#setting-updates-startup').checked
-          }
-      };
+    const autoUpdatesEnabled = root.querySelector('#setting-updates-enabled').checked;
 
-      try {
-          await ensureToken();
-          const res = await apiPost('/app/config', payload);
-          if (res.ok) {
-              feedback.style.opacity = '1';
-              setTimeout(() => { feedback.style.opacity = '0'; }, 4000);
-          }
-      } catch (e) {
-          console.error(e);
-          alert('Failed to save settings.');
-      } finally {
-          btnSave.disabled = false;
-          btnSave.textContent = originalText;
+    const payload = {
+      ui: {
+        theme: 'system',
+      },
+      launcher: {
+        auto_start_in_tray: root.querySelector('#setting-start-tray').checked,
+      },
+      updates: {
+        enabled: autoUpdatesEnabled,
+        // Compatibility field retained, but always kept logically consistent.
+        check_on_startup: autoUpdatesEnabled,
+      },
+    };
+
+    try {
+      await ensureToken();
+      const res = await apiPost('/app/config', payload);
+      if (res.ok) {
+        feedback.style.opacity = '1';
+        setTimeout(() => { feedback.style.opacity = '0'; }, 4000);
       }
+    } catch (e) {
+      console.error(e);
+      alert('Failed to save settings.');
+    } finally {
+      btnSave.disabled = false;
+      btnSave.textContent = originalText;
+    }
   };
 }

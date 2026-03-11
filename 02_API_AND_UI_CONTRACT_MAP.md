@@ -4,14 +4,14 @@
 - Primary authority basis: Mounted routes in `core/api/http.py`, `core/api/routes/*`, `core/reader/api.py`, `core/organizer/api.py`, and SPA usage in `core/ui/app.js`, `core/ui/js/**/*`.
 - Best use: Contract checking, route inventory, UI/backend coherence review, wrapper/drift detection.
 - Refresh triggers: Route additions/removals, router remounting, screen changes, payload shape changes, legacy-wrapper cleanup.
-- Highest-risk drift areas: Missing backup endpoints, stub transaction endpoints used by the UI, `/app/logs` vs `/logs` naming collision, alternate `/session/token` implementation in `app.py`, mixed route-level guard patterns.
+- Highest-risk drift areas: Missing backup endpoints, stub transaction endpoints used by the UI, `/app/logs` vs `/logs` naming collision, mixed route-level guard patterns.
 - Key dependent files / modules: `core/api/http.py`, `core/api/routes/items.py`, `core/api/routes/recipes.py`, `core/api/routes/manufacturing.py`, `core/api/routes/ledger_api.py`, `core/api/routes/finance_api.py`, `core/ui/app.js`, `core/ui/js/cards/*`.
 
 ## Top Contract Drift Risks
 
 - Drifted: `core/ui/js/cards/backup.js` expects `/app/backup` or `/app.db`; no matching mounted backend route was found.
 - Drifted: `core/ui/js/cards/home_donuts.js` uses `/app/transactions/summary` and `/app/transactions`, but both endpoints are explicit stubs.
-- Drifted: `app.py` defines a conflicting `/session/token` contract and cookie key (`X-Session-Token`) relative to the current runtime in `core/api/http.py`.
+- Canonical: `/session/token` authority is only `core/api/http.py`; legacy alternate runtime surfaces that previously conflicted here were removed.
 - Drifted: `/app/logs` is the UI event-feed endpoint, while `/logs` is the text runtime log tail; similar names, different contracts.
 - Drifted: Some mounted `/app/*` mutations rely on global middleware rather than route-local auth/write dependencies; see `04_SECURITY_TRUST_AND_OPERATIONS.md`.
 
@@ -147,11 +147,12 @@
 | `GET` | `/oauth/google/callback` | Canonical | Exchange code for refresh token. | `core/api/http.py` |
 | `POST` | `/oauth/google/revoke` | Canonical | Revoke/clear refresh token. | `core/api/http.py` |
 | `GET` | `/oauth/google/status` | Canonical | Return Google connection status. | `core/api/http.py` |
-| `GET` | `/dev/writes` | Secondary | Dev-only writes-enabled flag. | `core/api/routes/dev.py` |
-| `POST` | `/dev/writes` | Secondary | Stubbed dev endpoint; returns 404. | `core/api/routes/dev.py` |
-| `GET` | `/dev/db/where` | Secondary | Dev-only DB path diagnostic. | `core/api/routes/dev.py` |
-| `GET` | `/dev/journal/info` | Secondary | Tail inventory journal. | `core/api/http.py` |
-| `GET` | `/dev/ping_plugin` | Secondary | Windows sandbox/plugin-host handshake check. | `core/api/http.py` |
+| `GET` | `/dev/writes` | Secondary | Dev-only writes-enabled flag; `404` when `BUS_DEV!=1`, session auth required when `BUS_DEV=1`. | `core/api/routes/dev.py` |
+| `POST` | `/dev/writes` | Secondary | Stubbed dev endpoint; returns `404`; same dev/auth guard model as other `/dev/*` routes. | `core/api/routes/dev.py` |
+| `GET` | `/dev/db/where` | Secondary | Dev-only DB path diagnostic; `404` when `BUS_DEV!=1`, session auth required when `BUS_DEV=1`. | `core/api/routes/dev.py` |
+| `GET` | `/dev/paths` | Secondary | Dev-only path diagnostic; `404` when `BUS_DEV!=1`, session auth required when `BUS_DEV=1`. | `core/api/http.py` |
+| `GET` | `/dev/journal/info` | Secondary | Tail inventory journal; `404` when `BUS_DEV!=1`, session auth required when `BUS_DEV=1`. | `core/api/http.py` |
+| `GET` | `/dev/ping_plugin` | Secondary | Windows sandbox/plugin-host handshake check; `404` when `BUS_DEV!=1`, session auth required when `BUS_DEV=1`. | `core/api/http.py` |
 
 ## Legacy wrappers and aliases
 
@@ -231,3 +232,4 @@
 - Refresh on: mounted route changes, wrapper removals, screen rewrites, payload-key changes, or guard-model changes that affect contract assumptions.
 - Fastest invalidators: deleting legacy wrappers, implementing real home transactions, adding/removing `/app/*` routes, or replacing the SPA router.
 - Check alongside: `04_SECURITY_TRUST_AND_OPERATIONS.md` for guard/enforcement truth and `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for update-check contract details.
+

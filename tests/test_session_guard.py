@@ -85,18 +85,20 @@ def test_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 
 def test_integration_routes_and_cors(test_client: TestClient) -> None:
-    token_resp = test_client.get("/session/token")
-    assert token_resp.status_code == 200
-    token = token_resp.json()["token"]
-    assert token # just check it's not empty
-
     unauthorized_health = test_client.get("/health")
     assert unauthorized_health.status_code == 200
     assert unauthorized_health.json() == {"ok": True, "version": VERSION}
 
+    # TestClient persists Set-Cookie responses, so the unauthorized dev check
+    # must run before we bootstrap the session cookie via /session/token.
     unauthorized_writes = test_client.get("/dev/writes")
     assert unauthorized_writes.status_code == 401
     assert unauthorized_writes.json() == {"error": "unauthorized"}
+
+    token_resp = test_client.get("/session/token")
+    assert token_resp.status_code == 200
+    token = token_resp.json()["token"]
+    assert token
 
     # Use Cookie header instead of X-Session-Token
     headers = {"Cookie": f"bus_session={token}"}
@@ -120,3 +122,4 @@ def test_integration_routes_and_cors(test_client: TestClient) -> None:
     )
     assert options.status_code == 200
     # verify CORS no longer reflects TOKEN_HEADER if we were checking that
+

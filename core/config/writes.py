@@ -22,7 +22,7 @@ from typing import Any, Dict, Optional
 from fastapi import Request
 
 from core.api.security import _calc_default_allow_writes, require_write_access, writes_enabled
-from core.config.paths import _load_config_dict, _save_config_dict
+from core.config.manager import get_dev_writes_enabled, set_dev_writes_enabled
 
 WRITE_BLOCK_MSG = "Local writes disabled. Enable in Settings."
 
@@ -30,20 +30,19 @@ WRITE_BLOCK_MSG = "Local writes disabled. Enable in Settings."
 def get_writes_enabled(request: Optional[Request] = None) -> bool:
     if request is not None:
         return writes_enabled(request)
-    cfg = _load_config_dict()
-    if "writes_enabled" in cfg:
-        return bool(cfg.get("writes_enabled", False))
+    persisted = get_dev_writes_enabled()
+    if persisted is not None:
+        return persisted
     return _calc_default_allow_writes()
 
 
 def set_writes_enabled(enabled: bool, request: Optional[Request] = None) -> Dict[str, Any]:
-    cfg = _load_config_dict()
-    cfg["writes_enabled"] = bool(enabled)
-    _save_config_dict(cfg)
+    set_dev_writes_enabled(bool(enabled))
     if request is not None and getattr(request, "app", None) is not None:
-        request.app.state.allow_writes = cfg["writes_enabled"]
-    return {"enabled": cfg["writes_enabled"]}
+        request.app.state.allow_writes = bool(enabled)
+    return {"enabled": bool(enabled)}
 
 
 def require_writes(request: Request):
     require_write_access(request)
+

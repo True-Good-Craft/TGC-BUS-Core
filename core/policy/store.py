@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-from core.config.paths import _load_config_dict, _save_config_dict
+from core.config.manager import load_policy_config, save_policy_config
 from core.config.writes import (
     get_writes_enabled as _get_writes_enabled,
     set_writes_enabled as _set_writes_enabled,
@@ -29,9 +29,9 @@ DEFAULT_POLICY = Policy(role=Role.OWNER, plan_only=False)  # framework present, 
 
 
 def load_policy() -> Policy:
-    data = _load_config_dict()
+    data = load_policy_config()
     try:
-        role = Role(data.get("role", DEFAULT_POLICY.role))
+        role = Role(str(data.get("role", DEFAULT_POLICY.role.value)))
     except Exception:
         role = DEFAULT_POLICY.role
     plan_only = bool(data.get("plan_only", DEFAULT_POLICY.plan_only))
@@ -39,10 +39,7 @@ def load_policy() -> Policy:
 
 
 def save_policy(policy: Policy) -> None:
-    data = _load_config_dict()
-    data["role"] = policy.role
-    data["plan_only"] = bool(policy.plan_only)
-    _save_config_dict(data)
+    save_policy_config(role=policy.role.value, plan_only=bool(policy.plan_only))
 
 
 def get_writes_enabled() -> bool:
@@ -51,3 +48,4 @@ def get_writes_enabled() -> bool:
 
 def set_writes_enabled(enabled: bool) -> None:
     _set_writes_enabled(enabled)
+

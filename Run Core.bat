@@ -8,8 +8,9 @@ cd /d "%~dp0"
 REM Ensure dev mode is OFF for public builds
 set "BUS_DEV="
 
-REM Run the launcher
+REM Canonical native entry
 python launcher.py
 
 REM Keep window open so you can see errors/output
 pause
+

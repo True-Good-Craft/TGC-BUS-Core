@@ -4,7 +4,7 @@
 - Primary authority basis: `core/api/http.py`, `launcher.py`, `core/ui/app.js`, `core/appdb/*`, `core/appdata/paths.py`, `core/runtime/core_alpha.py`.
 - Best use: First read when locating canonical runtime surfaces or deciding where deeper truth lives.
 - Refresh triggers: Entrypoint changes, router remounting, new mutable-state authority, startup-flow changes, new external service dependencies.
-- Highest-risk drift areas: Alternate entrypoints, split config/session authority, version/update doc drift, repo-local mutable state outside AppData.
+- Highest-risk drift areas: Alternate entrypoints, split session authority, version/update doc drift, repo-local mutable state outside AppData.
 - Key dependent files / modules: `core/api/http.py`, `launcher.py`, `core/ui/app.js`, `core/config/manager.py`, `core/config/paths.py`, `core/appdb/engine.py`, `core/runtime/core_alpha.py`.
 
 ## Project identity
@@ -17,16 +17,15 @@
 
 | Concern | Status | Authority location | Notes |
 | --- | --- | --- | --- |
-| Runtime HTTP surface | Canonical | `core/api/http.py::create_app()` and mounted routers | Referenced by `README.md`, `scripts/launch.ps1`, `Dockerfile`, and `launcher.py`. |
-| Native app entry | Canonical | `launcher.py` | Starts Uvicorn in-process, opens `/ui/shell.html`, manages tray lifecycle. |
-| Container entry | Canonical | `Dockerfile` command `uvicorn core.api.http:create_app --factory` | Same HTTP surface as native runtime. |
-| Alternate HTTP app | Legacy | `tgc/http.py` | Parallel FastAPI surface exists in repo but is not used by current launch/build scripts. |
-| Alternate app entry | Drifted | `app.py` | Conflicts with current runtime/auth contract and imports missing `core.api.app_router`. |
+| Runtime HTTP surface | Canonical | `core/api/http.py::create_app()` and mounted routers | Referenced by `Dockerfile`, `docker-compose.yml`, `launcher.py`, and dev/smoke helper `scripts/launch.ps1`. |
+| Native app entry | Canonical | `launcher.py` | Only supported native entry; starts BUS Core locally, opens `/ui/shell.html`, and manages tray lifecycle. |
+| Container entry | Canonical | `Dockerfile` command `uvicorn core.api.http:create_app --factory` | Only supported container entry; same HTTP surface as native runtime. |
+| Dev/smoke HTTP launcher | Secondary | `scripts/launch.ps1` | Scripted helper for smoke/dev automation against `core.api.http:create_app`; not a supported native runtime entry. |
 | UI routing / boot | Canonical | `core/ui/app.js`, `core/ui/shell.html` | Hash routes, onboarding redirects, version badge, startup update check. |
 | API contract | Canonical | Mounted routes in `core/api/http.py` and `core/api/routes/*` | Detailed in `02_API_AND_UI_CONTRACT_MAP.md`. |
 | Persistence schema | Canonical | `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/api/http.py::startup_migrations()` | SQL files in `migrations/` are supplementary, not the only authority. |
-| Durable settings config | Drifted | Split between `core/config/manager.py` and `core/config/paths.py` | Two live JSON config stores exist; see `03_DATA_CONFIG_AND_STATE_MODEL.md`. |
-| Session/auth authority | Drifted | `session_guard`, `GET /session/token`, `tgc.security.require_token_ctx`, `core.api.http.require_token_ctx` | Multiple live token authorities; see `04_SECURITY_TRUST_AND_OPERATIONS.md`. |
+| Durable settings config | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` via `core/config/manager.py` | Root config is the single app-runtime settings authority; `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only. |
+| Session/auth authority | Canonical with secondary mirrors | `core.api.http` auth stack, `GET /session/token`, `tgc.security.require_token_ctx` | `core.api.http` owns authorization decisions; `tgc.security.require_token_ctx` is a compatibility wrapper, and `SESSION_TOKEN` / `session_token.txt` remain secondary mirrors. See `04_SECURITY_TRUST_AND_OPERATIONS.md`. |
 | Update check behavior | Canonical | `core/api/routes/update.py`, `core/services/update.py`, `core/config/manager.py` | UI contract lives in `core/ui/js/update-check.js`. |
 | Release version | Canonical | `core/version.py` | `VERSION` is the strict SemVer release authority; `INTERNAL_VERSION` is the working revision. |
 | Repository docs | Secondary | `README.md`, `SOT.md`, `API_CONTRACT.md`, `CHANGELOG.md`, `docs/*` | Useful context; code wins on conflict. |
@@ -58,8 +57,7 @@
 | Broker / providers | Canonical | `core/domain/bootstrap.py`, `core/adapters/*`, plugin loader | Local FS, Google Drive, plugin services. |
 | Background indexer | Canonical | `core/api/http.py` | `data/index_state.json`, broker catalog surfaces. |
 | Update check path | Canonical | `core/services/update.py` | Hosted manifest URL from config. |
-| `tgc/http.py` app | Legacy | `tgc/http.py` | Parallel route surface; not current runtime authority. |
-| `app.py` app | Drifted | `app.py` | Conflicting token contract and broken import path. |
+| Removed legacy entry surfaces | Resolved | `app.py`, `tgc/http.py`, `core/main.py`, `tgc_controller.spec` | Deleted to prevent parallel runtime/package authority. |
 
 ## Startup and Request Skeleton
 
@@ -107,22 +105,21 @@
 | FastAPI <-> local DB/files | Canonical | DB writes, exports/imports, journals, logs, secrets, config. |
 | FastAPI <-> OS actions | Canonical | Tray/browser launch, Explorer open, process exit/restart, local path validation. |
 | FastAPI <-> external network | Canonical | Update manifest fetches, Google OAuth/token exchange, Google Drive API calls. |
-| Alternate runtime surfaces | Drifted | `app.py` and `tgc/http.py` could mislead contract or auth assumptions if treated as authoritative. |
+| Runtime authority | Canonical | `launcher.py` (native), `core/api/http.py::create_app()` (HTTP surface), and Docker `uvicorn core.api.http:create_app --factory` are the only supported runtime paths. |
 
 ## Coupling Hotspots
 
 | Hotspot | Status | Why it matters | Own in |
 | --- | --- | --- | --- |
-| Config split (`config.json` vs `app\config.json`) | Drifted | Settings, writes, and policy do not share one durable authority. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
-| Session/token split | Drifted | Middleware, AppState token manager, global `SESSION_TOKEN`, and token file all participate. | `04_SECURITY_TRUST_AND_OPERATIONS.md` |
-| Version/update authority drift | Drifted | Release tags and manifest generation still derive public version from tag discipline instead of reading `core/version.py` directly; update manifest URL history also diverges in older docs. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
+| Config authority (`config.json` vs `app\\config.json`) | Resolved | `%LOCALAPPDATA%\BUSCore\config.json` is canonical; `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
+| Session/token split | Narrowed drift | `core.api.http` is the canonical validator authority, `AppState.tokens` is the canonical runtime token source, `tgc.security.require_token_ctx` is a compatibility wrapper, and the global/token-file mirrors still participate secondarily. | `04_SECURITY_TRUST_AND_OPERATIONS.md` |
+| Version/update authority drift | Narrowed drift | `core/version.py` is now the public release/update source, and `.github/workflows/release-mirror.yml` machine-checks `tag == v{VERSION}` before publishing manifest metadata; remaining drift is limited to unsigned/unverified artifact metadata and release-history dependence on GitHub release assets. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
 | Repo-local mutable state | Drifted | Some live state is stored in repo `data/` instead of AppData. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Placeholder/stale UI surfaces | Drifted | `#/runs`, `#/import`, backup UI, and stub transaction widgets can mislead contract assumptions. | `02_API_AND_UI_CONTRACT_MAP.md` |
-| Alternate entrypoints | Drifted | `app.py` and `tgc/http.py` are present but not current runtime authorities. | This file |
+| Runtime authority | Canonical | Legacy alternate entry surfaces were removed; `scripts/launch.ps1` remains dev/smoke-only around the canonical factory. | This file |
 
 ## Freeze Notes
 
 - Refresh on: entrypoint changes, router remounting, new runtime services, trust-boundary changes, or path-authority changes.
 - Fastest invalidators: switching the canonical entrypoint, consolidating config/session authority, changing mounted route roots, or replacing the SPA shell.
 - Check alongside: `02_API_AND_UI_CONTRACT_MAP.md` for route truth, `03_DATA_CONFIG_AND_STATE_MODEL.md` for storage authority, `04_SECURITY_TRUST_AND_OPERATIONS.md` for auth/trust splits, `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for version/update authority.
-

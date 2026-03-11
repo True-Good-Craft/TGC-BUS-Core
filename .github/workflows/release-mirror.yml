@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.event.inputs.tag || github.sha }}
 
       - name: Install Node.js (LTS)
         uses: actions/setup-node@v4
@@ -41,18 +43,43 @@ jobs:
 
           echo "RAW_TAG=$TAG" >> "$GITHUB_ENV"
 
+      - name: Read canonical release version
+        run: |
+          CANONICAL_VERSION=$(python3 - <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          text = pathlib.Path("core/version.py").read_text(encoding="utf-8")
+          match = re.search(r'^VERSION\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"\s*$', text, re.MULTILINE)
+          if not match:
+              print("Failed to read strict SemVer VERSION from core/version.py.", file=sys.stderr)
+              sys.exit(1)
+          print(match.group(1))
+          PY
+          )
+
+          EXPECTED_TAG="v${CANONICAL_VERSION}"
+          if [ "${RAW_TAG}" != "${EXPECTED_TAG}" ]; then
+            echo "::error::Release tag ${RAW_TAG} does not match core/version.py VERSION ${CANONICAL_VERSION}."
+            exit 1
+          fi
+
+          echo "CANONICAL_VERSION=${CANONICAL_VERSION}" >> "$GITHUB_ENV"
+          echo "EXPECTED_ASSET_NAME=BUS-Core-${CANONICAL_VERSION}.exe" >> "$GITHUB_ENV"
+
       - name: Download release asset
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release download "${{ env.RAW_TAG }}" \
-            --pattern "TGC-BUS-Core-*" \
+            --pattern "${{ env.EXPECTED_ASSET_NAME }}" \
             --dir ./release-assets
 
-          MATCH_COUNT=$(find ./release-assets -name "TGC-BUS-Core-*" -type f | wc -l)
+          MATCH_COUNT=$(find ./release-assets -name "${{ env.EXPECTED_ASSET_NAME }}" -type f | wc -l)
 
           if [ "$MATCH_COUNT" -eq 0 ]; then
-            echo "::error::No matching release asset found (TGC-BUS-Core-*)"
+            echo "::error::No matching release asset found (${{ env.EXPECTED_ASSET_NAME }})"
             exit 1
           fi
 
@@ -61,7 +88,7 @@ jobs:
             exit 1
           fi
 
-          ASSET_FILE=$(find ./release-assets -name "TGC-BUS-Core-*" -type f)
+          ASSET_FILE=$(find ./release-assets -name "${{ env.EXPECTED_ASSET_NAME }}" -type f)
 
           echo "ASSET_FILE=${ASSET_FILE}" >> "$GITHUB_ENV"
           echo "ASSET_NAME=$(basename "${ASSET_FILE}")" >> "$GITHUB_ENV"
@@ -71,12 +98,8 @@ jobs:
           SHA256=$(sha256sum "${{ env.ASSET_FILE }}" | awk '{ print $1 }')
           SIZE_BYTES=$(wc -c < "${{ env.ASSET_FILE }}")
 
-          RAW_TAG="${{ env.RAW_TAG }}"
-          SEMVER_VERSION="${RAW_TAG#v}"
-
           echo "ASSET_SHA256=${SHA256}" >> "$GITHUB_ENV"
           echo "ASSET_SIZE_BYTES=${SIZE_BYTES}" >> "$GITHUB_ENV"
-          echo "SEMVER_VERSION=${SEMVER_VERSION}" >> "$GITHUB_ENV"
 
       - name: Upload artifact to R2
         env:
@@ -92,7 +115,7 @@ jobs:
           MIN_SUPPORTED_VERSION: ${{ vars.MIN_SUPPORTED_VERSION }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-${{ env.SEMVER_VERSION }}}"
+          MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-${{ env.CANONICAL_VERSION }}}"
 
           RELEASES_JSON=$(gh api "repos/${{ github.repository }}/releases?per_page=10" 2>/dev/null || echo "[]")
 
@@ -102,7 +125,7 @@ jobs:
             '[
               .[] |
               . as $release |
-              ($release.assets | map(select(.name | startswith("TGC-BUS-Core-"))) | .[0]) as $asset |
+              ($release.assets | map(select(.name | startswith("BUS-Core-"))) | .[0]) as $asset |
               if $asset then
                 {
                   version: ($release.tag_name | ltrimstr("v")),
@@ -117,7 +140,7 @@ jobs:
 
           jq -n \
             --arg min_supported "$MIN_SUPPORTED" \
-            --arg version "${{ env.SEMVER_VERSION }}" \
+            --arg version "${{ env.CANONICAL_VERSION }}" \
             --arg release_notes_url "https://github.com/${{ github.repository }}/releases/tag/${{ env.RAW_TAG }}" \
             --argjson size_bytes "${{ env.ASSET_SIZE_BYTES }}" \
             --arg download_url "/releases/${{ env.ASSET_NAME }}" \

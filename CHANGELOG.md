@@ -3,10 +3,46 @@
 ## [Unreleased]
 
 ### Added
-- Introduced `internal_version` as a separate working-revision field in the canonical version source, initialized to `1.0.2.0`.
+- Added fortheemperor UI authority freeze documentation capturing canonical UI styling authority, active module standardization status, completed parity remediation scope, and deferred follow-on work.
+- Added config-authority drift guards that assert `%LOCALAPPDATA%\BUSCore\config.json` is the canonical app-runtime config file, `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only, and startup/write-policy code follows that contract.
+- Added targeted config behavior tests for canonical write-gate persistence, canonical policy persistence, and one-way legacy fallback reads.
+- Added release/update drift guards that verify release tooling reads `core/version.py`, targets the real `BUS-Core-<VERSION>.exe` artifact name, and keeps `INTERNAL_VERSION` out of public SemVer consumers.
+- Added auth-authority drift guards that verify `core.api.http` remains the canonical validator path, `tgc.security.require_token_ctx` is compatibility-only, and the authority docs stay aligned.
 
 ### Changed
-- Preserved strict SemVer `version` for release/update surfaces while documenting owner-only `version` bumps and agent-only `internal_version` bumps.
+- Final fortheemperor cleanup: aligned `dev.writes_enabled` config-model default with fresh-install write-enabled truth, removed active Settings ownership of `close_to_tray`, stubbed Theme control to honest system-only mode, and strengthened sidebar BUS Core brand composition.
+- Bumped `INTERNAL_VERSION` from `1.0.2.9` to `1.0.2.10` without changing public `VERSION`.
+- Completed fortheemperor UI authority cleanup and route/module standardization passes across settings, contacts/vendors, manufacturing, inventory, and recipes using narrow reviewable changes.
+- Completed contract-to-form parity remediation scopes for inventory, contacts, manufacturing, and recipes.
+- Updated Recipes count-unit presentation policy so internal base unit `mc` is UI-hidden and operator-facing selectors present `ea`, while preserving backend/storage authority.
+- Recorded write-gate operator-control finding: persisted `dev.writes_enabled` authority exists, while active UI has no direct writes toggle exposure.
+- Removed dead UI card modules: `core/ui/js/cards/dev.js`, `core/ui/js/cards/fixkit.js`, `core/ui/js/cards/organizer.js`, `core/ui/js/cards/tasks.js`, `core/ui/js/cards/writes.js`.
+- Bumped `INTERNAL_VERSION` from `1.0.2.8` to `1.0.2.9` without changing public `VERSION`.
+- Bumped `INTERNAL_VERSION` from `1.0.2.7` to `1.0.2.8` without changing public `VERSION`.
+- Normalized `/app/system/state` and `/app/system/start-fresh` internal failures to return stable structured error envelopes instead of raw string details.
+- Made the Home transaction dashboard disclose placeholder-only data whenever `/app/transactions*` still returns stub responses, instead of rendering stub-backed widgets as if they were live business data.
+- Aligned manufacturing journaling with the canonical journal authority so runtime writes, restore/archive behavior, and isolated smoke all use `BUS_MANUFACTURING_JOURNAL` or the shared runtime `JOURNAL_DIR` instead of a separate LOCALAPPDATA-only path.
+- Refreshed `scripts/_win_version_info.txt` to canonical `1.0.2` metadata so the tracked Windows version-info template matches the current build output.
+- Corrected the release validation helpers so `smoke_isolated.ps1` quotes the dev-helper launch path under spaced Windows repo roots, auto-selects a free local port when `8765` is already occupied, `scripts/smoke.ps1` honors the wrapper's `%LOCALAPPDATA%` isolation path and `BUS_DB`-derived journal location, and `scripts/release-check.ps1` now hard-fails when smoke or build exits non-zero.
+- Bumped `INTERNAL_VERSION` from `1.0.2.6` to `1.0.2.7` without changing public `VERSION`.
+- Reconciled `API_CONTRACT.md` against the live runtime so canonical business routes, supported operational protected routes, and secondary or legacy or drifted routes are documented as separate tiers.
+- Corrected the declared contract for update check, system state, finance, item archive-delete behavior, canonical ledger history, and manufacturing run responses to match the current mounted surface and tests.
+- Documented the current auth truth plainly where supported routes depend on middleware protection or lack a route-local write gate, rather than implying a cleaner authority model than the runtime actually uses.
+- Bumped `INTERNAL_VERSION` from `1.0.2.5` to `1.0.2.6` without changing public `VERSION`.
+- Reconciled auth validator authority so `core.api.http` owns protected-route validation, `AppState.tokens` is the canonical runtime token source, and `tgc.security.require_token_ctx` now delegates as a compatibility wrapper.
+- Demoted `SESSION_TOKEN` and `session_token.txt` to secondary bootstrap/runtime mirrors instead of the normal request-validation authority.
+- Reconciled config authority so `%LOCALAPPDATA%\BUSCore\config.json` is the single app-runtime settings authority, while `%LOCALAPPDATA%\BUSCore\app\config.json` is read only as a one-way legacy fallback for recognized older keys.
+- Moved durable `writes_enabled`, `role`, and `plan_only` persistence under the canonical root config file without changing public `/app/config` or `/policy` route shapes.
+- Aligned `SOT.md`, the config/security authority maps, and the Settings UI copy with the exact canonical Windows path strings the config-authority drift guards enforce.
+- Reconciled release authority so `.github/workflows/release-mirror.yml` reads `core/version.py`, fails unless the release tag equals `v{VERSION}`, and publishes manifest `latest.version` from canonical `VERSION`.
+- Repaired `scripts/release-check.ps1` to validate the real current release chain: `smoke_isolated.ps1`, `build_core.ps1`, and the expected `dist/BUS-Core.exe` plus `dist/BUS-Core-<VERSION>.exe` artifacts.
+- Aligned release/update documentation and README wording with actual behavior: Lighthouse remains the default manifest URL, checksum metadata may be published, and the app does not verify checksum or signature before surfacing `download_url`.
+
+### Tests
+- Added Phase D validation coverage asserting the Home dashboard keeps explicit placeholder disclosure while it still depends on `/app/transactions*` stub routes.
+- Extended config drift coverage to assert canonical path ownership, one-way legacy fallback behavior, and config startup wiring.
+- Added auth-authority coverage for wrapper delegation, runtime-token precedence, configured session cookie extraction, shared route protection behavior, and code/docs drift alignment.
+- Extended version drift coverage to assert release workflow tag/version checks, canonical asset naming, and truthful `release-check.ps1` wiring.
 
 ## [0.11.1] - 2026-03-08
 
@@ -212,4 +248,3 @@ Future releases will prioritize stability, bug fixes, and incremental polish rat
 - Deleted `/dev/license` and license.json handling.
 - Removed Pro-only features (RFQ, batch automation, scheduled runs).
 - **UI:** Removed license/tier badge and all “Pro/Upgrade” wording.
-

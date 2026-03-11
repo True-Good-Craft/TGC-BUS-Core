@@ -49,13 +49,15 @@
 ### Deployment Modes
 
 * 
-**Native Windows:** Uses `%LOCALAPPDATA%\BUSCore\` for DB, config, and journals. Launch via `scripts/launch.ps1`.
+**Native Windows:** Uses `%LOCALAPPDATA%\BUSCore\` for DB, config, and journals. Launch via `launcher.py` (or the thin wrapper `Run Core.bat`).
 
 
 * 
 **Docker:** Uses `python:3.12-slim`. Persistence via volume mounted at `/data` (e.g., `BUS_DB=/data/app.db`). Runs as non-root `appuser`.
 
 
+* 
+**Dev/smoke helper:** `scripts/launch.ps1` runs the same `core.api.http:create_app` factory for scripted local checks only; it is not the supported native app entry.
 
 ---
 
@@ -315,7 +317,11 @@
 
 
 * 
-**Config:** Managed via `updates` section in `config.json` (enabled, channel, manifest_url). Strict SemVer required, and fetches time out at 4 seconds.
+**Config:** Update settings live in `%LOCALAPPDATA%\BUSCore\config.json` under `updates` (`enabled`, `channel`, `manifest_url`, `check_on_startup`). Strict SemVer required, and fetches time out at 4 seconds.
+
+
+* 
+**Config Authority:** `%LOCALAPPDATA%\BUSCore\config.json` is the canonical app-runtime config file. `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only for recognized older keys when canonical values are absent.
 
 
 * 
@@ -1674,3 +1680,4 @@ EULA viewer and settings layout styles updated to use BUS Core theme tokens:
 
 --border-color  
 --card-bg
+

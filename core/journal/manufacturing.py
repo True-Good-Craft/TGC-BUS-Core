@@ -5,26 +5,25 @@
 import json
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import Dict
+from core.config.paths import JOURNAL_DIR
 
 logger = logging.getLogger(__name__)
 
 def _journals_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA")
-    if not root:
-        # Linux/macOS fallback
-        root = os.path.expanduser("~/.local/share")
-    d = Path(root) / "BUSCore" / "app" / "data" / "journals"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    override = os.getenv("BUS_MANUFACTURING_JOURNAL", "").strip()
+    if override:
+        path = Path(override)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path.parent
+    JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+    return JOURNAL_DIR
 
 
 MANUFACTURING_JOURNAL = Path(
     os.getenv("BUS_MANUFACTURING_JOURNAL", str(_journals_dir() / "manufacturing.jsonl"))
 )
-
 
 def append_mfg_journal(entry: Dict) -> None:
     """Append a manufacturing journal entry (best-effort, append-only)."""

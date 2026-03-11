@@ -1,277 +1,454 @@
-# BUS Core API Contract — Canonical & Governance Locked
-Version: v0.11.x (Post Phase B)
-Status: Authoritative
+# BUS Core API Contract
+Status: Authoritative declared-truth pass
 
-## 1. Authority Model
-- **SoT supremacy:** `SOT.md` is canonical governance. Any contract drift MUST start with an explicit SoT delta.
-- **Backend frozen contract boundary:** Any change to mounted API paths, payload keys, response shape, or quantity/cost semantics at canonical endpoints is a contract change and MUST NOT ship without SoT delta plus this document update.
-- **Canonical endpoint authority:** Canonical inventory/manufacturing/ledger endpoints are under `/app/*` and are the only authoritative UI mutation/read paths for those domains.
-- **UI network authority:** UI network access is contained to `core/ui/js/api.js` and `core/ui/js/token.js`; all UI cards/modules MUST call through canonical client helpers and MUST NOT issue ad hoc fetches.
-- **Canonical containment rule:** **Any code outside the canonical client calling canonical endpoints is a VIOLATION.**
-- **Legacy wrappers rule:** **Legacy routes may exist only as wrappers and are forbidden for new code.** Wrappers MUST only translate/deprecate and forward to canonical handlers.
+This document describes the current supported BUS Core API as mounted by the runtime today. It is a truth-reconciliation document, not a design target. Mounted routes are not all equally canonical.
 
-## 2. Canonical Public Surface
+## 1. Route Tiers and Auth Reality
 
-### Inventory / Ledger / Manufacture (Phase A canonical set)
-- `POST /app/stock/in`
-  - Purpose: Stock-in mutation using v2 quantity fields.
-  - Key request fields: `item_id`, `quantity_decimal`, `uom`, optional `unit_cost_cents`, optional `source_id`.
-  - Key response fields: `ok`, `item_id`, movement/allocation fields from stock mutation service.
-  - Error behaviors: `400` invalid quantity or forbidden legacy quantity keys; `404` `item_not_found`; `401` when auth/token gate fails.
+- Canonical routes are the `/app/*` business and operator routes that the UI and operators should treat as authoritative.
+- Supported operational routes are real protected admin/integration surfaces that exist and are supported, but they are not the core business contract.
+- Secondary / legacy / drifted routes are mounted but non-canonical. They must not be presented as the preferred API surface for new callers.
+- `GET /session/token` is the canonical session bootstrap route. It returns `{ "token": "<token>" }` and sets the configured session cookie (`bus_session` by default).
+- Non-public routes require that session cookie. Current runtime enforcement is a mix of global middleware and route-local dependencies.
+- Middleware-based auth is current truth for several supported routes. The handler does not declare route-local token auth for `/app/config`, `/app/update/check`, `/app/purchase`, `/app/stock/in`, `/app/stock/out`, `/app/ledger/history`, `/app/finance/*`, and `/app/logs`; protection comes from the global `session_guard` middleware.
+- Write gating is also mixed by current runtime. Many mutating routes use `require_writes` or `require_write_access`, but `/app/purchase`, `/app/stock/in`, `/app/stock/out`, `/app/finance/expense`, and `/app/finance/refund` do not have a route-local write gate today.
+- Owner-commit authorization is route-local on item, vendor/contact, recipe, and manufacture mutations. It is not uniformly applied to all business mutations.
+- `/dev/*` routes and `GET /health/detailed` are dev-only. When `BUS_DEV != 1`, they return `404`. When `BUS_DEV = 1`, they still require a valid session cookie.
 
-- `POST /app/stock/out`
-  - Purpose: Stock-out mutation with reason/cash metadata.
-  - Key request fields: `item_id`, `quantity_decimal`, `uom`, `reason`; optional `note`, `record_cash_event`, `sell_unit_price_cents`.
-  - Key response fields: `ok`, `lines` (batch/qty/cost allocations), stock mutation result envelope.
-  - Error behaviors: `400` invalid quantity, forbidden legacy quantity keys, or shortages; `404` `item_not_found`; `401` auth/token failure.
+## 2. Canonical Routes
 
-- `POST /app/purchase`
-  - Purpose: Purchase stock-in with unit cost authority.
-  - Key request fields: `item_id`, `quantity_decimal`, `uom`, `unit_cost_cents`; optional `source_id`.
-  - Key response fields: purchase/stock-in mutation result envelope (`ok`, line/movement info).
-  - Error behaviors: `400` invalid quantity or forbidden legacy quantity keys; `404` `item_not_found`; `401` auth/token failure.
+### Bootstrap and public
 
-- `GET /app/ledger/history`
-  - Purpose: Canonical movement history read surface.
-  - Key request fields: optional query `item_id`, `limit`.
-  - Key response fields: list of normalized movement records (IDs, item, quantity display/base-derived fields, costs, metadata).
-  - Error behaviors: `401` auth/token failure. `400`/`404` not explicitly enforced in route for normal usage.
+- `GET /session/token`
+  - Canonical session bootstrap.
+  - Returns `{ "token": ... }` and sets the session cookie.
 
-- `POST /app/manufacture`
-  - Purpose: Canonical manufacturing run (recipe or ad hoc components) with v2 quantities.
-  - Key request fields: either `recipe_id` or `output_item_id` + `components[]`; `quantity_decimal`, `uom`; optional `notes`.
-  - Key response fields: manufacturing result (`ok`), run identifiers, consumed/produced line summaries.
-  - Error behaviors: `400` invalid payload/quantity/shortage; `404` missing recipe/item; `401` auth/token failure.
+- `GET /health`
+  - Minimal public health probe.
+  - Returns `{ "ok": true, "version": "<VERSION>" }`.
 
-### Items / Catalog
-- `GET /app/items`
-  - Purpose: List catalog/inventory items.
-  - Key request fields: none.
-  - Key response fields: array of item records (`id`, `name`, `sku`, `dimension`, `uom`, stock/cost display fields).
-  - Error behaviors: `401` auth/token failure.
+- `GET /`, `GET /ui`, `GET /ui/index.html`
+  - Public redirects to the SPA shell.
+  - Useful for runtime reachability, not part of the business API contract.
 
-- `GET /app/items/{item_id}`
-  - Purpose: Fetch single item detail.
-  - Key request fields: path `item_id`.
-  - Key response fields: item detail record.
-  - Error behaviors: `404` when item missing; `401` auth/token failure.
-
-- `POST /app/items`
-  - Purpose: Create item.
-  - Key request fields: item identity + unit metadata (name/sku/dimension/uom), optional costing and vendor links.
-  - Key response fields: created item record.
-  - Error behaviors: `400` validation; `401` auth/token failure.
-
-- `PUT /app/items/{item_id}`
-  - Purpose: Update item.
-  - Key request fields: path `item_id`, mutable item fields.
-  - Key response fields: updated item record.
-  - Error behaviors: `404` item missing; `400` validation; `401` auth/token failure.
-
-- `DELETE /app/items/{item_id}`
-  - Purpose: Delete item.
-  - Key request fields: path `item_id`.
-  - Key response fields: delete confirmation (`ok`/deleted id shape).
-  - Error behaviors: `404` item missing; `401` auth/token failure.
-
-### Contacts / Vendors
-- `GET /app/vendors`, `GET /app/contacts`
-  - Purpose: List vendor/contact entities (facade-filtered).
-  - Key request fields: optional `q`, `role`, `role_in`, `is_vendor`, `is_org`, `organization_id`.
-  - Key response fields: array of vendor/contact records.
-  - Error behaviors: `401` auth/token failure.
-
-- `GET /app/vendors/{id}`, `GET /app/contacts/{id}`
-  - Purpose: Fetch single vendor/contact.
-  - Key request fields: path `id`.
-  - Key response fields: vendor/contact record.
-  - Error behaviors: `404` Not found; `401` auth/token failure.
-
-- `POST /app/vendors`, `POST /app/contacts`
-  - Purpose: Create vendor/contact.
-  - Key request fields: `name` + optional role/organization/contact metadata.
-  - Key response fields: created record.
-  - Error behaviors: `401` auth/token failure.
-
-- `PUT /app/vendors/{id}`, `PUT /app/contacts/{id}`
-  - Purpose: Update vendor/contact.
-  - Key request fields: path `id` + mutable fields.
-  - Key response fields: updated record.
-  - Error behaviors: `404` Not found; `401` auth/token failure.
-
-- `DELETE /app/vendors/{id}`, `DELETE /app/contacts/{id}`
-  - Purpose: Delete vendor/contact.
-  - Key request fields: path `id`, optional query `cascade_children` for org deletion behavior.
-  - Key response fields: `204` no-content.
-  - Error behaviors: `404` Not found; `401` auth/token failure.
-
-### Recipes
-- `GET /app/recipes`
-  - Purpose: List recipes.
-  - Key request fields: none.
-  - Key response fields: recipe summaries (id/name/output item/output quantity/uom/archive status).
-  - Error behaviors: `401` auth/token failure.
-
-- `GET /app/recipes/{rid}`
-  - Purpose: Get recipe detail.
-  - Key request fields: path `rid`.
-  - Key response fields: recipe + item lines with quantity/uom details.
-  - Error behaviors: `404` Not found; `401` auth/token failure.
-
-- `POST /app/recipes`
-  - Purpose: Create recipe.
-  - Key request fields: `name`, `output_item_id`, `output_qty`, optional `uom`, `notes`, `items[]` each with `item_id`, `quantity_decimal`, `uom`, optionality/sort.
-  - Key response fields: created recipe detail.
-  - Error behaviors: `400` invalid quantity/input; `404` referenced item missing; `401` auth/token failure.
-
-- `PUT /app/recipes/{rid}`
-  - Purpose: Update recipe.
-  - Key request fields: path `rid`, mutable recipe fields and optional `items[]` replacement.
-  - Key response fields: updated recipe detail.
-  - Error behaviors: `400` invalid quantity/input; `404` recipe/item missing; `401` auth/token failure.
-
-- `DELETE /app/recipes/{recipe_id}`
-  - Purpose: Delete recipe.
-  - Key request fields: path `recipe_id`.
-  - Key response fields: `{ ok, deleted }`.
-  - Error behaviors: `404` Not found; `401` auth/token failure.
-
-### Finance endpoints
-- `POST /app/finance/expense`
-  - Purpose: Record cash expense.
-  - Key request fields: `at`, `amount_cents`, `category`; optional `note`, `related_source_id`.
-  - Key response fields: `{ ok, entry }`.
-  - Error behaviors: `400` validation; `401` auth/token failure.
-
-- `POST /app/finance/refund`
-  - Purpose: Record refund; optional inventory restock flow.
-  - Key request fields: `at`, `amount_cents`, optional `note`, `related_source_id`, `restock_inventory`, `restock_item_id`, `restock_qty`, `restock_unit_cost_cents`.
-  - Key response fields: `{ ok, entry, restock }` (restock block when applied).
-  - Error behaviors: `400` invalid restock prerequisites/validation; `404` restock item missing; `401` auth/token failure.
-
-- `GET /app/finance/profit`
-  - Purpose: Profit snapshot by date range.
-  - Key request fields: query `from`, `to`.
-  - Key response fields: totals (`sales_cents`, `expenses_cents`, `refunds_cents`, `cogs_cents`, `profit_cents`) and range metadata.
-  - Error behaviors: `400` invalid date/query; `401` auth/token failure.
-
-### Maintenance / Config endpoints
-- `POST /app/db/export`
-  - Purpose: Create encrypted/plain DB export artifact.
-  - Key request fields: optional `password`.
-  - Key response fields: export file metadata/path token.
-  - Error behaviors: `401` auth/token failure.
-
-- `GET /app/db/exports`
-  - Purpose: List available exports.
-  - Key request fields: none.
-  - Key response fields: export entries.
-  - Error behaviors: `401` auth/token failure.
-
-- `POST /app/db/import/upload`
-  - Purpose: Upload backup file for staged import.
-  - Key request fields: multipart file upload.
-  - Key response fields: staged `path` token.
-  - Error behaviors: `400` invalid upload; `401` auth/token failure.
-
-- `POST /app/db/import/preview`
-  - Purpose: Preview import metadata/compat before commit.
-  - Key request fields: `path`, optional `password`.
-  - Key response fields: preview summary and checks.
-  - Error behaviors: `400` preview failure; `401` auth/token failure.
-
-- `POST /app/db/import/commit`
-  - Purpose: Commit staged import/restore.
-  - Key request fields: `path`, optional `password`.
-  - Key response fields: `{ ok, restart_required }`-style restore result.
-  - Error behaviors: `400` commit failure; `401` auth/token failure.
+### Config, update, system, and backup/restore
 
 - `GET /app/config`
-  - Purpose: Read runtime config.
-  - Key request fields: none.
-  - Key response fields: config object.
-  - Error behaviors: Not specified / Not observed.
+  - Read the current runtime config object.
+  - Auth is middleware-based, not route-local.
 
 - `POST /app/config`
-  - Purpose: Write runtime config.
-  - Key request fields: config object payload.
-  - Key response fields: `{ ok, restart_required }`.
-  - Error behaviors: `401` when writes/auth gate fails; `400` validation if payload invalid.
+  - Write the runtime config object.
+  - Requires `require_writes`.
+  - Returns `{ "ok": true, "restart_required": true }`.
 
-### Auth
-- `GET /session/token`
-  - Purpose: Return CSRF/session token and set session cookie.
-  - Key request fields: none.
-  - Key response fields: `{ token }` and cookie set.
-  - Error behaviors: Not specified / Not observed.
+- `GET /app/update/check`
+  - Canonical in-app update check.
+  - Auth is middleware-based, not route-local.
+  - Returns exactly:
+    - `current_version`
+    - `latest_version`
+    - `update_available`
+    - `download_url`
+    - `error_code`
+    - `error_message`
 
-### Deprecated / Legacy Wrappers (Forbidden for new code)
-- `POST /app/ledger/purchase` — **DEPRECATED WRAPPER** to `/app/purchase`.
-- `POST /app/ledger/stock/out` — **DEPRECATED WRAPPER** to `/app/stock/out`.
-- `POST /app/ledger/stock_in` and `POST /app/stock_in` — **DEPRECATED WRAPPER** to `/app/stock/in`.
-- `GET /app/ledger/movements` — **DEPRECATED WRAPPER** to `/app/ledger/history`.
-- `POST /app/manufacturing/run` — **DEPRECATED WRAPPER** to `/app/manufacture`.
-- `GET /app/manufacturing/runs` and `GET /app/manufacturing/history` — legacy reads; canonical replacement not specified / not observed.
-- `POST /app/consume`, `POST /app/adjust`, `GET /app/valuation`, `GET /app/ledger/valuation`, `POST /app/inventory/run` — legacy/non-canonical inventory surface.
-- UI MUST NOT call deprecated wrappers or legacy/non-canonical routes.
+- `GET /app/system/state`
+  - Canonical system boot/state probe.
+  - Returns:
+    - `bus_mode`
+    - `is_first_run`
+    - `counts`
+    - `demo_allowed`
+    - `basis`
+    - `build.version`
+    - `build.internal_version`
+    - `build.schema_version`
+    - `status`
 
-## 3. Quantity Contract (Authoritative v2)
-- Canonical quantity input object:
-  - `quantity_decimal`: string decimal representation.
-    - MUST parse as numeric decimal in backend.
-    - Sign/zero constraints are endpoint-specific (`> 0` enforced for purchase/stock flows and recipe component requirements where validated).
-  - `uom`: string.
-    - MUST be valid for the item dimension.
-- Forbidden legacy keys (explicit): `qty`, `qty_base`, `quantity_int`, `quantity`, `output_qty`, `qty_required`, `raw_qty`.
-- All base-unit conversion happens **ONLY in backend**.
-- Base integer fields never appear at canonical boundary.
+- `POST /app/system/start-fresh`
+  - Switch to prod mode and initialize a fresh prod DB.
+  - Requires session auth and `require_writes`.
+  - Returns `{ "ok": true, "restart_required": true }`.
 
-### Dimension table
-- `count`: `mc` (base), `ea`
-- `length`: `mm` (base), `cm`, `m`
-- `weight`: `mg` (base), `g`, `kg`
-- `area`: `mm2` (base), `cm2`, `m2`
-- `volume`: `mm3` (base), `cm3`, `ml`, `l`, `m3`
+- `POST /app/db/export`
+  - Create a DB export.
+  - Protected router plus `require_writes`.
+  - Requires a non-empty `password`.
+  - Returns the export result object from the runtime helper.
 
-### Validation and error behaviors
-- Invalid or unsupported `uom` for dimension MUST return `400` (`invalid_quantity`/unsupported unit error path).
-- Legacy quantity keys in canonical payload MUST return `400` with `legacy_quantity_keys_forbidden` details.
-- Item lookup failures during quantity normalization MUST return `404` (`item_not_found`).
-- Stock shortages during stock-out/manufacture flows MUST return `400` shortage details.
+- `GET /app/db/exports`
+  - List export artifacts.
+  - Protected router plus `require_writes`.
+  - Returns `{ "ok": true, "exports": [...] }`.
 
-### stockIn vs stockOut sign conventions
-- Canonical API request quantities are positive human values (`quantity_decimal`); stock direction is inferred by endpoint (`/app/stock/in` vs `/app/stock/out`).
-- Negative quantity semantics at canonical boundary: Not observed as supported.
+- `POST /app/db/import/upload`
+  - Upload a backup file for staged restore.
+  - Protected router plus `require_writes`.
+  - Multipart upload.
+  - Returns the upload staging result, including staged `path` on success.
 
-## 4. Cost & COGS Authority
-- `unit_cost_cents` is authoritative as **integer cents per HUMAN unit** (`item.uom` domain), never per base unit.
-- Manufacturing per-output costing authority divides total input cost by **human output quantity** (`quantity_decimal` domain), not base integer output quantity.
-- COGS valuation/FIFO authority remains backend-owned.
-- UI MUST NOT compute domain cost/COGS math; UI MUST display server-provided values only.
-- FIFO cost-layer internals beyond declared authority: Not specified / Not observed.
+- `POST /app/db/import/preview`
+  - Preview a staged restore.
+  - Protected router plus `require_writes`.
+  - Request body: `{ "path": "...", "password": "..." }`.
+  - Returns the preview result object.
+  - Stable `400` error codes include `path_out_of_roots`, `cannot_read_file`, `bad_container`, `decrypt_failed`, `password_required`, and `incompatible_schema`.
 
-## 5. UI Containment Rules (Enforced)
-- Only `core/ui/js/api.js` and `core/ui/js/token.js` may call `fetch()`.
-- No `window.fetch` patch outside `core/ui/js/token.js`.
-- UI must send only v2 quantity fields (`quantity_decimal` + `uom`) to canonical mutation routes.
-- No silent `uom` fallbacks (e.g., `'ea'`) in mutation payload paths.
-- Mandatory gates before manual smoke/merge:
-  - `scripts/ui_contract_audit.sh` MUST PASS.
-  - `scripts/ui_phaseA_structural_guard.sh` MUST PASS (Guard 5 NOTE allowed).
+- `POST /app/db/import/commit`
+  - Commit a staged restore.
+  - Protected router plus `require_writes`.
+  - Request body: `{ "path": "...", "password": "..." }`.
+  - Returns the restore result object on success.
+  - Runtime enters maintenance mode during the commit path.
 
-## 6. Drift Prevention & Extension Rules
-Required process for endpoint/contract changes:
-1. Update SoT (delta).
-2. Implement backend change (only if governance permits; otherwise STOP).
-3. Update canonical UI client (`core/ui/js/api/canonical.js`) for any UI-facing surface.
-4. Update guard scripts (`scripts/ui_contract_audit.sh`, `scripts/ui_phaseA_structural_guard.sh`) when allow-lists/patterns change.
-5. Update `API_CONTRACT.md`.
-6. Run both audit scripts and require PASS (Guard 5 NOTE allowed by guard policy).
-7. Only then implement/merge UI usage.
+### Items, vendors, contacts, and recipes
 
-- **No endpoint may be added or changed without updating `API_CONTRACT.md`.**
+- `GET /app/items`
+  - List item rows.
+  - Excludes archived items by default.
+  - `include_archived=true` returns both live and archived items.
+  - Response is an array of item records with identity, dimension/uom, on-hand display fields, and FIFO display fields.
 
-## 7. Regeneration Rules (OpenAPI vs Governance)
-- `/openapi.json` is machine schema output.
-- `API_CONTRACT.md` is governance and boundary contract.
-- If OpenAPI contradicts `API_CONTRACT.md`, a SoT delta is REQUIRED; do not silently reconcile.
+- `GET /app/items/{item_id}`
+  - Get item detail.
+  - Returns the item row plus `batches_summary`.
+  - Archived items remain readable.
+
+- `POST /app/items`
+  - Create an item.
+  - Requires `require_writes`, session auth, and owner commit.
+  - Contract-stable fields are item/catalog fields such as `name`, `sku`, `dimension`, `uom`, `price`, `notes`, `vendor_id`, `location`, `item_type`, and `is_product`.
+  - Returns the created item record.
+
+- `PUT /app/items/{item_id}`
+  - Update an item.
+  - Requires `require_writes`, session auth, and owner commit.
+  - Returns the updated item record.
+
+- `DELETE /app/items/{item_id}`
+  - Delete-or-archive item route.
+  - Requires `require_writes`, session auth, and owner commit.
+  - If history exists, the item is archived and the response is `{ "archived": true }`.
+  - If no dependent history exists, the item is deleted and the response is `{ "ok": true }`.
+
+- `GET /app/vendors`, `GET /app/contacts`
+  - List vendor/contact facade records.
+  - Supported filters: `q`, `role`, `role_in`, `is_vendor`, `is_org`, `organization_id`.
+
+- `GET /app/vendors/{id}`, `GET /app/contacts/{id}`
+  - Get a single vendor/contact record.
+  - `404` when missing.
+
+- `POST /app/vendors`, `POST /app/contacts`
+  - Create a vendor/contact record.
+  - Require session auth, `require_write_access`, and owner commit.
+  - Return the created record.
+
+- `PUT /app/vendors/{id}`, `PUT /app/contacts/{id}`
+  - Update a vendor/contact record.
+  - Require session auth, `require_write_access`, and owner commit.
+  - Return the updated record.
+
+- `DELETE /app/vendors/{id}`, `DELETE /app/contacts/{id}`
+  - Delete a vendor/contact record.
+  - Require session auth, `require_write_access`, and owner commit.
+  - Support `cascade_children=true` for organization delete behavior.
+  - Return `204 No Content` on success.
+
+- `GET /app/recipes`
+  - List recipe summaries.
+  - Returns recipe records with `id`, `name`, `code`, `output_item_id`, `quantity_decimal`, `uom`, `archived`, and `notes`.
+
+- `GET /app/recipes/{rid}`
+  - Get recipe detail.
+  - Returns the recipe plus `items[]` lines using `quantity_decimal` and `uom`.
+
+- `POST /app/recipes`
+  - Create a recipe.
+  - Requires `require_writes`, session auth, and owner commit.
+  - Uses v2 quantity fields only:
+    - top level: `quantity_decimal`, `uom`
+    - component lines: `items[].quantity_decimal`, `items[].uom`
+  - Legacy quantity keys are rejected with `400` and `legacy_quantity_keys_forbidden`.
+
+- `PUT /app/recipes/{rid}`
+  - Update a recipe.
+  - Requires `require_writes`, session auth, and owner commit.
+  - Uses the same v2 quantity contract as create.
+
+- `DELETE /app/recipes/{recipe_id}`
+  - Delete a recipe.
+  - Requires `require_writes`, session auth, and owner commit.
+  - Returns `{ "ok": true, "deleted": <recipe_id> }`.
+
+### Canonical stock, ledger, and manufacturing
+
+- `POST /app/purchase`
+  - Canonical purchase stock-in route.
+  - Current auth is middleware-based, not route-local.
+  - Current runtime does not add a route-local write gate.
+  - Request body:
+    - `item_id`
+    - `quantity_decimal`
+    - `uom`
+    - `unit_cost_cents`
+    - optional `source_id`
+  - Returns the stock mutation result object from the service layer.
+
+- `POST /app/stock/in`
+  - Canonical stock-in route.
+  - Current auth is middleware-based, not route-local.
+  - Current runtime does not add a route-local write gate.
+  - Request body:
+    - `item_id`
+    - `quantity_decimal`
+    - `uom`
+    - optional `unit_cost_cents`
+    - optional `source_id`
+  - Returns the stock mutation result object from the service layer.
+
+- `POST /app/stock/out`
+  - Canonical stock-out route.
+  - Current auth is middleware-based, not route-local.
+  - Current runtime does not add a route-local write gate.
+  - Request body:
+    - `item_id`
+    - `quantity_decimal`
+    - `uom`
+    - `reason`
+    - optional `note`
+    - optional `record_cash_event`
+    - optional `sell_unit_price_cents`
+  - Returns the stock mutation result object, including line allocation detail.
+
+- `GET /app/ledger/history`
+  - Canonical movement history read route.
+  - Current auth is middleware-based, not route-local.
+  - Query params: `item_id`, `limit`, optional `include_base`.
+  - Returns `{ "movements": [...] }`.
+  - Each movement includes `id`, `item_id`, `batch_id`, `quantity_decimal`, `uom`, `unit_cost_cents`, `source_kind`, `source_id`, `is_oversold`, and `created_at`.
+  - `qty_change` is hidden by default and appears only when `include_base=1` or dev mode exposes it.
+
+- `POST /app/manufacture`
+  - Canonical manufacturing run route.
+  - Requires `require_writes`, session auth, and owner commit.
+  - Accepts recipe-based or direct-output manufacturing payloads, but always requires `quantity_decimal` and `uom`.
+  - Success response is intentionally small:
+    - `ok`
+    - `status`
+    - `run_id`
+    - `output_unit_cost_cents`
+  - Shortage failures return `400` with structured shortage detail and a failed `run_id`.
+
+### Canonical finance and app event feed
+
+- `POST /app/finance/expense`
+  - Record an expense cash event.
+  - Current auth is middleware-based, not route-local.
+  - Current runtime does not add a route-local write gate.
+  - Request body:
+    - `amount_cents`
+    - optional `category`
+    - optional `notes`
+    - optional `created_at`
+  - Returns `{ "ok": true, "id": <cash_event_id> }`.
+
+- `POST /app/finance/refund`
+  - Record a refund and optional inventory restock.
+  - Current auth is middleware-based, not route-local.
+  - Current runtime does not add a route-local write gate.
+  - Request body:
+    - `item_id`
+    - `refund_amount_cents`
+    - `quantity_decimal`
+    - `uom`
+    - `restock_inventory`
+    - optional `related_source_id`
+    - optional `restock_unit_cost_cents`
+    - optional `category`
+    - optional `notes`
+    - optional `created_at`
+  - Returns `{ "ok": true, "source_id": "<generated_source_id>" }`.
+
+- `GET /app/finance/profit`
+  - Profit snapshot for a date window.
+  - Current auth is middleware-based, not route-local.
+  - Query params: `from=YYYY-MM-DD`, `to=YYYY-MM-DD`.
+  - Returns exactly:
+    - `gross_sales_cents`
+    - `returns_cents`
+    - `net_sales_cents`
+    - `cogs_cents`
+    - `gross_profit_cents`
+    - `from`
+    - `to`
+
+- `GET /app/finance/summary`
+  - Finance KPI summary for a date window.
+  - Current auth is middleware-based, not route-local.
+  - Query params: `from=YYYY-MM-DD`, `to=YYYY-MM-DD`.
+  - Returns totals plus `runs_count`, `units_produced`, `units_sold`, `from`, and `to`.
+  - Invalid windows return `400`.
+
+- `GET /app/finance/transactions`
+  - Mixed finance transaction feed for a date window.
+  - Current auth is middleware-based, not route-local.
+  - Query params: `from=YYYY-MM-DD`, `to=YYYY-MM-DD`, `limit`.
+  - Returns `{ "from": ..., "to": ..., "limit": ..., "count": ..., "transactions": [...] }`.
+  - Current supported transaction kinds include `sale`, `refund`, `expense`, `manufacturing_run`, and `purchase_inferred`.
+
+- `GET /app/logs`
+  - App event feed used by the UI logs screen.
+  - Current auth is middleware-based, not route-local.
+  - Returns `{ "events": [...], "next_cursor_id": ... }`.
+  - This is distinct from `GET /logs`, which returns the runtime text log tail.
+
+## 3. Quantity and Response Semantics Locked by Current Runtime
+
+- Canonical quantity fields are `quantity_decimal` and `uom`.
+- Legacy quantity keys are forbidden on canonical stock, manufacture, recipe, and finance refund payloads:
+  - `qty`
+  - `qty_base`
+  - `quantity_int`
+  - `quantity`
+  - `output_qty`
+  - `qty_required`
+  - `raw_qty`
+- Quantity validation is server-side. The backend accepts units valid for the item's dimension, including basis units where the runtime supports them.
+- Missing items during quantity normalization fail closed with `404 item_not_found`.
+- Invalid quantity or invalid unit normalization fails with `400`.
+- Stock and manufacturing shortage conditions fail with `400`; they are not successful partial completions.
+- `/app/ledger/history` is the canonical read surface for movement history. It exposes normalized quantity fields by default and only exposes base `qty_change` when explicitly requested or when dev mode allows it.
+
+## 4. Supported Operational Protected Surface
+
+These routes are supported and mounted, but they are not the canonical business API. Most require the same session cookie as the canonical surface. Many mutating endpoints also use `require_writes`.
+
+- Settings and OAuth
+  - `GET|POST|DELETE /settings/google`
+  - `GET|POST /settings/reader`
+  - `POST /oauth/google/start`
+  - `GET /oauth/google/callback`
+  - `POST /oauth/google/revoke`
+  - `GET /oauth/google/status`
+
+- Catalog, indexing, and local-drive operations
+  - `POST /catalog/open`
+  - `POST /catalog/next`
+  - `POST /catalog/close`
+  - `GET|POST /index/state`
+  - `GET /index/status`
+  - `GET /drive/available_drives`
+  - `GET /local/available_drives`
+  - `GET /local/validate_path`
+  - `POST /open/local`
+
+- Policy, plans, plugins, and capability operations
+  - `GET|POST /policy`
+  - `POST /plans`
+  - `GET /plans`
+  - `GET /plans/{plan_id}`
+  - `POST /plans/{plan_id}/preview`
+  - `POST /plans/{plan_id}/commit`
+  - `POST /plans/{plan_id}/export`
+  - `GET /plugins`
+  - `POST /plugins/{service_id}/read`
+  - `POST /plugins/{pid}/enable`
+  - `POST /probe`
+  - `GET /capabilities`
+  - `POST /execTransform`
+  - `POST /policy.simulate`
+  - `POST /nodes.manifest.sync`
+  - `GET /transparency.report`
+
+- Reader and organizer integration
+  - `POST /reader/local/resolve_ids`
+  - `POST /reader/local/resolve_paths`
+  - `POST /organizer/duplicates/plan`
+  - `POST /organizer/rename/plan`
+
+- Runtime operations
+  - `GET /logs`
+  - `POST /server/restart`
+
+## 5. Secondary, Legacy, and Drifted Routes
+
+### Compatibility wrappers
+
+These are mounted compatibility routes, not canonical routes for new callers. Where implemented as wrappers, they are expected to point callers at the canonical replacement, including `X-BUS-Deprecation` headers where the runtime currently emits them.
+
+- `POST /app/manufacturing/run` -> use `POST /app/manufacture`
+- `POST /app/ledger/purchase` -> use `POST /app/purchase`
+- `POST /app/ledger/stock/out` -> use `POST /app/stock/out`
+- `POST /app/ledger/stock_in` -> use `POST /app/stock/in`
+- `POST /app/stock_in` -> use `POST /app/stock/in`
+- `GET /app/movements` -> use `GET /app/ledger/history`
+- `GET /app/ledger/movements` -> use `GET /app/ledger/history`
+- `GET /app/ledger/valuation` -> use `GET /app/valuation`
+- `POST /app/ledger/consume` -> use `POST /app/consume`
+- `POST /app/ledger/adjust` -> use `POST /app/adjust`
+
+### Legacy non-canonical business routes
+
+- `POST /app/consume`
+  - Legacy stock-out style mutation surface.
+  - Not canonical.
+
+- `POST /app/adjust`
+  - Legacy adjustment surface.
+  - Not canonical.
+
+- `GET /app/valuation`
+  - Legacy valuation read surface.
+  - Not canonical.
+
+- `POST /app/inventory/run`
+  - Older direct delta inventory mutation surface.
+  - Not canonical.
+
+- `GET /app/manufacturing/runs`
+  - Legacy journal-backed recent-runs read surface.
+  - Not the canonical manufacturing API.
+
+- `GET /app/manufacturing/history`
+  - Alias for the same journal-backed recent-runs behavior.
+  - Not the canonical manufacturing API.
+
+### Secondary diagnostics and dev-only routes
+
+- `GET /app/ledger/health`
+  - Secondary ledger health/desync check.
+  - Not a primary business contract route.
+
+- `GET /app/ledger/debug/db`
+  - Dev-only ledger DB diagnostic.
+  - Secondary only.
+
+- `GET /health/detailed`
+  - Dev-only detailed health payload.
+  - Secondary only.
+
+- `/dev/*`
+  - Secondary dev-only surfaces.
+  - Hidden by `404` outside dev mode.
+
+### Drifted or stubbed mounted routes
+
+- `GET /app/transactions/summary`
+  - Mounted stub.
+  - Returns placeholder dashboard data.
+  - Not canonical business contract.
+
+- `GET /app/transactions`
+  - Mounted stub.
+  - Returns placeholder transaction-list data.
+  - Not canonical business contract.
+
+## 6. Remaining Known Drift
+
+- UI drift remains around nonexistent backup endpoints such as `/app/backup` and `/app.db`. Those routes are not mounted and are not canonical.
+- `/app/transactions` and `/app/transactions/summary` remain mounted stubs. They are real routes, but they are not canonical business contract.
+- Some supported routes rely on middleware-based auth rather than route-local auth declarations. This document reflects that reality instead of normalizing it away.
+- Some supported mutating routes also lack a route-local write gate today, notably `/app/purchase`, `/app/stock/in`, `/app/stock/out`, `/app/finance/expense`, and `/app/finance/refund`. That is current runtime truth, not a documented endorsement of a cleaner model.
+

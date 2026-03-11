@@ -65,7 +65,10 @@ def get_system_state(
                 if ver_row and ver_row[0] is not None:
                     schema_version = str(ver_row[0])
     except Exception as exc:
-        raise HTTPException(status_code=500, detail="system_state_unavailable") from exc
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "bad_request", "message": "system_state_unavailable"},
+        ) from exc
 
     bus_mode = resolve_bus_mode()
     demo_mode = bus_mode == "demo"
@@ -112,10 +115,14 @@ def start_fresh_shop(
         ensure_vendors_flags(engine)
         dispose_engine()
     except Exception as exc:
-        raise HTTPException(status_code=500, detail="start_fresh_failed") from exc
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "bad_request", "message": "start_fresh_failed"},
+        ) from exc
 
     return {
         "ok": True,
         "restart_required": True,
     }
+
 

@@ -21,87 +21,107 @@ function rowEl(ev) {
     summary = ev.kind || ev.domain || "event";
   }
 
-  const div = document.createElement("div");
-  div.className = "logs-row";
-  div.innerHTML = `
-    <div class="logs-col when">${dateStr} ${timeStr}</div>
-    <div class="logs-col domain">${ev.domain}</div>
-    <div class="logs-col summary">${summary}</div>
-  `;
-  return div;
+  const row = document.createElement("div");
+  row.className = "logs-row";
+
+  const when = document.createElement("div");
+  when.className = "logs-col when";
+  when.textContent = `${dateStr} ${timeStr}`;
+
+  const domain = document.createElement("div");
+  domain.className = "logs-col domain";
+  domain.textContent = String(ev.domain ?? "");
+
+  const summaryCol = document.createElement("div");
+  summaryCol.className = "logs-col summary";
+  summaryCol.textContent = summary;
+
+  row.append(when, domain, summaryCol);
+  return row;
 }
 
-function injectCssOnce() {
-  if (document.getElementById("logs-css")) return;
-  const style = document.createElement("style");
-  style.id = "logs-css";
-  style.textContent = `
-  .logs-wrap{display:flex;flex-direction:column;gap:8px}
-  .logs-head,.logs-row{display:grid;grid-template-columns:180px 140px 1fr;gap:8px;align-items:center}
-  .logs-head{font-weight:600;opacity:.85;position:sticky;top:0;backdrop-filter:blur(2px)}
-  .logs-scroller{overflow:auto;max-height:70vh;border-radius:8px}
-  .logs-empty{opacity:.7;padding:8px}
-  .logs-load{padding:8px;text-align:center;opacity:.8;cursor:pointer}
-  `;
-  document.head.appendChild(style);
-}
-
-async function fetchMore() {
+async function fetchMore(root) {
   if (_loading) return;
   _loading = true;
   try {
     const url = _cursor
       ? `/app/logs?limit=200&cursor_id=${encodeURIComponent(_cursor)}`
       : "/app/logs?limit=200";
+
     const { events, next_cursor_id } = await apiGet(url);
-    const body = document.getElementById("logs-body");
+    const body = root.querySelector('[data-role="logs-body"]');
+    const more = root.querySelector('[data-role="logs-more"]');
+    if (!body) return;
+
     if (!events || !events.length) {
-      if (!body.children.length) body.innerHTML = `<div class="logs-empty">No logs.</div>`;
-      const more = document.getElementById("logs-more");
-      if (more) more.style.display = "none";
+      if (!body.children.length) {
+        body.innerHTML = "";
+        const empty = document.createElement("div");
+        empty.className = "logs-empty";
+        empty.textContent = "No logs.";
+        body.append(empty);
+      }
+      if (more) more.classList.add("hidden");
       return;
     }
+
     const frag = document.createDocumentFragment();
-    events.forEach(ev => frag.appendChild(rowEl(ev)));
+    events.forEach((ev) => frag.appendChild(rowEl(ev)));
     body.appendChild(frag);
+
     _cursor = next_cursor_id || null;
-    const more = document.getElementById("logs-more");
-    if (more) more.style.display = _cursor ? "" : "none";
+    if (more) {
+      more.classList.toggle("hidden", !_cursor);
+    }
   } finally {
     _loading = false;
   }
 }
 
 export function mountLogsPage(root) {
-  injectCssOnce();
+  root.classList.add("logs-shell");
   root.innerHTML = `
-    <div class="card">
-      <div class="card-title">Logs</div>
+    <div class="card logs-card">
+      <div class="card-title logs-title">Logs</div>
       <div class="logs-wrap">
         <div class="logs-head"><div>Date/Time</div><div>Domain</div><div>Summary</div></div>
-        <div class="logs-scroller" id="logs-scroll">
-          <div id="logs-body"></div>
-          <div id="logs-more" class="logs-load">Load older…</div>
+        <div class="logs-scroller" data-role="logs-scroll">
+          <div data-role="logs-body"></div>
+          <div data-role="logs-more" class="logs-load">Load older…</div>
         </div>
       </div>
     </div>
   `;
-  const more = document.getElementById("logs-more");
-  if (more) more.addEventListener("click", fetchMore);
-  const sc = document.getElementById("logs-scroll");
+
+  const more = root.querySelector('[data-role="logs-more"]');
+  if (more) {
+    more.addEventListener("click", () => {
+      void fetchMore(root);
+    });
+  }
+
+  const sc = root.querySelector('[data-role="logs-scroll"]');
   if (sc) {
     sc.addEventListener("scroll", () => {
       if (!_cursor) return;
-      if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 10) fetchMore();
+      if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 10) {
+        void fetchMore(root);
+      }
     });
   }
+
   _cursor = null;
-  const body = document.getElementById("logs-body");
+  _loading = false;
+  const body = root.querySelector('[data-role="logs-body"]');
   if (body) body.innerHTML = "";
-  fetchMore().catch(() => {
-    const firstLoadBody = document.getElementById("logs-body");
+
+  fetchMore(root).catch(() => {
+    const firstLoadBody = root.querySelector('[data-role="logs-body"]');
     if (firstLoadBody && !firstLoadBody.children.length) {
-      firstLoadBody.innerHTML = `<div class="logs-empty">Failed to load logs (endpoint unavailable).</div>`;
+      const err = document.createElement("div");
+      err.className = "logs-empty";
+      err.textContent = "Failed to load logs (endpoint unavailable).";
+      firstLoadBody.append(err);
     }
   });
 }
