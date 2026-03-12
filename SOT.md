@@ -93,7 +93,7 @@
 
 * Published manifest `latest.version` MUST come from `core/version.py::VERSION`; tags remain a checked release boundary, not a second public version authority.
 
-* Canonical public release artifact naming MUST be `TGC-BUS-Core-<VERSION>.zip`; release mirrors and manifest download URLs MUST target this ZIP artifact naming.
+* Canonical public release artifact naming MUST be `TGC-BUS-Core-<VERSION>.zip`; manifest download URLs MUST be absolute Lighthouse URLs in the form `https://lighthouse.buscore.ca/releases/TGC-BUS-Core-<VERSION>.zip`.
 
 ---
 

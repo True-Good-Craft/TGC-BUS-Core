@@ -39,7 +39,7 @@
 2. `scripts/build_core.ps1` reads `VERSION` from `core/version.py` unless an explicit override is passed, validates `X.Y.Z`, writes Windows version metadata, builds the one-file EXE, and copies `dist/BUS-Core.exe` to `dist/BUS-Core-<VERSION>.exe`.
 3. `scripts/release-check.ps1` now validates the current release chain truthfully: isolated smoke, canonical build script, and artifact existence checks for both current EXE names.
 4. `.github/workflows/release-mirror.yml` checks out the tagged ref, reads `VERSION` from `core/version.py`, and fails unless the release tag exactly equals `v{VERSION}`.
-5. The same workflow downloads the exact `TGC-BUS-Core-<VERSION>.zip` release asset, computes `sha256`, uploads the asset to R2 `releases/<asset-name>`, and publishes manifest `latest.version` plus `latest.download.url` from canonical `VERSION`.
+5. The same workflow downloads the exact `TGC-BUS-Core-<VERSION>.zip` release asset, computes `sha256`, uploads the asset to R2 `releases/<asset-name>`, and publishes manifest `latest.version` plus an authoritative absolute `latest.download.url` from canonical `VERSION` using `https://lighthouse.buscore.ca/releases/TGC-BUS-Core-<VERSION>.zip`.
 6. `.github/workflows/publish-image.yml` remains a separate container-publish workflow and does not govern Windows release/update version authority.
 7. `scripts/build_core.ps1` prints manual `signtool` commands for signing and signature verification, but the repo does not automate those steps.
 

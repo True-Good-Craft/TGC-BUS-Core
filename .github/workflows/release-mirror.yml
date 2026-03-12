@@ -13,6 +13,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RELEASE_PUBLIC_BASE_URL: https://lighthouse.buscore.ca
+
 jobs:
   mirror:
     runs-on: ubuntu-latest
@@ -116,12 +119,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-${{ env.CANONICAL_VERSION }}}"
+          RELEASES_BASE_URL="${{ env.RELEASE_PUBLIC_BASE_URL }}/releases"
 
           RELEASES_JSON=$(gh api "repos/${{ github.repository }}/releases?per_page=10" 2>/dev/null || echo "[]")
 
           HISTORY_JSON=$(echo "$RELEASES_JSON" | jq -c \
             --arg current_tag "${{ env.RAW_TAG }}" \
             --arg current_sha256 "${{ env.ASSET_SHA256 }}" \
+            --arg releases_base_url "$RELEASES_BASE_URL" \
             '[
               .[] |
               . as $release |
@@ -129,7 +134,7 @@ jobs:
               if $asset then
                 {
                   version: ($release.tag_name | ltrimstr("v")),
-                  url: ("/releases/" + $asset.name),
+                  url: ($releases_base_url + "/" + $asset.name),
                   release_notes_url: $release.html_url,
                   size_bytes: $asset.size
                 } +
@@ -143,7 +148,7 @@ jobs:
             --arg version "${{ env.CANONICAL_VERSION }}" \
             --arg release_notes_url "https://github.com/${{ github.repository }}/releases/tag/${{ env.RAW_TAG }}" \
             --argjson size_bytes "${{ env.ASSET_SIZE_BYTES }}" \
-            --arg download_url "/releases/${{ env.ASSET_NAME }}" \
+            --arg download_url "$RELEASES_BASE_URL/${{ env.ASSET_NAME }}" \
             --arg sha256 "${{ env.ASSET_SHA256 }}" \
             --argjson history "$HISTORY_JSON" \
             '{
