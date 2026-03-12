@@ -81,11 +81,14 @@ def test_release_mirror_reads_canonical_version_and_checks_tag_match():
     assert '--arg version "${{ env.CANONICAL_VERSION }}"' in workflow, (
         "release-mirror manifest latest.version must come from the canonical VERSION, not from tag parsing."
     )
-    assert 'EXPECTED_ASSET_NAME=BUS-Core-${CANONICAL_VERSION}.exe' in workflow, (
-        "release-mirror workflow must target the real BUS-Core versioned artifact name."
+    assert 'EXPECTED_ASSET_NAME=TGC-BUS-Core-${CANONICAL_VERSION}.zip' in workflow, (
+        "release-mirror workflow must target the canonical public ZIP artifact name."
     )
-    assert "TGC-BUS-Core-" not in workflow, (
-        "release-mirror workflow must not reference the stale TGC-BUS-Core artifact prefix."
+    assert 'startswith("TGC-BUS-Core-")' in workflow and 'endswith(".zip")' in workflow, (
+        "release-mirror workflow history selection must only include canonical TGC-BUS-Core ZIP assets."
+    )
+    assert 'EXPECTED_ASSET_NAME=BUS-Core-${CANONICAL_VERSION}.exe' not in workflow, (
+        "release-mirror workflow must not expect the stale BUS-Core EXE public asset name."
     )
 
 

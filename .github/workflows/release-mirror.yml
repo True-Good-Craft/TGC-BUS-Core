@@ -66,7 +66,7 @@ jobs:
           fi
 
           echo "CANONICAL_VERSION=${CANONICAL_VERSION}" >> "$GITHUB_ENV"
-          echo "EXPECTED_ASSET_NAME=BUS-Core-${CANONICAL_VERSION}.exe" >> "$GITHUB_ENV"
+          echo "EXPECTED_ASSET_NAME=TGC-BUS-Core-${CANONICAL_VERSION}.zip" >> "$GITHUB_ENV"
 
       - name: Download release asset
         env:
@@ -125,7 +125,7 @@ jobs:
             '[
               .[] |
               . as $release |
-              ($release.assets | map(select(.name | startswith("BUS-Core-"))) | .[0]) as $asset |
+              ($release.assets | map(select((.name | startswith("TGC-BUS-Core-")) and (.name | endswith(".zip")))) | .[0]) as $asset |
               if $asset then
                 {
                   version: ($release.tag_name | ltrimstr("v")),

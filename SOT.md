@@ -93,6 +93,8 @@
 
 * Published manifest `latest.version` MUST come from `core/version.py::VERSION`; tags remain a checked release boundary, not a second public version authority.
 
+* Canonical public release artifact naming MUST be `TGC-BUS-Core-<VERSION>.zip`; release mirrors and manifest download URLs MUST target this ZIP artifact naming.
+
 ---
 
 ## 4. Canonical Unit Model & Storage Contract
@@ -1332,6 +1334,8 @@ latest.size_bytes (integer)
 The manifest is the single source of truth for “latest release” metadata.
 
 Publishing a new release requires `core/version.py::VERSION`, the strict external release tag `v{VERSION}`, and hosted manifest metadata to agree. The release mirror workflow machine-checks that tag/version match before publishing manifest metadata.
+
+Canonical public release assets referenced by Lighthouse/manifest metadata MUST use `TGC-BUS-Core-<VERSION>.zip` naming.
 
 Manifest must never contain placeholders or non-JSON tokens. Checksum, size, and release-notes fields are currently informational to the app unless future code explicitly starts enforcing them.
 

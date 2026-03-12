@@ -27,6 +27,7 @@
 | Output | Status | Produced by | Destination |
 | --- | --- | --- | --- |
 | Windows one-file EXE | Canonical | `scripts/build_core.ps1` + `BUS-Core.spec` | `dist/BUS-Core.exe`, copied to `dist/BUS-Core-<VERSION>.exe` |
+| Canonical public release package (ZIP) | Canonical | Manual release packaging + GitHub release asset | `TGC-BUS-Core-<VERSION>.zip` (GitHub release), mirrored to R2 `releases/TGC-BUS-Core-<VERSION>.zip` |
 | Windows version metadata file | Canonical | `scripts/build_core.ps1` | `scripts/_win_version_info.txt` |
 | Bundled UI/license assets | Canonical | `BUS-Core.spec` | Embedded in PyInstaller artifact |
 | Docker image | Canonical | `Dockerfile`, `.github/workflows/publish-image.yml` | GHCR tags `latest` and `:<sha>` |
@@ -38,7 +39,7 @@
 2. `scripts/build_core.ps1` reads `VERSION` from `core/version.py` unless an explicit override is passed, validates `X.Y.Z`, writes Windows version metadata, builds the one-file EXE, and copies `dist/BUS-Core.exe` to `dist/BUS-Core-<VERSION>.exe`.
 3. `scripts/release-check.ps1` now validates the current release chain truthfully: isolated smoke, canonical build script, and artifact existence checks for both current EXE names.
 4. `.github/workflows/release-mirror.yml` checks out the tagged ref, reads `VERSION` from `core/version.py`, and fails unless the release tag exactly equals `v{VERSION}`.
-5. The same workflow downloads the exact `BUS-Core-<VERSION>.exe` release asset, computes `sha256`, uploads the asset, and publishes manifest `latest.version` from canonical `VERSION`.
+5. The same workflow downloads the exact `TGC-BUS-Core-<VERSION>.zip` release asset, computes `sha256`, uploads the asset to R2 `releases/<asset-name>`, and publishes manifest `latest.version` plus `latest.download.url` from canonical `VERSION`.
 6. `.github/workflows/publish-image.yml` remains a separate container-publish workflow and does not govern Windows release/update version authority.
 7. `scripts/build_core.ps1` prints manual `signtool` commands for signing and signature verification, but the repo does not automate those steps.
 
@@ -84,7 +85,7 @@
 | `scripts/release-check.ps1` vs actual smoke/build chain | Canonical | Helper now validates the real current scripts and artifact names. |
 | Disabled CI/build-test workflows | Drifted | General automation remains sparse even though release/update authority is now explicit. |
 | Update path trusts surfaced `download_url` after manifest validation | Drifted | No artifact checksum/signature verification in app path. |
-| Release history in manifest | Narrowed drift | Current release publication is canonical, but history still reflects GitHub release metadata filtered by available BUS-Core assets. |
+| Release history in manifest | Narrowed drift | Current release publication is canonical, but history still reflects GitHub release metadata filtered by canonical `TGC-BUS-Core-*.zip` assets. |
 
 ## Freeze Notes
 
