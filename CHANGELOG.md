@@ -11,6 +11,8 @@
 - Added auth-authority drift guards that verify `core.api.http` remains the canonical validator path, `tgc.security.require_token_ctx` is compatibility-only, and the authority docs stay aligned.
 
 ### Changed
+- Completed a docs-only governance and stability realignment across SOT, system maps, contract docs, release docs, and README so BUS Core is described consistently as the sovereign local trust anchor rather than an expansion-stage product.
+- Corrected the stale `SOT.md` header from `v1.0.2` to `v1.0.3` to match the canonical release authority in `core/version.py`.
 - Final fortheemperor cleanup: aligned `dev.writes_enabled` config-model default with fresh-install write-enabled truth, removed active Settings ownership of `close_to_tray`, stubbed Theme control to honest system-only mode, and strengthened sidebar BUS Core brand composition.
 - Bumped `INTERNAL_VERSION` from `1.0.2.9` to `1.0.2.10` without changing public `VERSION`.
 - Completed fortheemperor UI authority cleanup and route/module standardization passes across settings, contacts/vendors, manufacturing, inventory, and recipes using narrow reviewable changes.

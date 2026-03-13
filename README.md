@@ -9,16 +9,20 @@
 
 
 
-A local-first inventory and manufacturing system for small shops and solo makers.
+A local-first inventory and manufacturing core for small shops that need durable control.
 
-No cloud. No accounts. No subscriptions.  
-Your data stays on your machine.
+No cloud dependency. No accounts. No forced lock-in.  
+Your data stays on your machine, and the system remains usable offline.
 
 ---
 
 ## What Is BUS Core?
 
-BUS Core is designed for workshops that build real things in small batches.
+BUS Core is the sovereign local system of record for workshops that build real things in small batches.
+
+It is meant to be boring in the right ways: stable, predictable, reviewable, and fully usable on its own.
+
+Core owns the canonical business logic, local data model, and operator-safe base workflows. Any Pro or companion tooling is additive around Core, not a prerequisite for using it.
 
 It replaces:
 
@@ -34,19 +38,19 @@ With:
 - Full audit history
 - Complete data ownership
 
-It is built for operators who want control, not dashboards.
+It is built for operators who want control and continuity, not SaaS dependency.
 
 ---
 
 ## Who BUS Core Is For
 
-- Small manufacturing shops (1–20 people)
+- Small manufacturing shops
 - Makerspaces
 - Custom fabricators
 - Repair and prototyping shops
 - Solo operators
 
-If you build physical products in low to medium volume, BUS Core is for you.
+If you build physical products and want local authority over inventory, costing, and operating records, BUS Core is for you.
 
 ---
 
@@ -55,7 +59,7 @@ If you build physical products in low to medium volume, BUS Core is for you.
 - **Materials & Consumables**  
   Track stock by unit (grams, millimeters, milliliters, each), with batch numbers, cost, and purchase dates.
 
-- **Blueprints (Recipes)**  
+- **Recipes**  
   Define how materials become products. Costs are calculated using FIFO from real purchase batches.
 
 - **Assemblies & Products**  
@@ -71,12 +75,12 @@ It is not a full accounting system—and is not trying to be.
 
 ## Key Features
 
-- **Open Source** — 100% free (AGPLv3)
+- **Open Source Core** — AGPLv3-licensed local infrastructure
 - **Precision Inventory** — FIFO batch valuation with metric units
 - **Manufacturing Engine** — Recipe-based builds with atomic commits
 - **Ledger & Audit Trail** — Complete movement history
 - **Local & Private** — SQLite database with encrypted backups
-- **Cross-Platform** — Windows, Linux, and macOS
+- **Windows Native, Docker Optional** — Native Windows runtime, container support for other environments
 
 ---
 
@@ -108,7 +112,7 @@ Enable development features by setting:
 
 ```bash
 BUS_ENV=dev
-````
+```
 
 This enables:
 
@@ -230,10 +234,10 @@ Backups can be encrypted using AES-GCM.
 BUS Core is built on three principles:
 
 1. Local-first by default
-2. No artificial limits
-3. User owns their data
+2. Predictable, operator-safe behavior
+3. User owns their data and operating continuity
 
-Software should serve small operators, not extract from them.
+Software for small shops should preserve trust, not manufacture dependency.
 
 ---
 

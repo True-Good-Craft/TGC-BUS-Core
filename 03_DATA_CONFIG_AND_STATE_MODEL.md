@@ -1,24 +1,26 @@
 # 03_DATA_CONFIG_AND_STATE_MODEL
 
-- Document purpose: Authority map for persistent, mutable, generated, and runtime state in BUS Core.
+- Document purpose: Authority map for persistent, mutable, generated, and runtime state in BUS Core, with an emphasis on one durable authority per class of state.
 - Primary authority basis: `core/appdata/paths.py`, `core/appdb/engine.py`, `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/config/manager.py`, `core/api/routes/system_state.py`, `core/api/http.py`.
 - Best use: Determine where state lives, which file or component owns it, and whether authority is canonical, split, or repo-local.
 - Refresh triggers: DB schema changes, path-helper changes, config-key changes, onboarding/first-run logic changes, state file relocations.
-- Highest-risk drift areas: Repo-local mutable state, mixed session state, ORM-vs-startup schema differences, localStorage vs backend first-run state.
+- Highest-risk drift areas: Repo-local mutable state, mixed session state, ORM-vs-startup schema differences, and localStorage layered over backend first-run truth.
 - Key dependent files / modules: `core/appdata/paths.py`, `core/appdb/engine.py`, `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/config/manager.py`, `core/plugins/loader.py`, `core/api/routes/system_state.py`.
 
 ## State Authority Matrix
+
+Stability in this phase depends on one durable authority per class of state. Durable business and operator state should live in local Core-owned storage, with AppData-backed files and the SQLite database as the primary authorities. Repo-local mutable state is still present in places, but where it exists it should be treated as drift or technical debt rather than the preferred long-term shape.
 
 | State concern | Backing | Status | Authority | Notes |
 | --- | --- | --- | --- | --- |
 | Inventory, vendors/contacts, ledger, finance, recipes, manufacturing | DB-backed | Canonical | SQLite schema in `core/appdb/models.py` and `core/appdb/models_recipes.py` | Main durable business state. |
 | DB path selection | Config/env-derived | Canonical | `core/appdata/paths.py::resolve_db_path()` | Uses `BUS_DB` override or bus mode. |
 | Bus mode (`demo` / `prod`) | File/env-backed | Canonical | `core/appdata/paths.py::resolve_bus_mode()` | Priority: `bus_mode.json`, env var, flag file, default. |
-| App runtime config | File-backed | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` via `core/config/manager.py` | Single app-runtime authority for launcher, UI, backup, updates, write gate, and persisted policy fields. |
+| App runtime config | File-backed | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` via `core/config/manager.py` | Single durable app-runtime authority for launcher, UI, backup, updates, write gate, and persisted policy fields. |
 | Legacy app-local config fallback | File-backed | Legacy | `%LOCALAPPDATA%\BUSCore\app\config.json` via compatibility reads in `core/config/manager.py` | Read-only fallback for recognized old keys (`writes_enabled`, `role`, `plan_only`) when canonical values are absent. |
 | Reader roots / Drive include settings | File-backed | Canonical | `%LOCALAPPDATA%\BUSCore\settings_reader.json` via `core/settings/reader_state.py` | Governs local FS and Drive provider behavior. |
-| Plugin enabled flags | Repo-local file-backed | Drifted | `data/settings_plugins.json` via `core/plugins/loader.py` | Lives outside AppData tree. |
-| Background index freshness | Repo-local file-backed | Drifted | `data/index_state.json` via `core/api/http.py` | Also outside AppData tree. |
+| Plugin enabled flags | Repo-local file-backed | Drifted | `data/settings_plugins.json` via `core/plugins/loader.py` | Live mutable state outside AppData; treat as drift/technical debt relative to the local durable authority model. |
+| Background index freshness | Repo-local file-backed | Drifted | `data/index_state.json` via `core/api/http.py` | Live mutable state outside AppData; also drift relative to the local durable authority model. |
 | First-run / demo readiness | Derived runtime state | Canonical | `GET /app/system/state` from DB counts + bus mode | UI adds secondary local flags on top. |
 | Onboarding complete / EULA accepted / imperial mode | localStorage/UI state | Secondary | `core/ui/app.js` | UI-facing state only; not the source of business truth. |
 | Session/auth state | Cookie + in-memory + file-backed | Narrowed drift | `core.api.http`, `AppState.tokens`, global `SESSION_TOKEN`, `session_token.txt`, `tgc.security.require_token_ctx` | `core.api.http` is the canonical validator authority, `tgc.security.require_token_ctx` is a compatibility wrapper, and the global/file tokens remain secondary mirrors. |
@@ -63,6 +65,8 @@
 
 ### Canonical AppData-backed durable state
 
+This AppData tree is the intended durable local ownership boundary for Core-managed state on Windows. When state belongs to Core and must persist for operators, AppData-backed storage is the canonical target unless an explicit exception is documented and justified in code.
+
 | Path | Status | Purpose |
 | --- | --- | --- |
 | `%LOCALAPPDATA%\BUSCore\config.json` | Canonical | Main app-runtime config for UI, launcher, updates, write gate, and persisted policy fields. |
@@ -79,6 +83,8 @@
 | `%LOCALAPPDATA%\BUSCore\state\capabilities_hmac.key` | Canonical | Capability-manifest signing key. |
 
 ### Repo-local mutable state
+
+These files exist today, but they are not ideal durable authorities. They are best understood as repo-local drift that increases the risk of portability, update, and operator-trust problems.
 
 | Path | Status | Purpose |
 | --- | --- | --- |
@@ -129,7 +135,7 @@
 ## Objective state risks
 
 - Canonical: durable app-runtime config authority is `%LOCALAPPDATA%\BUSCore\config.json`; `%LOCALAPPDATA%\BUSCore\app\config.json` remains legacy compatibility input only.
-- Drifted: some live mutable state (`data/index_state.json`, `data/settings_plugins.json`) lives in repo `data/`, not AppData.
+- Drifted: some live mutable state (`data/index_state.json`, `data/settings_plugins.json`) lives in repo `data/`, not AppData, which weakens the one-authority-per-state-class model.
 - Narrowed drift: validator authority is canonical in `core.api.http`, but session/auth state still spans cookie, `AppState.tokens`, global `SESSION_TOKEN`, and a token file.
 - Drifted: `vendors.name` is declared unique in ORM metadata, but startup migration logic drops the unique-name index and recreates a non-unique one.
 - Secondary: onboarding suppression and EULA acceptance are localStorage flags layered on top of backend first-run truth.

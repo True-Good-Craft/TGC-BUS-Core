@@ -1,25 +1,24 @@
-# 🛠️ TGC BUS Core — Unified Source of Truth
+# TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.0.2 **Updated:** 2026-03-11 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.0.3 **Updated:** 2026-03-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
 ## 1. Identity & Purpose
 
-* 
-**Company:** True Good Craft (TGC).
+* **Company:** True Good Craft (TGC).
 
+* **Product:** TGC BUS Core (Business Utility System).
 
-* 
-**Product:** TGC BUS Core (Business Utility System).
+* **Audience:** Small and micro shops, makers, and anti-SaaS operators who need durable local control.
 
+* **Constitutional doctrine:** BUS Core is the sovereign local system of record. It MUST remain fully usable offline, on local infrastructure, without Pro, without accounts, and without forced cloud dependency.
 
-* 
-**Audience:** Small/micro shops (1–10 person teams), makers, and anti‑SaaS owners.
+* **Trust posture:** Predictability, stability, operator safety, and long-term reliability are first-order product requirements. Feature growth does not outrank trust preservation.
 
+* **Authority boundary:** Core owns the canonical business logic, durable data model, and operator-safe base workflows. Pro may automate, orchestrate, integrate, or accelerate around Core, but it MUST NOT supersede Core or redefine Core logic.
 
-* 
-**Primary Value:** Local-first data sovereignty. Keep inventory, manufacturing, and contacts on the owner’s machine without forced cloud or telemetry.
+* **Product framing:** Core is the product and trust anchor, not a crippled free tier. The system must remain complete and useful on its own.
 
 
 
@@ -29,35 +28,23 @@
 
 ### Technical Stack
 
-* 
-**Backend:** Python 3.12 / FastAPI using a factory callable (`core.api.http:create_app`).
+* **Backend:** Python 3.12 / FastAPI using a factory callable (`core.api.http:create_app`).
 
+* **Database:** SQLite via SQLAlchemy ORM.
 
-* 
-**Database:** SQLite via SQLAlchemy ORM.
+* **UI:** Single-page application (SPA) shell (`core/ui/shell.html`) with modular JS cards.
 
-
-* 
-**UI:** Single-page application (SPA) shell (`core/ui/shell.html`) with modular JS cards.
-
-
-* 
-**Server:** Uvicorn at `127.0.0.1:8765` (Local) or `0.0.0.0:8765` (Docker).
+* **Server:** Uvicorn at `127.0.0.1:8765` (Local) or `0.0.0.0:8765` (Docker).
 
 
 
 ### Deployment Modes
 
-* 
-**Native Windows:** Uses `%LOCALAPPDATA%\BUSCore\` for DB, config, and journals. Launch via `launcher.py` (or the thin wrapper `Run Core.bat`).
+* **Native Windows:** Uses `%LOCALAPPDATA%\BUSCore\` for DB, config, and journals. Launch via `launcher.py` (or the thin wrapper `Run Core.bat`).
 
+* **Docker:** Uses `python:3.12-slim`. Persistence via volume mounted at `/data` (e.g., `BUS_DB=/data/app.db`). Runs as non-root `appuser`.
 
-* 
-**Docker:** Uses `python:3.12-slim`. Persistence via volume mounted at `/data` (e.g., `BUS_DB=/data/app.db`). Runs as non-root `appuser`.
-
-
-* 
-**Dev/smoke helper:** `scripts/launch.ps1` runs the same `core.api.http:create_app` factory for scripted local checks only; it is not the supported native app entry.
+* **Dev/smoke helper:** `scripts/launch.ps1` runs the same `core.api.http:create_app` factory for scripted local checks only; it is not the supported native app entry.
 
 ---
 

@@ -1,17 +1,18 @@
 # 01_SYSTEM_MAP
 
-- Document purpose: Fast skeletal map of BUS Core runtime, authority owners, trust boundaries, and coupling hotspots.
+- Document purpose: Fast skeletal map of BUS Core runtime, canonical authority owners, trust boundaries, and the main drift paths that threaten stability.
 - Primary authority basis: `core/api/http.py`, `launcher.py`, `core/ui/app.js`, `core/appdb/*`, `core/appdata/paths.py`, `core/runtime/core_alpha.py`.
 - Best use: First read when locating canonical runtime surfaces or deciding where deeper truth lives.
 - Refresh triggers: Entrypoint changes, router remounting, new mutable-state authority, startup-flow changes, new external service dependencies.
-- Highest-risk drift areas: Alternate entrypoints, split session authority, version/update doc drift, repo-local mutable state outside AppData.
+- Highest-risk drift areas: Split authority, session/auth drift, version/update drift, and repo-local mutable state outside AppData.
 - Key dependent files / modules: `core/api/http.py`, `launcher.py`, `core/ui/app.js`, `core/config/manager.py`, `core/config/paths.py`, `core/appdb/engine.py`, `core/runtime/core_alpha.py`.
 
 ## Project identity
 
-- BUS Core is a local-first business utility system with a FastAPI backend and a static SPA frontend.
+- BUS Core is the sovereign local-first business utility runtime with a FastAPI backend and a static SPA frontend.
 - Repository evidence shows active domains for inventory, ledger/stock, recipes, manufacturing, contacts/vendors, finance, backups/imports, plugin-backed file/Drive cataloging, and opt-in update checks.
 - Native runtime is Windows-first (`launcher.py`, `BUS-Core.spec`); container runtime also exists (`Dockerfile`, `docker-compose.yml`).
+- Current stabilization priority is preserving one canonical surface per concern and preventing parallel truths from reappearing through alternate entrypoints, duplicated state authority, or update/version ambiguity.
 
 ## System Authority Map
 
@@ -29,6 +30,8 @@
 | Update check behavior | Canonical | `core/api/routes/update.py`, `core/services/update.py`, `core/config/manager.py` | UI contract lives in `core/ui/js/update-check.js`. |
 | Release version | Canonical | `core/version.py` | `VERSION` is the strict SemVer release authority; `INTERNAL_VERSION` is the working revision. |
 | Repository docs | Secondary | `README.md`, `SOT.md`, `API_CONTRACT.md`, `CHANGELOG.md`, `docs/*` | Useful context; code wins on conflict. |
+
+Stability in the current phase comes from keeping these authority lines singular and explicit. The main operational risks are split runtime authority, mutable-state drift outside canonical storage, auth drift between middleware and route-local enforcement, and release/update drift between code, docs, and published metadata.
 
 ## Top-level Repository Skeleton
 
@@ -117,6 +120,8 @@
 | Repo-local mutable state | Drifted | Some live state is stored in repo `data/` instead of AppData. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Placeholder/stale UI surfaces | Drifted | `#/runs`, `#/import`, backup UI, and stub transaction widgets can mislead contract assumptions. | `02_API_AND_UI_CONTRACT_MAP.md` |
 | Runtime authority | Canonical | Legacy alternate entry surfaces were removed; `scripts/launch.ps1` remains dev/smoke-only around the canonical factory. | This file |
+
+In practice, the main stability failures to guard against are split authority, mutable-state drift, auth drift, and release/update drift. The architecture shape does not need expansion here; it needs clearer authority boundaries and fewer competing truths.
 
 ## Freeze Notes
 

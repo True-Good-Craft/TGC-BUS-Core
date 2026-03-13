@@ -1,6 +1,6 @@
 # 05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW
 
-- Document purpose: Fast operational reference for version authority, build outputs, release flow, update-check behavior, and deployment assumptions.
+- Document purpose: Fast operational reference for version authority, build outputs, release flow, update-check behavior, and deployment assumptions, with emphasis on trustworthy infrastructure and explicit release authority.
 - Primary authority basis: `core/version.py`, `scripts/build_core.ps1`, `scripts/release-check.ps1`, `BUS-Core.spec`, `core/api/routes/update.py`, `core/services/update.py`, `.github/workflows/release-mirror.yml`, `.github/workflows/publish-image.yml`.
 - Best use: Validate what is actually implemented for shipping and update checks, and separate that from older docs or tooling assumptions.
 - Refresh triggers: Version bumps, build script changes, manifest URL changes, update-service changes, CI/workflow changes, signing or artifact-validation changes.
@@ -9,11 +9,13 @@
 
 ## Version and Update Authority Matrix
 
+In the current stabilization phase, trustworthy release infrastructure means operators can tell where version truth lives, what the app validates, and what it does not. Update checks must stay opt-in, non-blocking, and honest about the limits of current verification.
+
 | Concern | Implemented authority | Doc / tooling assumption | Status | Notes |
 | --- | --- | --- | --- | --- |
 | Runtime version | `core/version.py` | FastAPI app version, build script read from same source | Canonical | `VERSION` is the owner-controlled public/release SemVer source. |
 | Internal working version | `core/version.py` | Internal reports may expose `INTERNAL_VERSION` | Canonical | `INTERNAL_VERSION` is `X.Y.Z.R`, for repo working revisions only, and must not flow into strict SemVer consumers. |
-| Package metadata version | `pyproject.toml` | Packaging stub only | Canonical mirror | Kept aligned to `core/version.py` strict SemVer `VERSION`. |
+| Package metadata version | `pyproject.toml` | Packaging stub only | Drifted mirror | Repository currently shows `pyproject.toml` at `1.0.2` while `core/version.py` is `1.0.3`; `core/version.py` remains the release authority. |
 | Release tag boundary | `.github/workflows/release-mirror.yml` checks `tag == v{VERSION}` | GitHub release tags | Canonical boundary | Tags remain strict external SemVer, but are machine-checked against `core/version.py` before manifest publication. |
 | Published manifest `latest.version` | `.github/workflows/release-mirror.yml` reads `core/version.py` | Hosted manifest consumers | Canonical | Published from canonical `VERSION`, not derived from tag parsing alone. |
 | Update-check route contract | `core/api/routes/update.py` | UI Settings/update notice consumes this response | Canonical | Fixed six-field response. |
@@ -43,6 +45,8 @@
 6. `.github/workflows/publish-image.yml` remains a separate container-publish workflow and does not govern Windows release/update version authority.
 7. `scripts/build_core.ps1` prints manual `signtool` commands for signing and signature verification, but the repo does not automate those steps.
 
+This flow is trustworthy to the extent that version authority is singular and machine-checked. It is not yet a cryptographically verified end-to-end updater, and the docs should not imply otherwise.
+
 ## Observed Update Check Flow
 
 1. UI startup notice or Settings `Check now` calls `GET /app/update/check`.
@@ -52,6 +56,8 @@
 5. Route returns normalized response keys: `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message`.
 6. UI exposes `download_url` in a browser tab when an update is available.
 7. No in-app download, installer handoff, checksum verification, or signature verification was found.
+
+Update checks are part of the trust model because they are optional and non-blocking. Core remains usable without them, and an unavailable manifest host should not prevent normal local operation.
 
 ## Implemented vs documented vs assumed release/update elements
 
@@ -86,6 +92,8 @@
 | Disabled CI/build-test workflows | Drifted | General automation remains sparse even though release/update authority is now explicit. |
 | Update path trusts surfaced `download_url` after manifest validation | Drifted | No artifact checksum/signature verification in app path. |
 | Release history in manifest | Narrowed drift | Current release publication is canonical, but history still reflects GitHub release metadata filtered by canonical `TGC-BUS-Core-*.zip` assets. |
+
+Release and update trust here depends more on clear authority and honest limits than on a large automation footprint. The current boundary is: canonical version authority exists, tag alignment is checked, update metadata is normalized, and artifact integrity is not yet enforced by the runtime.
 
 ## Freeze Notes
 

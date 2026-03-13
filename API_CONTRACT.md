@@ -3,11 +3,14 @@ Status: Authoritative declared-truth pass
 
 This document describes the current supported BUS Core API as mounted by the runtime today. It is a truth-reconciliation document, not a design target. Mounted routes are not all equally canonical.
 
+Its purpose is to preserve predictability and prevent silent contract drift. If a route exists but is secondary, legacy, stubbed, or drifted, it should be described that way instead of being promoted into the canonical surface.
+
 ## 1. Route Tiers and Auth Reality
 
 - Canonical routes are the `/app/*` business and operator routes that the UI and operators should treat as authoritative.
 - Supported operational routes are real protected admin/integration surfaces that exist and are supported, but they are not the core business contract.
 - Secondary / legacy / drifted routes are mounted but non-canonical. They must not be presented as the preferred API surface for new callers.
+- These tiers exist to keep Core predictable: the contract should make drift visible, not blur canonical and compatibility surfaces together.
 - `GET /session/token` is the canonical session bootstrap route. It returns `{ "token": "<token>" }` and sets the configured session cookie (`bus_session` by default).
 - Non-public routes require that session cookie. Current runtime enforcement is a mix of global middleware and route-local dependencies.
 - Middleware-based auth is current truth for several supported routes. The handler does not declare route-local token auth for `/app/config`, `/app/update/check`, `/app/purchase`, `/app/stock/in`, `/app/stock/out`, `/app/ledger/history`, `/app/finance/*`, and `/app/logs`; protection comes from the global `session_guard` middleware.

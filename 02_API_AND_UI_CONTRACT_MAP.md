@@ -1,19 +1,23 @@
 # 02_API_AND_UI_CONTRACT_MAP
 
-- Document purpose: Operational contract index for backend route surface, frontend screens, and UI/backend dependency edges.
+- Document purpose: Operational contract index for backend route surface, frontend screens, and UI/backend dependency edges, used to preserve predictability and expose drift before it becomes silent contract breakage.
 - Primary authority basis: Mounted routes in `core/api/http.py`, `core/api/routes/*`, `core/reader/api.py`, `core/organizer/api.py`, and SPA usage in `core/ui/app.js`, `core/ui/js/**/*`.
 - Best use: Contract checking, route inventory, UI/backend coherence review, wrapper/drift detection.
 - Refresh triggers: Route additions/removals, router remounting, screen changes, payload shape changes, legacy-wrapper cleanup.
-- Highest-risk drift areas: Missing backup endpoints, stub transaction endpoints used by the UI, `/app/logs` vs `/logs` naming collision, mixed route-level guard patterns.
+- Highest-risk drift areas: Missing backup endpoints, stub transaction endpoints used by the UI, `/app/logs` vs `/logs` naming collision, and mixed route-level guard patterns.
 - Key dependent files / modules: `core/api/http.py`, `core/api/routes/items.py`, `core/api/routes/recipes.py`, `core/api/routes/manufacturing.py`, `core/api/routes/ledger_api.py`, `core/api/routes/finance_api.py`, `core/ui/app.js`, `core/ui/js/cards/*`.
 
 ## Top Contract Drift Risks
+
+This map exists to keep authority boundaries explicit. Canonical, supported, secondary, and legacy or drifted surfaces are separated so operators and maintainers can see where predictability is guaranteed and where compatibility or debt still exists.
 
 - Drifted: `core/ui/js/cards/backup.js` expects `/app/backup` or `/app.db`; no matching mounted backend route was found.
 - Drifted: `core/ui/js/cards/home_donuts.js` uses `/app/transactions/summary` and `/app/transactions`, but both endpoints are explicit stubs.
 - Canonical: `/session/token` authority is only `core/api/http.py`; legacy alternate runtime surfaces that previously conflicted here were removed.
 - Drifted: `/app/logs` is the UI event-feed endpoint, while `/logs` is the text runtime log tail; similar names, different contracts.
 - Drifted: Some mounted `/app/*` mutations rely on global middleware rather than route-local auth/write dependencies; see `04_SECURITY_TRUST_AND_OPERATIONS.md`.
+
+Silent contract drift is a stability risk. The purpose of this document is not to enlarge the declared surface, but to keep the live supported surface explicit and reviewable.
 
 ## Public and bootstrap routes
 

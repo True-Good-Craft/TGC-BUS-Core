@@ -1,13 +1,15 @@
 # 04_SECURITY_TRUST_AND_OPERATIONS
 
-- Document purpose: Fast trust, auth, enforcement, sensitive-operation, and audit reference for BUS Core.
+- Document purpose: Fast trust, auth, enforcement, sensitive-operation, and audit reference for BUS Core, treating trust as a product requirement as well as a security concern.
 - Primary authority basis: `core/api/http.py`, `core/api/security.py`, `tgc/security.py`, `tgc/tokens.py`, `core/policy/*`, `core/secrets/manager.py`, `core/utils/export.py`, `core/services/capabilities/registry.py`.
 - Best use: Determine who can do what, where enforcement happens, and which trust splits remain live in code.
 - Refresh triggers: Session/auth changes, route guard changes, write-policy changes, secrets handling changes, backup/import flow changes, provider integration changes.
-- Highest-risk drift areas: Split token authority, inconsistent route-local guard patterns, optional owner-policy enforcement, release-artifact validation absence, license/manifest mismatch.
+- Highest-risk drift areas: Split token authority, inconsistent route-local guard patterns, optional owner-policy enforcement, release-artifact validation absence, and license/manifest mismatch.
 - Key dependent files / modules: `core/api/http.py`, `core/api/security.py`, `tgc/security.py`, `tgc/state.py`, `tgc/tokens.py`, `core/policy/guard.py`, `core/secrets/manager.py`, `core/utils/export.py`, `core/services/capabilities/registry.py`.
 
 ## Trust and Enforcement Matrix
+
+Core trust is not only about preventing compromise. It is also about preserving operator certainty: no surprise lock-in, no hidden cloud dependency, no ambiguous auth boundary, and no silent shift in who owns the canonical business logic or durable state.
 
 | Concern | Status | Enforced by | Scope | Notes |
 | --- | --- | --- | --- | --- |
@@ -21,6 +23,13 @@
 | Release artifact validation | Drifted | No code path found | Update/install surface | Manifest metadata may include `sha256`, but the app still surfaces `download_url` without checksum or signature verification. |
 
 ## Trust model
+
+### Product trust requirements
+
+- Core must remain locally operable and fully useful without accounts, Pro, or forced cloud dependency.
+- External integrations and update checks must remain additive and bounded, not hidden prerequisites for normal operation.
+- Auth and write authority should be explicit enough that operators are not surprised about what is protected by middleware only versus route-local guards.
+- Current docs should describe live drift plainly rather than implying a cleaner runtime than the code actually provides.
 
 ### Evidence-backed
 
@@ -52,6 +61,8 @@
 
 - Intended session contract: `GET /session/token` is the only bootstrap surface, it sets the `bus_session` cookie, and non-public routes remain cookie-authenticated even when `BUS_DEV=1`.
 - Intended dev-route contract: `/dev/*` returns `404` whenever `BUS_DEV!=1`; when `BUS_DEV=1`, those routes are available but still require a valid session cookie.
+
+This is the core trust boundary as implemented today: local runtime first, bounded optional network calls, and a single supported bootstrap route. Remaining auth ambiguity must stay documented plainly because it affects operator trust even when the app still functions.
 
 
 ### Route-level enforcement inconsistencies
@@ -127,6 +138,8 @@
 - Canonical: backup import/export paths enforce password-based decryption, exports-root path confinement, maintenance mode, and journal archiving during restore.
 - Canonical: update manifest fetch blocks localhost and literal private/loopback/link-local/unspecified IP hosts, rejects redirects, and caps response size.
 - Drifted: update/download path does not validate release artifact checksum or signature before surfacing `download_url` to the UI; current docs must describe checksum/signature fields as informational only.
+
+The current security posture is therefore trustworthy in some important local-first ways, but not yet fully consolidated. The right documentation posture is honesty about remaining auth, config, and release-validation drift rather than overstating cleanliness.
 
 ## Limited-confidence inference
 
