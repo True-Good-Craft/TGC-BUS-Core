@@ -70,6 +70,8 @@
 
 * Meaningful agent changes MUST also update `CHANGELOG.md`, this SOT when behavior/contracts/authority change, and any governance docs affected by version-policy changes.
 
+* `scripts/validate_change_trace.py` is the hard traceability guard: if code/control surfaces change, both `CHANGELOG.md` and `core/version.py` MUST be in the same diff, and `INTERNAL_VERSION` MUST be bumped for meaningful repo changes.
+
 ### Release and Update Boundary
 
 * Strict SemVer consumers MUST continue reading `VERSION` only.
@@ -79,6 +81,8 @@
 * Release tags MUST equal `v{VERSION}`, and `.github/workflows/release-mirror.yml` machine-checks `tag == core/version.py::VERSION` before publishing manifest metadata.
 
 * Published manifest `latest.version` MUST come from `core/version.py::VERSION`; tags remain a checked release boundary, not a second public version authority.
+
+* `scripts/validate_version_governance.py` machine-checks the version mirrors, and `.github/workflows/governance-guard.yml` runs both governance validators on `push`, `pull_request`, and `workflow_dispatch`.
 
 * Canonical public release artifact naming MUST be `TGC-BUS-Core-<VERSION>.zip`; manifest download URLs MUST be absolute Lighthouse URLs in the form `https://lighthouse.buscore.ca/releases/TGC-BUS-Core-<VERSION>.zip`.
 

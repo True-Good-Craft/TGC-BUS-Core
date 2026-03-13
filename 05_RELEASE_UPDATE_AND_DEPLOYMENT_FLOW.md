@@ -1,10 +1,10 @@
 # 05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW
 
 - Document purpose: Fast operational reference for version authority, build outputs, release flow, update-check behavior, and deployment assumptions, with emphasis on trustworthy infrastructure and explicit release authority.
-- Primary authority basis: `core/version.py`, `scripts/build_core.ps1`, `scripts/release-check.ps1`, `BUS-Core.spec`, `core/api/routes/update.py`, `core/services/update.py`, `.github/workflows/release-mirror.yml`, `.github/workflows/publish-image.yml`.
+- Primary authority basis: `core/version.py`, `scripts/validate_version_governance.py`, `scripts/validate_change_trace.py`, `scripts/build_core.ps1`, `scripts/release-check.ps1`, `BUS-Core.spec`, `core/api/routes/update.py`, `core/services/update.py`, `.github/workflows/governance-guard.yml`, `.github/workflows/release-mirror.yml`, `.github/workflows/publish-image.yml`.
 - Best use: Validate what is actually implemented for shipping and update checks, and separate that from older docs or tooling assumptions.
 - Refresh triggers: Version bumps, build script changes, manifest URL changes, update-service changes, CI/workflow changes, signing or artifact-validation changes.
-- Highest-risk drift areas: docs overstating release signing or artifact verification, disabled non-release CI, and any future split between release tags and `core/version.py`.
+- Highest-risk drift areas: docs overstating release signing or artifact verification, any future bypass of `.github/workflows/governance-guard.yml`, and any future split between release tags and `core/version.py`.
 - Key dependent files / modules: `core/version.py`, `scripts/build_core.ps1`, `scripts/release-check.ps1`, `BUS-Core.spec`, `core/config/manager.py`, `core/api/routes/update.py`, `core/services/update.py`, `.github/workflows/release-mirror.yml`.
 
 ## Version and Update Authority Matrix
@@ -15,7 +15,8 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 | --- | --- | --- | --- | --- |
 | Runtime version | `core/version.py` | FastAPI app version, build script read from same source | Canonical | `VERSION` is the owner-controlled public/release SemVer source. |
 | Internal working version | `core/version.py` | Internal reports may expose `INTERNAL_VERSION` | Canonical | `INTERNAL_VERSION` is `X.Y.Z.R`, for repo working revisions only, and must not flow into strict SemVer consumers. |
-| Package metadata version | `pyproject.toml` | Packaging stub only | Drifted mirror | Repository currently shows `pyproject.toml` at `1.0.2` while `core/version.py` is `1.0.3`; `core/version.py` remains the release authority. |
+| Package metadata version | `pyproject.toml` | Packaging stub only | Checked mirror | `scripts/validate_version_governance.py` now fails if `pyproject.toml` diverges from canonical `core/version.py::VERSION`. |
+| Version-governance mirrors | `scripts/validate_version_governance.py` + `.github/workflows/governance-guard.yml` | `SOT.md`, Windows version metadata, package metadata | Canonical guard | Canonical version mirrors are now machine-checked on push, pull request, and manual workflow runs. |
 | Release tag boundary | `.github/workflows/release-mirror.yml` checks `tag == v{VERSION}` | GitHub release tags | Canonical boundary | Tags remain strict external SemVer, but are machine-checked against `core/version.py` before manifest publication. |
 | Published manifest `latest.version` | `.github/workflows/release-mirror.yml` reads `core/version.py` | Hosted manifest consumers | Canonical | Published from canonical `VERSION`, not derived from tag parsing alone. |
 | Update-check route contract | `core/api/routes/update.py` | UI Settings/update notice consumes this response | Canonical | Fixed six-field response. |
@@ -89,11 +90,11 @@ Update checks are part of the trust model because they are optional and non-bloc
 | --- | --- | --- |
 | `core/version.py` vs docs/governance text | Secondary | Runtime/build/workflow truth is canonical in code; human docs must stay in sync. |
 | `scripts/release-check.ps1` vs actual smoke/build chain | Canonical | Helper now validates the real current scripts and artifact names. |
-| Disabled CI/build-test workflows | Drifted | General automation remains sparse even though release/update authority is now explicit. |
+| Governance guard workflow bypass | Narrowed drift | General automation remains sparse, but version and change-trace governance now fail through an active dedicated workflow. |
 | Update path trusts surfaced `download_url` after manifest validation | Drifted | No artifact checksum/signature verification in app path. |
 | Release history in manifest | Narrowed drift | Current release publication is canonical, but history still reflects GitHub release metadata filtered by canonical `TGC-BUS-Core-*.zip` assets. |
 
-Release and update trust here depends more on clear authority and honest limits than on a large automation footprint. The current boundary is: canonical version authority exists, tag alignment is checked, update metadata is normalized, and artifact integrity is not yet enforced by the runtime.
+Release and update trust here depends more on clear authority and honest limits than on a large automation footprint. The current boundary is: canonical version authority exists, authority mirrors and change-trace requirements are machine-checked, tag alignment is checked, update metadata is normalized, and artifact integrity is not yet enforced by the runtime.
 
 ## Freeze Notes
 

@@ -1,0 +1,51 @@
+name: Governance Guard
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  governance-guard:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate version governance
+        run: python scripts/validate_version_governance.py
+
+      - name: Determine diff base
+        shell: bash
+        run: |
+          BASE_SHA=""
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            BASE_SHA="${{ github.event.before }}"
+          fi
+
+          if [ -n "$BASE_SHA" ] && [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            echo "GOVERNANCE_DIFF_BASE=$BASE_SHA" >> "$GITHUB_ENV"
+          fi
+
+      - name: Validate change trace
+        shell: bash
+        run: |
+          if [ -n "${GOVERNANCE_DIFF_BASE:-}" ]; then
+            python scripts/validate_change_trace.py --base-ref "$GOVERNANCE_DIFF_BASE"
+          else
+            python scripts/validate_change_trace.py
+          fi

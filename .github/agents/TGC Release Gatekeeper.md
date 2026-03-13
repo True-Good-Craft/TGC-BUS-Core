@@ -25,6 +25,7 @@ You enforce procedural correctness and prepare release PRs.
 - Agents must not bump `VERSION` without explicit owner instruction.
 - `INTERNAL_VERSION` in `core/version.py` is the working revision and must remain `X.Y.Z.R`.
 - Meaningful repo changes by agents must bump `INTERNAL_VERSION` and keep `CHANGELOG.md`, `SOT.md`, and any version-governance docs synchronized.
+- Run `scripts/validate_version_governance.py` and `scripts/validate_change_trace.py` before release prep; `.github/workflows/governance-guard.yml` is the hard repository gate for those checks.
 - Release tags, release manifests, manifest `latest.version`, and update-check SemVer comparison must continue to use `VERSION`, never `INTERNAL_VERSION`.
 
 ---
