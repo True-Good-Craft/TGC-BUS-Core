@@ -1,4 +1,15 @@
 # TGC Business Utility System — BUS Core
+[![Open BUS Core](https://img.shields.io/badge/Open%20BUS%20Core-Run%20It%20Now-FF6D00?style=for-the-badge&logo=windows&logoColor=white)](https://buscore.ca/?src=github_readme_1)
+
+Local-first. No accounts. No cloud. Runs offline.
+
+
+A local-first inventory and manufacturing core for small shops that need durable control.
+
+
+No cloud dependency. No accounts. No forced lock-in.  
+Your data stays on your machine, and the system remains usable offline.
+
 
 ![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)
 ![Docker](https://img.shields.io/badge/Docker-GHCR-blue?logo=docker)
@@ -6,13 +17,6 @@
 ![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da.svg)](https://discord.gg/qp3rc5CxdM)
 
-
-
-
-A local-first inventory and manufacturing core for small shops that need durable control.
-
-No cloud dependency. No accounts. No forced lock-in.  
-Your data stays on your machine, and the system remains usable offline.
 
 ---
 
@@ -51,6 +55,11 @@ It is built for operators who want control and continuity, not SaaS dependency.
 - Solo operators
 
 If you build physical products and want local authority over inventory, costing, and operating records, BUS Core is for you.
+
+
+Use case example:
+https://buscore.ca/use-cases/laser-engraving-shop/?src=github_readme_usecase
+
 
 ---
 
