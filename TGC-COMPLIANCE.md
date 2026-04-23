@@ -1,7 +1,7 @@
 # TGC Compliance
 
 ## 1. Canonical standard
-- Canonical governance standard: https://github.com/True-Good-Craft/tgc-ops/blob/main/governance/tgc-repository-standard.md
+- Canonical governance standard: `tgc-ops/governance/tgc-repository-standard.md`
 
 ## 2. Repo identity
 - Repo name: TGC-BUS-Core
@@ -14,8 +14,10 @@
 
 ## 3. Compliance status
 - Status: COMPLIANT
-- Last audited by: tgc-ops governance-and-rollout pass
-- Audit date: 2026-03-14
+- Source audit report: `tgc-ops/indexes/daily-estate-compliance-report.md`
+- Source audit UTC: 2026-04-08T20:53:59.7472678Z
+- Last projected by: Codex Local Automation
+- Projection date UTC: 2026-04-08T21:48:13.1419913Z
 
 ## 4. Baseline checks
 - README: YES
@@ -28,7 +30,7 @@
 - Registered in tgc-ops: YES
 
 ## 5. Current gaps
-- N/A (no material gap recorded in current compliance matrix)
+- N/A
 
 ## 6. Required remediation
 - N/A
@@ -38,5 +40,5 @@
 
 ## 8. Authority note
 - Local implementation truth remains in local repository authority docs.
-- tgc-ops is canonical for estate governance standards, compliance matrix, drift tracking, and remediation planning.
-- By default, this is the only repo-local governance/compliance snapshot file that tgc-ops may update.
+- `tgc-ops` standard is canonical for estate governance.
+- This file is the only repo-local governance snapshot `tgc-ops` may update by default.
