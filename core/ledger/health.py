@@ -24,13 +24,19 @@ def health_summary():
         if qty_col is None:
             return {"desync": True, "problems": [{"reason": "No qty column in items"}]}
 
-        cur.execute(
-            f"""
-            SELECT i.id, i.name, {qty_col} AS onhand,
+        if qty_col == "qty":
+            query = """
+            SELECT i.id, i.name, i.qty AS onhand,
                    IFNULL((SELECT SUM(qty_remaining) FROM item_batches b WHERE b.item_id=i.id), 0.0) AS valued_qty
             FROM items i
             """
-        )
+        else:
+            query = """
+            SELECT i.id, i.name, i.qty_stored AS onhand,
+                   IFNULL((SELECT SUM(qty_remaining) FROM item_batches b WHERE b.item_id=i.id), 0.0) AS valued_qty
+            FROM items i
+            """
+        cur.execute(query)
         problems = []
         for iid, name, onhand, valued in cur.fetchall():
             if round(float(onhand or 0), 4) != round(float(valued or 0), 4):

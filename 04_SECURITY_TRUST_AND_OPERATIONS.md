@@ -1,7 +1,7 @@
 # 04_SECURITY_TRUST_AND_OPERATIONS
 
 - Document purpose: Fast trust, auth, enforcement, sensitive-operation, and audit reference for BUS Core, treating trust as a product requirement as well as a security concern.
-- Primary authority basis: `core/api/http.py`, `core/api/security.py`, `tgc/security.py`, `tgc/tokens.py`, `core/policy/*`, `core/secrets/manager.py`, `core/utils/export.py`, `core/services/capabilities/registry.py`.
+- Primary authority basis: `core/api/http.py`, `core/api/security.py`, `tgc/security.py`, `tgc/tokens.py`, `core/policy/*`, `core/secrets/manager.py`, `core/utils/export.py`, `core/services/capabilities/registry.py`, `pyproject.toml`, `SECURITY.md`, `docs/security/remediation_audit_log.md`.
 - Best use: Determine who can do what, where enforcement happens, and which trust splits remain live in code.
 - Refresh triggers: Session/auth changes, route guard changes, write-policy changes, secrets handling changes, backup/import flow changes, provider integration changes.
 - Highest-risk drift areas: Split token authority, inconsistent route-local guard patterns, optional owner-policy enforcement, release-artifact validation absence, and license/manifest mismatch.
@@ -10,6 +10,13 @@
 ## Trust and Enforcement Matrix
 
 Core trust is not only about preventing compromise. It is also about preserving operator certainty: no surprise lock-in, no hidden cloud dependency, no ambiguous auth boundary, and no silent shift in who owns the canonical business logic or durable state.
+
+## Static-analysis governance overlay
+
+- Bandit is governed as a trust-preservation signal, not a scanner-green objective; behavior-preserving true fixes are preferred over broad rewrites.
+- Suppressions must be exact-line and evidence-justified. If a suppression is removed and the same finding reproduces, the suppression may be restored only on the exact reported line.
+- Security remediation that changes repo policy/process must be reflected in `CHANGELOG.md` and `SOT.md` in addition to security docs, to prevent governance drift.
+- Current open decision: B324 in `core/reader/ids.py` is intentionally unresolved pending operator approval due trust-boundary ambiguity.
 
 | Concern | Status | Enforced by | Scope | Notes |
 | --- | --- | --- | --- | --- |

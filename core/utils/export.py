@@ -94,7 +94,8 @@ def _count_rows(db_path: Path) -> Dict[str, int]:
         cur = con.cursor()
         for t in counts.keys():
             try:
-                cur.execute(f"SELECT COUNT(1) FROM {t}")
+                # t is selected from fixed internal keys.
+                cur.execute(f"SELECT COUNT(1) FROM {t}")  # nosec B608
                 row = cur.fetchone()
                 counts[t] = int(row[0]) if row else 0
             except sqlite3.Error:

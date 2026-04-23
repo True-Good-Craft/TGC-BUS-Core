@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os, json, ssl, socket
 from urllib import request, error
+from urllib.parse import urlparse
 from typing import Dict, Any, Optional, List
 
 from core.contracts.plugin_v2 import PluginV2
@@ -26,13 +27,21 @@ def _cfg_roots() -> List[str]:
 def _is_configured() -> bool:
     return bool(_cfg_token())
 
+
+def _is_allowed_notion_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme == "https" and (parsed.hostname or "").lower() == "api.notion.com"
+
 # ---- tiny HTTP helper with tight timeout (no SDK, no side effects) ----
 def _http_get_json(url: str, headers: Dict[str, str], timeout: float = 2.0) -> Dict[str, Any]:
+    if not _is_allowed_notion_url(url):
+        return {"_error": "notion_url_not_allowed"}
     req = request.Request(url, headers=headers or {})
     ctx = ssl.create_default_context()
     socket.setdefaulttimeout(timeout)
     try:
-        with request.urlopen(req, context=ctx, timeout=timeout) as resp:
+        # url is restricted to https://api.notion.com before opening.
+        with request.urlopen(req, context=ctx, timeout=timeout) as resp:  # nosec B310
             data = resp.read() or b""
             try:
                 return json.loads(data.decode("utf-8"))

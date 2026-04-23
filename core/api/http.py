@@ -1048,7 +1048,7 @@ def inventory_run(
         existing: set[int] = set()
         if ids:
             placeholders = ",".join("?" * len(ids))
-            query = f"SELECT id FROM items WHERE id IN ({placeholders})"
+            query = f"SELECT id FROM items WHERE id IN ({placeholders})"  # nosec B608
             rows = con.execute(query, list(ids)).fetchall()
             existing = {int(row["id"]) for row in rows}
         missing = sorted(iid for iid in ids if iid not in existing)
