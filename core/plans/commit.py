@@ -72,14 +72,14 @@ def _under_roots(path: str, roots: List[str]) -> bool:
     import os
 
     abs_path = os.path.normcase(os.path.abspath(path))
+    path_drive = os.path.splitdrive(abs_path)[0].lower()
     for root in roots or []:
         abs_root = os.path.normcase(os.path.abspath(root))
-        try:
-            if os.path.commonpath([abs_path, abs_root]) == abs_root:
-                return True
-        except Exception:
-            # Different drives on Windows may raise ValueError.
-            pass
+        root_drive = os.path.splitdrive(abs_root)[0].lower()
+        if path_drive and root_drive and path_drive != root_drive:
+            continue
+        if os.path.commonpath([abs_path, abs_root]) == abs_root:
+            return True
     return False
 
 
@@ -92,9 +92,9 @@ def commit_local(plan: Plan) -> Dict[str, Any]:
             dst = a.meta.get("dst_path")
             parent = a.meta.get("dst_parent_path")
 
-            if getattr(a, "src_id", None) and not src:
+            if getattr(a, "src_id", None):
                 src = rid_to_path(a.src_id, roots)
-            if getattr(a, "dst_parent_id", None) and not parent:
+            if getattr(a, "dst_parent_id", None):
                 parent = rid_to_path(a.dst_parent_id, roots)
 
             if not dst and parent:

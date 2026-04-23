@@ -47,8 +47,10 @@ def require_write_access(request: Request):
     """Guard dependency that blocks requests when writes are disabled."""
 
     if not writes_enabled(request):
-        # Stop pointing to /dev/writes
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error": "writes_disabled"},
+            detail={
+                "error": "writes_disabled",
+                "hint": "Set dev.writes_enabled=true in config or unset READ_ONLY env var, then restart.",
+            },
         )

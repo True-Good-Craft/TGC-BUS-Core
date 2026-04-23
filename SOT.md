@@ -70,6 +70,18 @@
 
 * Meaningful agent changes MUST also update `CHANGELOG.md`, this SOT when behavior/contracts/authority change, and any governance docs affected by version-policy changes.
 
+### Security hardening traceability (RID boundary token)
+
+* RID/root-signature path token handling is treated as boundary-adjacent integrity logic because it participates in allowed-root path resolution used by runtime commit flows.
+
+* RID compatibility posture is old-read/new-write: valid legacy `local:<sig10>:<payload>` values remain accepted for compatibility, while new RID generation emits hardened `local:v2:<sig32>:<payload>` values.
+
+* RID parsing/resolution MUST be strict and fail-closed (malformed grammar, bad prefix/version, bad signature shape, invalid payload decoding, root mismatch, traversal/escape, ambiguous root match).
+
+* When RID fields are present in plan actions (`src_id`, `dst_parent_id`), invalid RID values MUST NOT silently downgrade into unsafe raw-path fallback for that field.
+
+* Security hardening that changes boundary behavior must be mirrored into `CHANGELOG.md`, `SOT.md`, and affected governance/security docs to prevent policy drift.
+
 * `scripts/validate_change_trace.py` is the hard traceability guard: if code/control surfaces change, both `CHANGELOG.md` and `core/version.py` MUST be in the same diff, and `INTERNAL_VERSION` MUST be bumped for meaningful repo changes.
 
 ### Release and Update Boundary

@@ -13,6 +13,12 @@
 - Added auth-authority drift guards that verify `core.api.http` remains the canonical validator path, `tgc.security.require_token_ctx` is compatibility-only, and the authority docs stay aligned.
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.0.3.1` to `1.0.3.2` for the RID security hardening governance-alignment pass without changing public `VERSION`.
+- Hardened local RID handling as boundary-adjacent integrity logic: new RID generation now emits `local:v2:<sig32>:<payload>` using a stronger signature construction.
+- Preserved backward compatibility for valid standing legacy RIDs (`local:<sig10>:<payload>`) via old-read/new-write behavior.
+- Tightened commit path authority so when `src_id` / `dst_parent_id` are present, RID resolution is authoritative and invalid RID values fail closed instead of silently downgrading to raw-path fallback.
+- Added strict RID parsing and payload validation (grammar, prefix/version, signature shape, URL-safe Base64 decode, UTF-8 decode, root match, traversal/escape, ambiguous root handling) with explicit fail-closed outcomes.
+- Resolved Bandit `B324` in `core/reader/ids.py` via real hardening (no suppression, no `usedforsecurity=False` workaround).
 - Reconciled `pyproject.toml` and `scripts/_win_version_info.txt` to the canonical public `VERSION` value `1.0.3` from `core/version.py`.
 - Bumped `INTERNAL_VERSION` from `1.0.3.0` to `1.0.3.1` for this governance/build-enforcement repository change.
 - Updated the release and agent governance docs to reference the new hard validation scripts and workflow instead of prose-only policy.
@@ -47,6 +53,7 @@
 - Aligned release/update documentation and README wording with actual behavior: Lighthouse remains the default manifest URL, checksum metadata may be published, and the app does not verify checksum or signature before surfacing `download_url`.
 
 ### Tests
+- Added targeted RID security coverage in `tests/test_reader_rid_security.py` for legacy compatibility, v2 resolution, malformed/tampered rejection, and mixed legacy/v2 commit-reader flows.
 - Added Phase D validation coverage asserting the Home dashboard keeps explicit placeholder disclosure while it still depends on `/app/transactions*` stub routes.
 - Extended config drift coverage to assert canonical path ownership, one-way legacy fallback behavior, and config startup wiring.
 - Added auth-authority coverage for wrapper delegation, runtime-token precedence, configured session cookie extraction, shared route protection behavior, and code/docs drift alignment.

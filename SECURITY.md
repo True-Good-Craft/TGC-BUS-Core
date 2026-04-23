@@ -21,6 +21,8 @@ Rules:
 - Prefer minimal diffs and behavior-preserving fixes.
 - Avoid broad global skips.
 - Use narrow suppressions only when findings are false positives or intentional fail-soft behavior.
+- Suppressions must not replace real fixes when findings touch integrity-relevant boundary logic (for example, path-token or trust-boundary resolution paths).
+- Compatibility-preserving security hardening may use old-read/new-write transitions when needed to avoid breaking valid standing state while strengthening new emissions.
 
 Current baseline configuration excludes only build/environment directories:
 

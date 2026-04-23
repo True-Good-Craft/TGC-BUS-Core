@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, Literal
+
+_log = logging.getLogger(__name__)
 
 from pydantic import BaseModel, Field
 
@@ -138,7 +141,15 @@ def get_dev_writes_enabled() -> bool | None:
 
     legacy = _load_legacy_compat_dict()
     if "writes_enabled" in legacy:
-        return bool(legacy.get("writes_enabled"))
+        value = bool(legacy.get("writes_enabled"))
+        _log.warning(
+            "[write-gate] dev.writes_enabled absent from canonical config; "
+            "falling back to legacy app/config.json writes_enabled=%s. "
+            "Set dev.writes_enabled explicitly in %s to silence this warning.",
+            value,
+            config_path(),
+        )
+        return value
     return None
 
 
@@ -146,6 +157,7 @@ def set_dev_writes_enabled(enabled: bool) -> None:
     raw = _load_canonical_config_dict()
     _set_nested(raw, bool(enabled), "dev", "writes_enabled")
     _write_json_file(config_path(), raw)
+    _log.info("[write-gate] dev.writes_enabled persisted as %s in %s", bool(enabled), config_path())
 
 
 def load_policy_config() -> dict[str, Any]:

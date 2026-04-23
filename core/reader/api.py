@@ -57,6 +57,6 @@ def resolve_paths(body: IdsBody) -> Dict[str, str | None]:
     for rid in body.ids:
         try:
             out[rid] = rid_to_path(rid, roots)
-        except Exception:
+        except ValueError:
             out[rid] = None
     return out

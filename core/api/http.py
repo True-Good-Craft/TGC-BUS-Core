@@ -405,7 +405,27 @@ def _is_dev_route_path(path: str) -> bool:
     return path == "/dev" or path.startswith("/dev/")
 
 def _buscore_writeflag_startup() -> None:
-    app.state.allow_writes = get_writes_enabled()
+    from core.config.manager import get_dev_writes_enabled
+
+    persisted = get_dev_writes_enabled()
+    effective = get_writes_enabled()
+    if persisted is not None:
+        source = "config file (dev.writes_enabled)"
+    else:
+        allow_env = os.getenv("ALLOW_WRITES")
+        ro_env = os.getenv("READ_ONLY")
+        if allow_env is not None or ro_env is not None:
+            source = f"env vars (ALLOW_WRITES={allow_env!r}, READ_ONLY={ro_env!r})"
+        else:
+            source = "default (no config or env override)"
+
+    app.state.allow_writes = effective
+    logger.log(
+        logging.WARNING if not effective else logging.INFO,
+        "[write-gate] startup: writes_enabled=%s source=%s",
+        effective,
+        source,
+    )
 
 
 def ensure_core_initialized():

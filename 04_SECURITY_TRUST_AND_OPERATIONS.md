@@ -16,7 +16,9 @@ Core trust is not only about preventing compromise. It is also about preserving 
 - Bandit is governed as a trust-preservation signal, not a scanner-green objective; behavior-preserving true fixes are preferred over broad rewrites.
 - Suppressions must be exact-line and evidence-justified. If a suppression is removed and the same finding reproduces, the suppression may be restored only on the exact reported line.
 - Security remediation that changes repo policy/process must be reflected in `CHANGELOG.md` and `SOT.md` in addition to security docs, to prevent governance drift.
-- Current open decision: B324 in `core/reader/ids.py` is intentionally unresolved pending operator approval due trust-boundary ambiguity.
+- RID/path-token resolution (`core/reader/ids.py`) is treated as part of the local-file trust boundary and now uses compatibility-aware hardening (new-write `local:v2:<sig32>:<payload>`, old-read legacy support).
+- B324 in `core/reader/ids.py` is resolved via real hardening (stronger active RID signature construction and strict fail-closed validation), without suppression-based handling.
+- Commit-path enforcement is tightened so present RID fields are authoritative for resolution and invalid RID values do not silently downgrade to raw-path fallback.
 
 | Concern | Status | Enforced by | Scope | Notes |
 | --- | --- | --- | --- | --- |
