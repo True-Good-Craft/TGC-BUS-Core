@@ -256,8 +256,13 @@ BUS Core runs locally and does not require network access for normal use.
 
 - Windows release builds are produced from `scripts/build_core.ps1` and `BUS-Core.spec`.
 - `scripts/build_core.ps1` prints optional manual `signtool` commands, but this repo does not currently guarantee automated code-signing for every release.
+- Update checks are default-on / opt-out. Fresh or missing update config runs one non-blocking startup check when `updates.enabled` and `updates.check_on_startup` are not explicitly `false`.
+- Manual "Check now" remains available even when startup checks are disabled.
+- BUS Core does not auto-download, auto-install, stage, run, or apply updates.
 - The update check path validates manifest URL, JSON shape, payload size, and strict SemVer only.
-- The app does not currently verify artifact checksum or signature before surfacing a release `download_url`.
+- The app does not currently verify artifact checksum, signature, publisher, or artifact size before surfacing a release `download_url`.
+- Channel support exists structurally in Core config, but current release automation publishes the stable manifest lane only.
+- Docker is a separate deployment lane. Current GHCR images are tagged `latest` and commit SHA only; there are no SemVer image tags, image signatures, SBOM/provenance artifacts, image scans, or formal Docker update policy yet.
 - Builds remain reproducible from source.
 
 Note: Windows Defender or SmartScreen warnings may appear for new releases, especially when a binary is unsigned or has not yet built reputation.

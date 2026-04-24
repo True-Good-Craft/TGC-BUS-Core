@@ -98,6 +98,12 @@
 
 * Canonical public release artifact naming MUST be `TGC-BUS-Core-<VERSION>.zip`; manifest download URLs MUST be absolute Lighthouse URLs in the form `https://lighthouse.buscore.ca/releases/TGC-BUS-Core-<VERSION>.zip`.
 
+* Current release automation publishes the stable manifest lane only. `updates.channel` exists structurally in Core configuration, but no current workflow publishes multiple channel manifests.
+
+* Windows code signing is currently a manual post-build ceremony. `scripts/build_core.ps1` builds the onefile EXE and prints optional `signtool sign` / `signtool verify` commands; it does not sign or verify artifacts automatically.
+
+* Docker is a separate deployment lane. `.github/workflows/publish-image.yml` currently publishes GHCR `latest` and commit-SHA image tags only; it does not publish SemVer tags, sign images, generate SBOM/provenance, scan images, or define a formal Docker update policy.
+
 ---
 
 ## 4. Canonical Unit Model & Storage Contract
@@ -358,20 +364,48 @@
 
 ### Update Check System
 
-* 
-**Opt-in Only:** Disabled by default; no background threads or auto-installs.
+*
+**Default-on / opt-out:** Missing `updates.enabled` and `updates.check_on_startup` are treated as `true`. The UI runs one non-blocking startup check only when `updates.enabled !== false` and `updates.check_on_startup !== false`.
 
 
-* 
+*
 **Config:** Update settings live in `%LOCALAPPDATA%\BUSCore\config.json` under `updates` (`enabled`, `channel`, `manifest_url`, `check_on_startup`). Strict SemVer required, and fetches time out at 4 seconds.
 
 
-* 
+*
 **Config Authority:** `%LOCALAPPDATA%\BUSCore\config.json` is the canonical app-runtime config file. `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only for recognized older keys when canonical values are absent.
 
 
-* 
+*
+**Manual check:** Manual "Check now" always calls `GET /app/update/check` regardless of the startup-check setting.
+
+
+*
+**Manual download only:** BUS Core does not auto-download, auto-install, stage, run, or apply update artifacts.
+
+
+*
+**Artifact trust limits:** The in-app update check validates manifest URL policy, JSON shape/content type, response size, and strict SemVer. It does not verify artifact hash, signature, publisher, or artifact size before surfacing a release `download_url`.
+
+
+*
+**Background behavior:** There is no hidden periodic update polling loop and no `localStorage` stale/success timestamp tracking for update checks.
+
+
+*
 **UI:** Non-blocking banner appears if an update is found.
+
+#### Phase 0A Behavior Correction (2026-04-24)
+
+* `UpdatesConfig.enabled` is now default-on (`true`) when missing; `updates.check_on_startup` remains default-on when missing.
+
+* Startup update checks are one-shot and require both update gates to be not explicitly false.
+
+* Manual "Check now" remains available even when startup checks are disabled.
+
+* The previous hidden 15-minute stale recheck loop and `bus.updates.last_success_ms` tracking were removed.
+
+* This correction did not add auto-update behavior and did not add artifact hash/signature/publisher/size verification.
 
 
 
@@ -1238,7 +1272,7 @@ SCOPE: release distribution surface, update manifest hosting, aggregate counters
 
 Introduce BUS Core Lighthouse as an official TGC/BUS Core companion service that:
 
-Proxies and normalizes the public update manifest used by Core’s update-check feature (which remains opt-in and manual download only) 
+Proxies and normalizes the public update manifest used by Core's update-check feature (which is default-on / opt-out for checks and manual download only)
 
 Core sot
 
@@ -1265,7 +1299,7 @@ BUS Core Lighthouse (“Lighthouse”)
 
 Lighthouse is a separate program/service owned by TGC and operated as part of the BUS Core ecosystem.
 
-Lighthouse is not required for Core’s local runtime to function; it exists to support optional update checking and public release distribution.
+Lighthouse is not required for Core's local runtime to function; it exists to support configurable update checking and public release distribution.
 
 2.3 Non-goals
 
@@ -1390,19 +1424,21 @@ Posting failures increment the errors counter.
 
 (6) INTERACTION WITH CORE UPDATE CHECK SYSTEM
 
-Core’s Update Check system remains unchanged in principle:
+Core's Update Check system remains unchanged in product boundary:
 
-Opt-in only and disabled by default 
-
-Core sot
-
-No background auto-installs; manual download/verification required 
+Update checks are default-on / opt-out. Startup checks are one-shot and run only when `updates.enabled` is not false and `updates.check_on_startup` is not false.
 
 Core sot
 
-GET /app/update/check remains the canonical in-app one-shot check surface 
+Manual "Check now" remains available. There is no auto-download, auto-install, staging, or update runner behavior.
 
 Core sot
+
+GET /app/update/check remains the canonical in-app one-shot check surface
+
+Core sot
+
+Manifest checksum, size, release-notes, and signature-style metadata are informational to Core until explicit artifact verification is implemented.
 
 Lighthouse is allowed to exist as the public manifest proxy + download redirect target that Core and the website can point at. This does not convert Core into a telemetry product.
 
@@ -1440,14 +1476,14 @@ Auto-downloading or auto-installing updates
 
 Making Core depend on Lighthouse for normal local operation
 
-Background polling loops that violate Core’s “one-shot, opt-in” update check posture 
+Background polling loops that violate Core's one-shot, default-on / opt-out update check posture
 
 Core sot
 
-# SoT DELTA — Update Check System — Opt-in Manifest Fetch + SSRF Guards + Streaming Size Cap
+# SoT DELTA — Update Check System — Default-on / Opt-out Manifest Fetch + SSRF Guards + Streaming Size Cap
 
 SOT_VERSION_AT_START: v0.11.0
-SESSION_LABEL: Update Check System — Opt-in Manifest Fetch + SSRF Guards + Streaming Size Cap
+SESSION_LABEL: Update Check System — Default-on / Opt-out Manifest Fetch + SSRF Guards + Streaming Size Cap
 DATE: 2026-02-28
 BRANCH: updatecheck
 
@@ -1465,18 +1501,18 @@ This delta documents the implemented in-app Update Check system behavior and har
   - `error_message`
 
 ## Config Surface (`updates.*`)
-- `updates.enabled`: `false` (default)
+- `updates.enabled`: `true` (default)
 - `updates.channel`: "stable" (default)
 - `updates.manifest_url`: "https://lighthouse.buscore.ca/update/check" (default)
 - `updates.check_on_startup`: `true` (default)
 
 ## Behavioral Gates
-- Manual “Check now” is always allowed and calls `/app/update/check` even when `updates.enabled=false`.
+- Manual "Check now" is always allowed and calls `/app/update/check` even when `updates.enabled=false` or `updates.check_on_startup=false`.
 - Startup check is gated at UI level only and runs one-shot only when:
-  - `updates.enabled == true`
-  - `updates.check_on_startup == true`
-- No background polling loops were introduced.
-- No auto-update and no installer behavior were introduced.
+  - `updates.enabled !== false`
+  - `updates.check_on_startup !== false`
+- No background polling loops are present. Phase 0A removed the hidden 15-minute stale recheck loop and `bus.updates.last_success_ms` tracking.
+- No auto-download, auto-install, staging, update runner, or installer behavior was introduced.
 
 ## Safety / Hardening
 - Strict SemVer enforcement for versions: `X.Y.Z` only.
@@ -1487,7 +1523,7 @@ This delta documents the implemented in-app Update Check system behavior and har
   - literal private, link-local, loopback, and `0.0.0.0` IP hosts
 - Manifest is JSON-only (`Content-Type` must include `application/json` when present).
 - Manifest read is streaming with a hard 64KB cap (`65536` bytes).
-- No checksum or signature verification is performed before surfacing `download_url` to the UI.
+- No checksum, signature, publisher, or artifact-size verification is performed before surfacing `download_url` to the UI.
 
 ## UI Behavior
 - Settings includes update controls and manual “Check now”.

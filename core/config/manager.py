@@ -33,7 +33,7 @@ class DevConfig(BaseModel):
 
 
 class UpdatesConfig(BaseModel):
-    enabled: bool = False
+    enabled: bool = True
     channel: str = "stable"
     # Canonical update gateway served by Lighthouse.
     manifest_url: str = "https://lighthouse.buscore.ca/update/check"

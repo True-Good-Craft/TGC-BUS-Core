@@ -1,14 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { apiGet, ensureToken } from './api.js';
 
-const LAST_SUCCESS_KEY = 'bus.updates.last_success_ms';
-const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
-const AUTO_TIMER_MS = 15 * 60 * 1000;
 const LIGHTHOUSE_BASE_URL = 'https://lighthouse.buscore.ca';
 
 let startupCheckDone = false;
-let autoTimerId = null;
-let autoCheckInFlight = false;
 
 function sidebarEls() {
   return {
@@ -46,32 +41,12 @@ function setDownloadLink(downloadUrl) {
   download.href = resolvedDownloadUrl;
 }
 
-function getLastSuccessMs() {
-  try {
-    return Number(localStorage.getItem(LAST_SUCCESS_KEY) || '0') || 0;
-  } catch {
-    return 0;
-  }
-}
-
-function markSuccessNow() {
-  try {
-    localStorage.setItem(LAST_SUCCESS_KEY, String(Date.now()));
-  } catch {}
-}
-
-function isStale() {
-  const last = getLastSuccessMs();
-  if (!last) return true;
-  return (Date.now() - last) >= STALE_AFTER_MS;
-}
-
-async function getAutoPolicyEnabled() {
+async function getStartupPolicyEnabled() {
   await ensureToken();
   const cfg = await apiGet('/app/config');
   const updates = cfg?.updates || {};
-  // Product policy: automatic checks default ON unless explicitly disabled.
-  return updates.enabled !== false;
+  // Product policy: update checks are default-on and opt-out.
+  return updates.enabled !== false && updates.check_on_startup !== false;
 }
 
 async function executeCheck({ manual = false } = {}) {
@@ -86,7 +61,6 @@ async function executeCheck({ manual = false } = {}) {
       setSidebarStatus(`Check failed: ${res.error_message || res.error_code}`, 'error');
       return res;
     }
-    markSuccessNow();
     if (res.update_available && res.latest_version) {
       setSidebarStatus(`Update available: ${res.latest_version}`, 'warn');
       setDownloadLink(res.download_url || null);
@@ -125,29 +99,15 @@ export async function maybeRunStartupUpdateCheck() {
   startupCheckDone = true;
   bindSidebarUpdateControls();
   try {
-    const enabled = await getAutoPolicyEnabled();
+    const enabled = await getStartupPolicyEnabled();
     if (!enabled) {
-      setSidebarStatus('Automatic update checks disabled\n(enable in settings)', 'neutral');
+      setSidebarStatus('Startup update checks disabled\n(use Check now)', 'neutral');
       setDownloadLink(null);
       return;
     }
 
-    // Product policy: run automatic check at launch.
+    // Product policy: run one startup check when not explicitly disabled.
     await executeCheck({ manual: false });
-
-    // If app stays open, re-check once stale (older than 24h since last success).
-    if (autoTimerId) clearInterval(autoTimerId);
-    autoTimerId = window.setInterval(async () => {
-      if (autoCheckInFlight) return;
-      try {
-        const stillEnabled = await getAutoPolicyEnabled();
-        if (!stillEnabled || !isStale()) return;
-        autoCheckInFlight = true;
-        await executeCheck({ manual: false });
-      } finally {
-        autoCheckInFlight = false;
-      }
-    }, AUTO_TIMER_MS);
   } catch (_err) {
     // Silent by design (non-blocking startup behavior)
   }

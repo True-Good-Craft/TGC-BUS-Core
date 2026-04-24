@@ -23,6 +23,8 @@ export async function settingsCard(el) {
   const ui = config.ui || {};
   const backup = config.backup || {};
   const updates = config.updates || {};
+  const updatesEnabledAtLoad = updates.enabled !== false;
+  const startupChecksEnabledAtLoad = updates.check_on_startup !== false;
 
   el.innerHTML = '';
   const root = document.createElement('div');
@@ -142,7 +144,7 @@ export async function settingsCard(el) {
 
   root.querySelector('#setting-start-tray').checked = !!launcher.auto_start_in_tray;
   root.querySelector('#setting-backup-dir').value = backup.default_directory || '';
-  root.querySelector('#setting-updates-enabled').checked = updates.enabled !== false;
+  root.querySelector('#setting-updates-enabled').checked = updatesEnabledAtLoad;
 
   // Handlers
   const btnSave = root.querySelector('#btn-save');
@@ -154,6 +156,9 @@ export async function settingsCard(el) {
     btnSave.textContent = 'Saving...';
 
     const autoUpdatesEnabled = root.querySelector('#setting-updates-enabled').checked;
+    const checkOnStartup = autoUpdatesEnabled
+      ? (updatesEnabledAtLoad ? startupChecksEnabledAtLoad : true)
+      : false;
 
     const payload = {
       ui: {
@@ -164,8 +169,7 @@ export async function settingsCard(el) {
       },
       updates: {
         enabled: autoUpdatesEnabled,
-        // Compatibility field retained, but always kept logically consistent.
-        check_on_startup: autoUpdatesEnabled,
+        check_on_startup: checkOnStartup,
       },
     };
 

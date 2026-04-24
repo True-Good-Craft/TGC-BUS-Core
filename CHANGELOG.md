@@ -13,6 +13,9 @@
 - Added auth-authority drift guards that verify `core.api.http` remains the canonical validator path, `tgc.security.require_token_ctx` is compatibility-only, and the authority docs stay aligned.
 
 ### Changed
+- Documented Phase 0A update-check behavior correction: update checks are default-on / opt-out, startup checks are one-shot and gated by `updates.enabled !== false` plus `updates.check_on_startup !== false`, manual "Check now" remains available, and hidden 15-minute polling/localStorage stale tracking has been removed.
+- Corrected release-pipeline documentation to state current limits plainly: BUS Core does not auto-download/install/stage updates, does not verify artifact hash/signature/publisher/size yet, code signing remains manual post-build, release automation publishes the stable lane only, and Docker images are currently GHCR `latest` plus commit-SHA tags without SemVer tags, signing, SBOM/provenance, scanning, or formal Docker update policy.
+- Corrected the Bandit remediation audit log: `pyproject.toml` currently has no `[tool.bandit]` baseline, so previous wording that claimed one was added was documentation drift.
 - Bumped `INTERNAL_VERSION` from `1.0.3.1` to `1.0.3.2` for the RID security hardening governance-alignment pass without changing public `VERSION`.
 - Hardened local RID handling as boundary-adjacent integrity logic: new RID generation now emits `local:v2:<sig32>:<payload>` using a stronger signature construction.
 - Preserved backward compatibility for valid standing legacy RIDs (`local:<sig10>:<payload>`) via old-read/new-write behavior.
@@ -50,7 +53,7 @@
 - Aligned `SOT.md`, the config/security authority maps, and the Settings UI copy with the exact canonical Windows path strings the config-authority drift guards enforce.
 - Reconciled release authority so `.github/workflows/release-mirror.yml` reads `core/version.py`, fails unless the release tag equals `v{VERSION}`, and publishes manifest `latest.version` from canonical `VERSION`.
 - Repaired `scripts/release-check.ps1` to validate the real current release chain: `smoke_isolated.ps1`, `build_core.ps1`, and the expected `dist/BUS-Core.exe` plus `dist/BUS-Core-<VERSION>.exe` artifacts.
-- Aligned release/update documentation and README wording with actual behavior: Lighthouse remains the default manifest URL, checksum metadata may be published, and the app does not verify checksum or signature before surfacing `download_url`.
+- Aligned release/update documentation and README wording with actual behavior: Lighthouse remains the default manifest URL, checksum metadata may be published, and the app does not verify checksum, signature, publisher, or artifact size before surfacing `download_url`.
 
 ### Tests
 - Added targeted RID security coverage in `tests/test_reader_rid_security.py` for legacy compatibility, v2 resolution, malformed/tampered rejection, and mixed legacy/v2 commit-reader flows.
@@ -95,7 +98,7 @@ This release marks the first stable version of BUS Core.
 - Demo environment using a pre-seeded demo database.
 - "Start Fresh Shop" action to transition from demo environment to production database.
 - System runtime mode support (`demo` vs `production`).
-- Settings-based update check (manual, opt-in).
+- Settings-based update check (manual; current startup-check default is documented under `[Unreleased]`).
 - Semantic versioning for BUS Core releases.
 - Public API contract documentation.
 
@@ -122,13 +125,13 @@ BUS Core remains:
 Future releases will prioritize stability, bug fixes, and incremental polish rather than feature expansion.
 
 ### Added
-- Opt-in update check system with `/app/update/check` for manifest-based version checks and normalized six-field response surface.
+- Initial update check system with `/app/update/check` for manifest-based version checks and normalized six-field response surface.
 
 ### Security
 - Hardened update manifest fetch path with deterministic SSRF guards, redirect rejection (`follow_redirects=False`), JSON-only validation, and streaming 64KB size cap enforcement.
 
 ### UX
-- Settings now supports manual “Check now” with conditional Download action, plus optional startup update notice if explicitly opted-in (`updates.enabled && updates.check_on_startup`).
+- Settings now supports manual "Check now" with conditional Download action, plus optional startup update notice when both update config gates allow it.
 - launcher: open /ui/shell.html without a hash to preserve deterministic first-run onboarding routing.
 
 ### Tests
