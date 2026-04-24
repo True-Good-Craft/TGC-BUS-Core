@@ -1,4 +1,12 @@
 # Changelog
+
+## [1.0.4] - 2026-04-24
+
+### Changed
+- Bumped `VERSION` from `1.0.3` to `1.0.4`
+- Bumped `INTERNAL_VERSION` from `1.0.3.3` to `1.0.4.0`
+
+## [1.0.3] - Previous Release
 - Bumped `VERSION` from `1.0.2` to `1.0.3`
 
 ## [Unreleased]
