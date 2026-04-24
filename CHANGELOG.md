@@ -17,7 +17,7 @@
 - Added fortheemperor UI authority freeze documentation capturing canonical UI styling authority, active module standardization status, completed parity remediation scope, and deferred follow-on work.
 - Added config-authority drift guards that assert `%LOCALAPPDATA%\BUSCore\config.json` is the canonical app-runtime config file, `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only, and startup/write-policy code follows that contract.
 - Added targeted config behavior tests for canonical write-gate persistence, canonical policy persistence, and one-way legacy fallback reads.
-- Added release/update drift guards that verify release tooling reads `core/version.py`, targets the canonical public `TGC-BUS-Core-<VERSION>.zip` artifact name, and keeps `INTERNAL_VERSION` out of public SemVer consumers.
+- Added release/update drift guards that verify release tooling reads `core/version.py`, targets the canonical public `BUS-Core-<VERSION>.zip` artifact name, and keeps `INTERNAL_VERSION` out of public SemVer consumers.
 - Added auth-authority drift guards that verify `core.api.http` remains the canonical validator path, `tgc.security.require_token_ctx` is compatibility-only, and the authority docs stay aligned.
 - Added update channel/config hardening for the manual update-check path: allowed channels are `stable`, `test`, `partner-3dque`, `lts-1.1`, and `security-hotfix`; missing channel defaults to `stable`; unsafe manifest URL schemes and local/private manifest hosts remain rejected outside explicit dev mode.
 - Added manifest schema validation for supported legacy, canonical `latest`, `channels.<channel>`, and top-level channel-keyed manifest shapes while preserving the six-field `/app/update/check` response.
@@ -25,6 +25,7 @@
 
 ### Changed
 - Bumped `INTERNAL_VERSION` from `1.0.3.2` to `1.0.3.3` for the final pre-release update-hardening governance pass without changing public `VERSION`.
+- Corrected release mirror asset naming authority from `TGC-BUS-Core-<VERSION>.zip` to `BUS-Core-<VERSION>.zip` so release download, R2 mirror path, and manifest `latest.download.url` naming are aligned with the canonical artifact convention.
 - Documented this release as an update-chain hardening bridge release: manifest compatibility is preserved for existing clients using top-level `latest.version` and `latest.download.url`, while new clients can consume channel-aware/additive metadata.
 - Hardened non-stable update channel behavior so partner/test/LTS/security-hotfix lanes require explicit channel entries and do not silently fall back to public channel-less stable/latest manifests.
 - Hardened manifest metadata handling so optional `sha256`, `size_bytes`, `release_notes_url`, `signature_url`, artifact token fields, publisher, and signer metadata are validated for shape when present and retained internally as declared values only.
