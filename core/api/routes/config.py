@@ -1,11 +1,14 @@
 # Copyright (C) 2025 BUS Core Authors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-from fastapi import APIRouter, Depends, Body, Request
+from fastapi import APIRouter, Depends, Body, HTTPException, Request
 from typing import Dict, Any
+
+from pydantic import ValidationError
 
 from core.config.writes import require_writes
 from core.config.manager import load_config, save_config
+from core.config.update_policy import UpdatePolicyError
 
 router = APIRouter()
 
@@ -19,7 +22,12 @@ def update_config(
     payload: Dict[str, Any] = Body(...),
     _writes: None = Depends(require_writes)
 ) -> Dict[str, Any]:
-    save_config(payload)
+    try:
+        save_config(payload)
+    except UpdatePolicyError as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code, "message": exc.message}) from exc
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=400, detail={"code": "invalid_config", "message": str(exc)}) from exc
     # If the caller explicitly changed dev.writes_enabled, reflect it in the
     # runtime mirror immediately so a restart is not required for this field.
     dev_payload = payload.get("dev")

@@ -3,15 +3,19 @@
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import re
 from dataclasses import dataclass
 from typing import Any, Callable
-from urllib.parse import urlparse
 
 import httpx
 
+from core.config.update_policy import (
+    DEFAULT_UPDATE_CHANNEL,
+    UpdatePolicyError,
+    validate_update_channel,
+    validate_update_manifest_url,
+)
 from core.version import VERSION as CURRENT_VERSION
 
 REQUEST_TIMEOUT_SECONDS = 4.0
@@ -49,8 +53,9 @@ class UpdateService:
 
         try:
             _validate_manifest_url(manifest_url)
+            selected_channel = _validate_update_channel(channel)
             manifest = self._fetch_manifest(manifest_url, REQUEST_TIMEOUT_SECONDS)
-            entry = _resolve_manifest_entry(manifest, channel)
+            entry = _resolve_manifest_entry(manifest, selected_channel)
 
             latest_version = entry.get("version")
             if not isinstance(latest_version, str):
@@ -186,31 +191,17 @@ def _read_manifest_response(response: Any) -> Any:
 
 
 def _validate_manifest_url(manifest_url: str) -> None:
-    if not isinstance(manifest_url, str) or not manifest_url.strip():
-        raise UpdateCheckError("invalid_manifest_url", "Manifest URL is invalid.")
-
-    parsed = urlparse(manifest_url.strip())
-    if parsed.scheme not in {"http", "https"}:
-        raise UpdateCheckError("invalid_manifest_url", "Manifest URL is invalid.")
-
-    host = parsed.hostname
-    if not host:
-        raise UpdateCheckError("invalid_manifest_url", "Manifest URL is invalid.")
-
-    lowered = host.lower()
-    if lowered in {"localhost", "localhost."}:
-        raise UpdateCheckError("manifest_url_not_allowed", "Manifest URL is not allowed.")
-
     try:
-        ip = ipaddress.ip_address(lowered)
-    except ValueError:
-        ip = None
+        validate_update_manifest_url(manifest_url)
+    except UpdatePolicyError as exc:
+        raise UpdateCheckError(exc.code, exc.message) from exc
 
-    if ip is None:
-        return
 
-    if ip.is_private or ip.is_loopback or ip.is_unspecified or ip.is_link_local:
-        raise UpdateCheckError("manifest_url_not_allowed", "Manifest URL is not allowed.")
+def _validate_update_channel(channel: str) -> str:
+    try:
+        return validate_update_channel(channel)
+    except UpdatePolicyError as exc:
+        raise UpdateCheckError(exc.code, exc.message) from exc
 
 
 def _resolve_manifest_entry(manifest: Any, channel: str) -> dict[str, Any]:
@@ -219,12 +210,14 @@ def _resolve_manifest_entry(manifest: Any, channel: str) -> dict[str, Any]:
 
     direct_entry = _normalize_manifest_entry(manifest)
     if direct_entry is not None:
+        _validate_entry_channel(manifest, channel, channel_key_matched=False)
         return direct_entry
 
     channels = manifest.get("channels")
     if isinstance(channels, dict):
         selected = channels.get(channel)
         if isinstance(selected, dict):
+            _validate_entry_channel(selected, channel, channel_key_matched=True)
             selected_entry = _normalize_manifest_entry(selected)
             if selected_entry is not None:
                 return selected_entry
@@ -233,12 +226,32 @@ def _resolve_manifest_entry(manifest: Any, channel: str) -> dict[str, Any]:
 
     selected = manifest.get(channel)
     if isinstance(selected, dict):
+        _validate_entry_channel(selected, channel, channel_key_matched=True)
         selected_entry = _normalize_manifest_entry(selected)
         if selected_entry is not None:
             return selected_entry
         return selected
 
     raise UpdateCheckError("channel_not_found", "Requested update channel not found.")
+
+
+def _validate_entry_channel(manifest_obj: dict[str, Any], requested_channel: str, *, channel_key_matched: bool) -> None:
+    manifest_channel = manifest_obj.get("channel")
+    if manifest_channel is None:
+        # Current Lighthouse publishes the stable lane as a channel-less manifest.
+        # Non-stable direct manifests need explicit channel metadata; entries
+        # selected from a matching channels[channel] key already carry lane intent.
+        if requested_channel != DEFAULT_UPDATE_CHANNEL and not channel_key_matched:
+            raise UpdateCheckError("channel_not_found", "Requested update channel not found.")
+        return
+
+    try:
+        actual_channel = validate_update_channel(manifest_channel)
+    except UpdatePolicyError as exc:
+        raise UpdateCheckError(exc.code, exc.message) from exc
+
+    if actual_channel != requested_channel:
+        raise UpdateCheckError("channel_mismatch", "Manifest channel does not match configured update channel.")
 
 
 def _normalize_manifest_entry(manifest_obj: dict[str, Any]) -> dict[str, Any] | None:

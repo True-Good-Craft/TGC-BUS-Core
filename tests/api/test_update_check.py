@@ -51,7 +51,13 @@ class _StreamContext:
 def _set_updates(monkeypatch: pytest.MonkeyPatch, *, enabled: bool, channel: str = "stable", manifest_url: str = "https://example.test/manifest.json") -> None:
     from core.api.routes import update as update_routes
 
-    cfg = Config(updates=UpdatesConfig(enabled=enabled, channel=channel, manifest_url=manifest_url))
+    updates = UpdatesConfig.model_construct(
+        enabled=enabled,
+        channel=channel,
+        manifest_url=manifest_url,
+        check_on_startup=True,
+    )
+    cfg = Config.model_construct(updates=updates)
     monkeypatch.setattr(update_routes, "load_config", lambda: cfg)
 
 
@@ -84,6 +90,7 @@ def test_update_check_invalid_scheme_rejected_no_network_call(bus_client, monkey
     from core.api.routes import update as update_routes
 
     called = {"count": 0}
+    monkeypatch.setenv("BUS_DEV", "0")
 
     def _fetch(_url: str, _timeout: float):
         called["count"] += 1
@@ -102,6 +109,7 @@ def test_update_check_invalid_scheme_rejected_no_network_call(bus_client, monkey
 
 
 def test_update_check_data_scheme_rejected(bus_client, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("BUS_DEV", "0")
     _set_updates(monkeypatch, enabled=True, manifest_url="data:application/json,{}")
 
     response = bus_client["client"].get("/app/update/check")
@@ -113,6 +121,7 @@ def test_update_check_data_scheme_rejected(bus_client, monkeypatch: pytest.Monke
 
 
 def test_update_check_localhost_rejected(bus_client, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("BUS_DEV", "0")
     _set_updates(monkeypatch, enabled=True, manifest_url="http://localhost/manifest.json")
 
     response = bus_client["client"].get("/app/update/check")
@@ -124,6 +133,7 @@ def test_update_check_localhost_rejected(bus_client, monkeypatch: pytest.MonkeyP
 
 
 def test_update_check_private_literal_ip_rejected(bus_client, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("BUS_DEV", "0")
     _set_updates(monkeypatch, enabled=True, manifest_url="http://192.168.1.10/manifest.json")
 
     response = bus_client["client"].get("/app/update/check")
@@ -290,6 +300,62 @@ def test_update_check_injected_fetch_receives_hard_timeout(bus_client, monkeypat
 
     assert response.status_code == 200
     assert seen_timeout == [REQUEST_TIMEOUT_SECONDS]
+
+
+def test_channel_manifest_selects_requested_partner_channel(bus_client, monkeypatch: pytest.MonkeyPatch):
+    from core.api.routes import update as update_routes
+
+    _set_updates(monkeypatch, enabled=True, channel="partner-3dque")
+    service = UpdateService(
+        fetch_manifest=lambda _url, _timeout: {
+            "channels": {
+                "stable": {
+                    "latest": {
+                        "version": "9.8.0",
+                        "download": {"url": "https://example.test/stable-dl"},
+                    },
+                },
+                "partner-3dque": {
+                    "latest": {
+                        "version": "9.9.9",
+                        "download": {"url": "https://example.test/partner-dl"},
+                    },
+                },
+            }
+        }
+    )
+    monkeypatch.setattr(update_routes, "get_update_service", lambda: service)
+
+    response = bus_client["client"].get("/app/update/check")
+
+    body = response.json()
+    _assert_contract(body)
+    assert body["error_code"] is None
+    assert body["update_available"] is True
+    assert body["download_url"] == "https://example.test/partner-dl"
+
+
+def test_partner_channel_does_not_fall_back_to_channel_less_public_latest(bus_client, monkeypatch: pytest.MonkeyPatch):
+    from core.api.routes import update as update_routes
+
+    _set_updates(monkeypatch, enabled=True, channel="partner-3dque")
+    service = UpdateService(
+        fetch_manifest=lambda _url, _timeout: {
+            "latest": {
+                "version": "9.9.9",
+                "download": {"url": "https://example.test/public-stable-dl"},
+            },
+        }
+    )
+    monkeypatch.setattr(update_routes, "get_update_service", lambda: service)
+
+    response = bus_client["client"].get("/app/update/check")
+
+    body = response.json()
+    _assert_contract(body)
+    assert body["error_code"] == "channel_not_found"
+    assert body["update_available"] is False
+    assert body["download_url"] is None
 
 
 def test_canonical_manifest_shape_update_available(bus_client, monkeypatch: pytest.MonkeyPatch):

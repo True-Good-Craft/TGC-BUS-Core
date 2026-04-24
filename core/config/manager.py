@@ -10,9 +10,16 @@ from typing import Any, Dict, Literal
 
 _log = logging.getLogger(__name__)
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from core.appdata.paths import app_root, config_path, exports_dir
+from core.config.update_policy import (
+    DEFAULT_UPDATE_CHANNEL,
+    DEFAULT_UPDATE_MANIFEST_URL,
+    UpdatePolicyError,
+    validate_update_channel,
+    validate_update_manifest_url,
+)
 
 
 class LauncherConfig(BaseModel):
@@ -34,10 +41,20 @@ class DevConfig(BaseModel):
 
 class UpdatesConfig(BaseModel):
     enabled: bool = True
-    channel: str = "stable"
+    channel: str = DEFAULT_UPDATE_CHANNEL
     # Canonical update gateway served by Lighthouse.
-    manifest_url: str = "https://lighthouse.buscore.ca/update/check"
+    manifest_url: str = DEFAULT_UPDATE_MANIFEST_URL
     check_on_startup: bool = True
+
+    @field_validator("channel")
+    @classmethod
+    def _validate_channel(cls, value: object) -> str:
+        return validate_update_channel(value)
+
+    @field_validator("manifest_url")
+    @classmethod
+    def _validate_manifest_url(cls, value: object) -> str:
+        return validate_update_manifest_url(value)
 
 
 class Config(BaseModel):
@@ -118,6 +135,38 @@ def _extract_public_config(raw: dict[str, Any]) -> dict[str, Any]:
     return public
 
 
+def _sanitize_public_config_for_load(public: dict[str, Any]) -> dict[str, Any]:
+    updates = public.get("updates")
+    if not isinstance(updates, dict):
+        return public
+
+    sanitized = dict(updates)
+    if "channel" in sanitized:
+        try:
+            sanitized["channel"] = validate_update_channel(sanitized["channel"])
+        except UpdatePolicyError:
+            _log.warning(
+                "[updates] invalid configured channel %r; using %s for this load.",
+                sanitized.get("channel"),
+                DEFAULT_UPDATE_CHANNEL,
+            )
+            sanitized["channel"] = DEFAULT_UPDATE_CHANNEL
+
+    if "manifest_url" in sanitized:
+        try:
+            sanitized["manifest_url"] = validate_update_manifest_url(sanitized["manifest_url"])
+        except UpdatePolicyError:
+            _log.warning(
+                "[updates] invalid configured manifest_url %r; using default Lighthouse manifest URL for this load.",
+                sanitized.get("manifest_url"),
+            )
+            sanitized["manifest_url"] = DEFAULT_UPDATE_MANIFEST_URL
+
+    public = dict(public)
+    public["updates"] = sanitized
+    return public
+
+
 def _merged_public_config_dict() -> dict[str, Any]:
     raw = _load_canonical_config_dict()
     public = _extract_public_config(raw)
@@ -127,7 +176,7 @@ def _merged_public_config_dict() -> dict[str, Any]:
         public.setdefault("dev", {})
         public["dev"]["writes_enabled"] = bool(legacy.get("writes_enabled"))
 
-    return public
+    return _sanitize_public_config_for_load(public)
 
 
 def load_config() -> Config:
@@ -193,7 +242,7 @@ def save_config(data: Dict[str, Any]) -> None:
     Performs a deep merge with existing config to support partial updates.
     """
     raw = _load_canonical_config_dict()
-    current_dump = Config(**_extract_public_config(raw)).model_dump()
+    current_dump = Config(**_sanitize_public_config_for_load(_extract_public_config(raw))).model_dump()
 
     for section, values in data.items():
         if section in current_dump and isinstance(values, dict):
