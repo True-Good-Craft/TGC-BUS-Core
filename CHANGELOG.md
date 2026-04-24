@@ -11,8 +11,16 @@
 - Added targeted config behavior tests for canonical write-gate persistence, canonical policy persistence, and one-way legacy fallback reads.
 - Added release/update drift guards that verify release tooling reads `core/version.py`, targets the canonical public `TGC-BUS-Core-<VERSION>.zip` artifact name, and keeps `INTERNAL_VERSION` out of public SemVer consumers.
 - Added auth-authority drift guards that verify `core.api.http` remains the canonical validator path, `tgc.security.require_token_ctx` is compatibility-only, and the authority docs stay aligned.
+- Added update channel/config hardening for the manual update-check path: allowed channels are `stable`, `test`, `partner-3dque`, `lts-1.1`, and `security-hotfix`; missing channel defaults to `stable`; unsafe manifest URL schemes and local/private manifest hosts remain rejected outside explicit dev mode.
+- Added manifest schema validation for supported legacy, canonical `latest`, `channels.<channel>`, and top-level channel-keyed manifest shapes while preserving the six-field `/app/update/check` response.
+- Added internal `ManifestRelease` metadata carry-forward so validated manifest-provided `sha256`, `size_bytes`, release notes, signature URL, artifact kind/type/platform, publisher, and signer fields can be retained as declared metadata for future verification work.
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.0.3.2` to `1.0.3.3` for the final pre-release update-hardening governance pass without changing public `VERSION`.
+- Documented this release as an update-chain hardening bridge release: manifest compatibility is preserved for existing clients using top-level `latest.version` and `latest.download.url`, while new clients can consume channel-aware/additive metadata.
+- Hardened non-stable update channel behavior so partner/test/LTS/security-hotfix lanes require explicit channel entries and do not silently fall back to public channel-less stable/latest manifests.
+- Hardened manifest metadata handling so optional `sha256`, `size_bytes`, `release_notes_url`, `signature_url`, artifact token fields, publisher, and signer metadata are validated for shape when present and retained internally as declared values only.
+- Restored the API error-code contract for blocked localhost/private/link-local/loopback/unspecified manifest URLs: policy-denied hosts return `manifest_url_not_allowed`, while malformed URLs and bad schemes remain `invalid_manifest_url`.
 - Documented Phase 0A update-check behavior correction: update checks are default-on / opt-out, startup checks are one-shot and gated by `updates.enabled !== false` plus `updates.check_on_startup !== false`, manual "Check now" remains available, and hidden 15-minute polling/localStorage stale tracking has been removed.
 - Corrected release-pipeline documentation to state current limits plainly: BUS Core does not auto-download/install/stage updates, does not verify artifact hash/signature/publisher/size yet, code signing remains manual post-build, release automation publishes the stable lane only, and Docker images are currently GHCR `latest` plus commit-SHA tags without SemVer tags, signing, SBOM/provenance, scanning, or formal Docker update policy.
 - Corrected the Bandit remediation audit log: `pyproject.toml` currently has no `[tool.bandit]` baseline, so previous wording that claimed one was added was documentation drift.
@@ -56,6 +64,7 @@
 - Aligned release/update documentation and README wording with actual behavior: Lighthouse remains the default manifest URL, checksum metadata may be published, and the app does not verify checksum, signature, publisher, or artifact size before surfacing `download_url`.
 
 ### Tests
+- Added focused update-policy and manifest-validation coverage for allowed/rejected channels, stable backward compatibility, non-stable channel isolation, invalid metadata rejection, declared metadata retention, and the localhost/private-host error-code contract.
 - Added targeted RID security coverage in `tests/test_reader_rid_security.py` for legacy compatibility, v2 resolution, malformed/tampered rejection, and mixed legacy/v2 commit-reader flows.
 - Added Phase D validation coverage asserting the Home dashboard keeps explicit placeholder disclosure while it still depends on `/app/transactions*` stub routes.
 - Extended config drift coverage to assert canonical path ownership, one-way legacy fallback behavior, and config startup wiring.

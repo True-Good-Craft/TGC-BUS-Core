@@ -9,7 +9,7 @@
 
 ## Version and Update Authority Matrix
 
-In the current stabilization phase, trustworthy release infrastructure means operators can tell where version truth lives, what the app validates, and what it does not. Update checks must stay opt-in, non-blocking, and honest about the limits of current verification.
+In the current stabilization phase, trustworthy release infrastructure means operators can tell where version truth lives, what the app validates, and what it does not. Update checks are default-on / opt-out for a one-shot startup notice, manual checks remain available, and the app must stay honest about the limits of current verification.
 
 | Concern | Implemented authority | Doc / tooling assumption | Status | Notes |
 | --- | --- | --- | --- | --- |
@@ -21,8 +21,9 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 | Published manifest `latest.version` | `.github/workflows/release-mirror.yml` reads `core/version.py` | Hosted manifest consumers | Canonical | Published from canonical `VERSION`, not derived from tag parsing alone. |
 | Update-check route contract | `core/api/routes/update.py` | UI Settings/update notice consumes this response | Canonical | Fixed six-field response. |
 | Update manifest URL | `%LOCALAPPDATA%\BUSCore\config.json` `updates.manifest_url` | `SOT.md` | Canonical | Code and docs use the Lighthouse endpoint. |
-| Manifest `download_url` | `core/services/update.py` extracts and returns it | UI opens it in browser | Canonical | No artifact validation beyond manifest parsing. |
-| Manifest checksum / hash | No consuming code found | Manifest may publish `sha256` metadata | Drifted but explicit | Update-check path ignores checksum fields today. |
+| Manifest `download_url` | `core/services/update.py` extracts and returns it | UI opens it in browser | Canonical | No artifact verification beyond manifest parsing and metadata validation. |
+| Manifest checksum / hash | `core/services/update.py` validates and carries declared metadata when present | Manifest may publish `sha256` metadata | Bridge groundwork | Update-check path retains declared metadata internally but does not verify artifact bytes. |
+| Manifest channel selection | `core/config/update_policy.py` + `core/services/update.py` | Configured channel decides selected release entry | Canonical | Non-stable channels require explicit channel-specific entries and must not fall back to public latest. |
 | Release artifact signature verification | No in-app verification path found | Build script prints manual signing hints only | Drifted but explicit | README and docs must not imply automatic signed-release enforcement. |
 
 ## Build and package outputs
@@ -48,15 +49,18 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 
 This flow is trustworthy to the extent that version authority is singular and machine-checked. It is not yet a cryptographically verified end-to-end updater, and the docs should not imply otherwise.
 
+Manifest compatibility is a release boundary for this bridge release: deployed clients must still find top-level `latest.version` and `latest.download.url`, while newer clients may additionally read additive metadata and `channels.<channel>` entries. `channels.stable` should mirror top-level `latest` unless a release owner intentionally documents a divergence.
+
 ## Observed Update Check Flow
 
 1. UI startup notice or Settings `Check now` calls `GET /app/update/check`.
-2. Route loads `updates.enabled`, `updates.channel`, `updates.manifest_url`, and `updates.check_on_startup` from `%LOCALAPPDATA%\BUSCore\config.json`.
-3. `UpdateService.check()` validates the current runtime version as strict SemVer.
-4. Service validates the manifest URL, fetches JSON with timeout and size caps, normalizes supported manifest shapes, and compares `latest.version` against runtime `VERSION`.
-5. Route returns normalized response keys: `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message`.
-6. UI exposes `download_url` in a browser tab when an update is available.
-7. No in-app download, installer handoff, checksum verification, or signature verification was found.
+2. Startup gating happens in the UI using `updates.enabled !== false` and `updates.check_on_startup !== false`; manual `Check now` still calls the route regardless of those two gates.
+3. Route loads the configured `updates.channel` and `updates.manifest_url` from `%LOCALAPPDATA%\BUSCore\config.json`.
+4. `UpdateService.check()` validates the current runtime version as strict SemVer.
+5. Service validates the manifest URL and configured channel, fetches JSON with timeout and size caps, normalizes supported manifest shapes, validates optional metadata shape, and compares the selected release version against runtime `VERSION`.
+6. Route returns normalized response keys: `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message`.
+7. UI exposes `download_url` in a browser tab when an update is available.
+8. No in-app download, installer handoff, checksum verification, signature verification, publisher verification, or artifact-size verification is implemented.
 
 Update checks are part of the trust model because they are optional and non-blocking. Core remains usable without them, and an unavailable manifest host should not prevent normal local operation.
 
@@ -71,8 +75,9 @@ Update checks are part of the trust model because they are optional and non-bloc
 | Manual update check UI | Yes | Yes | No | Canonical |
 | Startup update notice | Yes | Yes | No | Canonical |
 | Manifest channel support | Yes | Yes | No | Canonical |
-| Release notes link from manifest | No | Yes | No | Drifted |
-| Manifest checksum/hash use | No | Yes | No | Drifted |
+| Release notes link from manifest | Internal declared metadata only | Yes | No | Bridge groundwork |
+| Manifest checksum/hash use | Internal declared metadata only | Yes | No | Bridge groundwork |
+| Artifact signature/publisher/size verification | No | Future work only | No | Drifted but explicit |
 | Binary signing execution | Manual script hint only | Some older docs implied more | No | Drifted |
 | Truthful release-check helper | Yes | Yes | Yes | Canonical |
 
@@ -91,10 +96,12 @@ Update checks are part of the trust model because they are optional and non-bloc
 | `core/version.py` vs docs/governance text | Secondary | Runtime/build/workflow truth is canonical in code; human docs must stay in sync. |
 | `scripts/release-check.ps1` vs actual smoke/build chain | Canonical | Helper now validates the real current scripts and artifact names. |
 | Governance guard workflow bypass | Narrowed drift | General automation remains sparse, but version and change-trace governance now fail through an active dedicated workflow. |
-| Update path trusts surfaced `download_url` after manifest validation | Drifted | No artifact checksum/signature verification in app path. |
+| Update path surfaces `download_url` after manifest validation | Bridge drift | Manifest metadata is validated and retained as declared values, but no artifact checksum/signature/publisher/size verification exists in the app path. |
 | Release history in manifest | Narrowed drift | Current release publication is canonical, but history still reflects GitHub release metadata filtered by canonical `TGC-BUS-Core-*.zip` assets. |
 
-Release and update trust here depends more on clear authority and honest limits than on a large automation footprint. The current boundary is: canonical version authority exists, authority mirrors and change-trace requirements are machine-checked, tag alignment is checked, update metadata is normalized, and artifact integrity is not yet enforced by the runtime.
+Release and update trust here depends more on clear authority and honest limits than on a large automation footprint. The current boundary is: canonical version authority exists, authority mirrors and change-trace requirements are machine-checked, tag alignment is checked, update metadata is normalized, channel-specific manifests are selected explicitly, declared artifact metadata is carried forward internally, and artifact integrity is not yet enforced by the runtime.
+
+Known remaining release/update work is explicit: artifact hash/signature/publisher/size verification, preserving the manual Windows signing ceremony until automation is practical, Docker release hardening if the container lane needs governed releases, and DB ownership/single-instance control before any staged/apply update flow exists.
 
 ## Freeze Notes
 
@@ -107,4 +114,4 @@ Release and update trust here depends more on clear authority and honest limits 
 - `VERSION` remains the only value allowed into release tags, published manifest `latest.version`, and update comparison logic.
 - `INTERNAL_VERSION` is for repo working-revision tracking only.
 - `.github/workflows/release-mirror.yml` now machine-checks `tag == v{VERSION}` before publishing release metadata.
-- Remaining unresolved drift is narrow and explicit: manifest checksum/signature metadata may be published, but the app does not consume or verify it, and release history still depends on GitHub release metadata plus matching BUS-Core assets.
+- Remaining unresolved drift is narrow and explicit: manifest checksum/signature/publisher/size metadata may be published and retained internally as declared metadata, but the app does not verify it, and release history still depends on GitHub release metadata plus matching BUS-Core assets.

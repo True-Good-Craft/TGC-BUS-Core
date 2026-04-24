@@ -55,9 +55,6 @@ def validate_update_manifest_url(value: object, *, allow_dev_urls: bool | None =
     if parsed.scheme not in {"http", "https"}:
         raise UpdatePolicyError("invalid_manifest_url", "Manifest URL is invalid.")
 
-    if parsed.scheme != "https" and not allow_dev_urls:
-        raise UpdatePolicyError("invalid_manifest_url", "Manifest URL must use HTTPS.")
-
     host = parsed.hostname
     if not host:
         raise UpdatePolicyError("invalid_manifest_url", "Manifest URL is invalid.")
@@ -71,11 +68,14 @@ def validate_update_manifest_url(value: object, *, allow_dev_urls: bool | None =
     try:
         ip = ipaddress.ip_address(lowered)
     except ValueError:
-        return manifest_url
+        ip = None
 
-    if ip.is_private or ip.is_loopback or ip.is_unspecified or ip.is_link_local:
+    if ip is not None and (ip.is_private or ip.is_loopback or ip.is_unspecified or ip.is_link_local):
         if allow_dev_urls:
             return manifest_url
         raise UpdatePolicyError("manifest_url_not_allowed", "Manifest URL is not allowed.")
+
+    if parsed.scheme != "https" and not allow_dev_urls:
+        raise UpdatePolicyError("invalid_manifest_url", "Manifest URL must use HTTPS.")
 
     return manifest_url

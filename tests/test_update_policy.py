@@ -149,6 +149,42 @@ def test_unsafe_manifest_urls_are_rejected_on_save(tmp_path, monkeypatch):
             config_manager.save_config({"updates": {"manifest_url": manifest_url}})
 
 
+@pytest.mark.parametrize(
+    "manifest_url",
+    (
+        "http://localhost/manifest.json",
+        "https://localhost/manifest.json",
+        "http://127.0.0.1/manifest.json",
+        "http://192.168.1.10/manifest.json",
+        "http://169.254.1.10/manifest.json",
+        "http://0.0.0.0/manifest.json",
+        "http://[::1]/manifest.json",
+    ),
+)
+def test_blocked_manifest_hosts_return_not_allowed_policy_code(monkeypatch, manifest_url: str):
+    from core.config.update_policy import UpdatePolicyError, validate_update_manifest_url
+
+    monkeypatch.setenv("BUS_DEV", "0")
+    monkeypatch.delenv("BUS_ALLOW_DEV_UPDATE_MANIFEST_URLS", raising=False)
+
+    with pytest.raises(UpdatePolicyError) as exc_info:
+        validate_update_manifest_url(manifest_url)
+
+    assert exc_info.value.code == "manifest_url_not_allowed"
+
+
+def test_public_http_manifest_url_still_returns_invalid_policy_code(monkeypatch):
+    from core.config.update_policy import UpdatePolicyError, validate_update_manifest_url
+
+    monkeypatch.setenv("BUS_DEV", "0")
+    monkeypatch.delenv("BUS_ALLOW_DEV_UPDATE_MANIFEST_URLS", raising=False)
+
+    with pytest.raises(UpdatePolicyError) as exc_info:
+        validate_update_manifest_url("http://example.com/manifest.json")
+
+    assert exc_info.value.code == "invalid_manifest_url"
+
+
 def test_dev_mode_allows_local_manifest_url_on_save(tmp_path, monkeypatch):
     import core.appdata.paths as appdata_paths
     import core.config.manager as config_manager

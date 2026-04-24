@@ -259,9 +259,11 @@ BUS Core runs locally and does not require network access for normal use.
 - Update checks are default-on / opt-out. Fresh or missing update config runs one non-blocking startup check when `updates.enabled` and `updates.check_on_startup` are not explicitly `false`.
 - Manual "Check now" remains available even when startup checks are disabled.
 - BUS Core does not auto-download, auto-install, stage, run, or apply updates.
-- The update check path validates manifest URL, JSON shape, payload size, and strict SemVer only.
-- The app does not currently verify artifact checksum, signature, publisher, or artifact size before surfacing a release `download_url`.
-- Channel support exists structurally in Core config, but current release automation publishes the stable manifest lane only.
+- The update check path validates manifest URL policy, JSON/content type, payload size, strict SemVer, supported manifest shapes, configured channel selection, and optional artifact metadata shape.
+- Current manifests must remain backward-compatible for deployed clients by keeping top-level `latest.version` and `latest.download.url`; new clients can additionally read `channels.<channel>` and additive metadata.
+- The app retains optional manifest-provided artifact metadata internally as declared values only. It does not currently verify artifact checksum, signature, publisher, or artifact size before surfacing a release `download_url`.
+- Channel support exists in Core config for `stable`, `test`, `partner-3dque`, `lts-1.1`, and `security-hotfix`, but current release automation publishes the stable manifest lane only.
+- Any future staged/apply update flow must first add DB ownership or single-instance control; this release does not add that flow.
 - Docker is a separate deployment lane. Current GHCR images are tagged `latest` and commit SHA only; there are no SemVer image tags, image signatures, SBOM/provenance artifacts, image scans, or formal Docker update policy yet.
 - Builds remain reproducible from source.
 

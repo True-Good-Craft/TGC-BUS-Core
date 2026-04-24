@@ -28,8 +28,8 @@ Core trust is not only about preventing compromise. It is also about preserving 
 | Owner/tester commit gate | Canonical | `require_owner_commit()` | Selected write operations | Strict role/plan enforcement activates only when `BUS_POLICY_ENFORCE=1`. |
 | Dev-only gate | Canonical | `session_guard` path check plus `require_dev()` | `/dev/*` routes and detailed health | `/dev/*` stays hidden as 404 when disabled; when enabled, session auth still applies. |
 | Capability manifest validation | Canonical | HMAC signature in `core/services/capabilities/registry.py` | `/capabilities`, `/nodes.manifest.sync` | Local manifest trust only. |
-| Update manifest validation | Canonical | `core/services/update.py` | `/app/update/check` | URL/content-type/size/SemVer validation only. |
-| Release artifact validation | Drifted | No code path found | Update/install surface | Manifest metadata may include `sha256`, but the app still surfaces `download_url` without checksum or signature verification. |
+| Update manifest validation | Canonical | `core/services/update.py` | `/app/update/check` | URL/content-type/size/SemVer, channel selection, supported manifest-shape, and optional declared metadata shape validation. |
+| Release artifact validation | Drifted | No code path found | Update/install surface | Manifest metadata may include `sha256`, `size_bytes`, signature URL, publisher, signer, and artifact kind/type/platform, but the app still surfaces `download_url` without artifact checksum/signature/publisher/size verification. |
 
 ## Trust model
 
@@ -145,8 +145,9 @@ This is the core trust boundary as implemented today: local runtime first, bound
 - Drifted: `core/services/capabilities/registry.py` injects a `license` block with `PolyForm-Noncommercial-1.0.0`, which conflicts with the repo-wide AGPL labeling elsewhere.
 - Canonical: legacy alternate `/session/token` surfaces (`app.py`, `tgc/http.py`) were removed; `core/api/http.py` is the only supported bootstrap route.
 - Canonical: backup import/export paths enforce password-based decryption, exports-root path confinement, maintenance mode, and journal archiving during restore.
-- Canonical: update manifest fetch blocks localhost and literal private/loopback/link-local/unspecified IP hosts, rejects redirects, and caps response size.
-- Drifted: update/download path does not validate release artifact checksum or signature before surfacing `download_url` to the UI; current docs must describe checksum/signature fields as informational only.
+- Canonical: update manifest fetch blocks localhost and literal private/loopback/link-local/unspecified IP hosts, rejects redirects, caps response size, validates allowed channel selection, and validates supported manifest shapes.
+- Canonical bridge groundwork: optional artifact metadata is validated for shape and retained internally as declared manifest-provided values by `ManifestRelease`.
+- Drifted: update/download path does not verify release artifact checksum, signature, publisher, or artifact size before surfacing `download_url` to the UI; current docs must describe these fields as declared/unverified only.
 
 The current security posture is therefore trustworthy in some important local-first ways, but not yet fully consolidated. The right documentation posture is honesty about remaining auth, config, and release-validation drift rather than overstating cleanliness.
 

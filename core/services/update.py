@@ -21,6 +21,16 @@ from core.version import VERSION as CURRENT_VERSION
 REQUEST_TIMEOUT_SECONDS = 4.0
 MAX_MANIFEST_BYTES = 65_536
 SEMVER_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+SHA256_PATTERN = re.compile(r"^[A-Fa-f0-9]{64}$")
+ARTIFACT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+/-]{0,63}$")
+ARTIFACT_METADATA_KEYS = (
+    "type",
+    "kind",
+    "platform",
+    "artifact_type",
+    "artifact_kind",
+    "artifact_platform",
+)
 
 
 class UpdateCheckError(Exception):
@@ -40,6 +50,24 @@ class UpdateResult:
     error_message: str | None = None
 
 
+@dataclass(frozen=True)
+class ManifestRelease:
+    """Validated manifest-provided metadata. These values are declared, not verified."""
+
+    version: str
+    channel: str
+    download_url: str
+    declared_sha256: str | None = None
+    declared_size_bytes: int | None = None
+    release_notes_url: str | None = None
+    artifact_type: str | None = None
+    artifact_kind: str | None = None
+    platform: str | None = None
+    signature_url: str | None = None
+    publisher: str | None = None
+    signer: str | None = None
+
+
 class UpdateService:
     def __init__(
         self,
@@ -55,22 +83,19 @@ class UpdateService:
             _validate_manifest_url(manifest_url)
             selected_channel = _validate_update_channel(channel)
             manifest = self._fetch_manifest(manifest_url, REQUEST_TIMEOUT_SECONDS)
-            entry = _resolve_manifest_entry(manifest, selected_channel)
+            release = _resolve_manifest_release(manifest, selected_channel)
 
-            latest_version = entry.get("version")
-            if not isinstance(latest_version, str):
-                raise UpdateCheckError("missing_version", "Manifest version is required and must be a string.")
+            latest_version = release.version
             if not _is_semver(latest_version):
                 raise UpdateCheckError("invalid_manifest_version", "Manifest version must be strict SemVer.")
 
-            download_url = _validate_download_url(entry)
             update_available = _parse_semver(latest_version) > _parse_semver(CURRENT_VERSION)
 
             return UpdateResult(
                 current_version=CURRENT_VERSION,
                 latest_version=latest_version,
                 update_available=update_available,
-                download_url=download_url if update_available else None,
+                download_url=release.download_url if update_available else None,
             )
         except UpdateCheckError as exc:
             return self._error_result(exc.code, exc.message)
@@ -204,35 +229,69 @@ def _validate_update_channel(channel: str) -> str:
         raise UpdateCheckError(exc.code, exc.message) from exc
 
 
-def _resolve_manifest_entry(manifest: Any, channel: str) -> dict[str, Any]:
+def _resolve_manifest_release(manifest: Any, channel: str) -> ManifestRelease:
     if not isinstance(manifest, dict):
         raise UpdateCheckError("invalid_manifest", "Manifest must be an object.")
 
-    direct_entry = _normalize_manifest_entry(manifest)
-    if direct_entry is not None:
-        _validate_entry_channel(manifest, channel, channel_key_matched=False)
-        return direct_entry
-
     channels = manifest.get("channels")
+    if "channels" in manifest and not isinstance(channels, dict):
+        raise UpdateCheckError("invalid_manifest", "Manifest channels must be an object.")
+
+    if channel != DEFAULT_UPDATE_CHANNEL:
+        if isinstance(channels, dict):
+            selected = channels.get(channel)
+            if isinstance(selected, dict):
+                _validate_entry_channel(selected, channel, channel_key_matched=True)
+                selected_release = _normalize_manifest_release(selected, channel)
+                if selected_release is not None:
+                    return selected_release
+                raise UpdateCheckError("invalid_manifest", "Manifest release entry is invalid.")
+
+        selected = manifest.get(channel)
+        if isinstance(selected, dict):
+            _validate_entry_channel(selected, channel, channel_key_matched=True)
+            selected_release = _normalize_manifest_release(selected, channel)
+            if selected_release is not None:
+                return selected_release
+            raise UpdateCheckError("invalid_manifest", "Manifest release entry is invalid.")
+
+        if _manifest_has_release_shape(manifest):
+            _validate_entry_channel(manifest, channel, channel_key_matched=False)
+            return _normalize_manifest_release(manifest, channel)
+
+        raise UpdateCheckError("channel_not_found", "Requested update channel not found.")
+
+    if _manifest_has_release_shape(manifest):
+        _validate_entry_channel(manifest, channel, channel_key_matched=False)
+        return _normalize_manifest_release(manifest, channel)
+
     if isinstance(channels, dict):
         selected = channels.get(channel)
         if isinstance(selected, dict):
             _validate_entry_channel(selected, channel, channel_key_matched=True)
-            selected_entry = _normalize_manifest_entry(selected)
-            if selected_entry is not None:
-                return selected_entry
-            return selected
-        raise UpdateCheckError("channel_not_found", "Requested update channel not found.")
+            selected_release = _normalize_manifest_release(selected, channel)
+            if selected_release is not None:
+                return selected_release
+            raise UpdateCheckError("invalid_manifest", "Manifest release entry is invalid.")
 
     selected = manifest.get(channel)
     if isinstance(selected, dict):
         _validate_entry_channel(selected, channel, channel_key_matched=True)
-        selected_entry = _normalize_manifest_entry(selected)
-        if selected_entry is not None:
-            return selected_entry
-        return selected
+        selected_release = _normalize_manifest_release(selected, channel)
+        if selected_release is not None:
+            return selected_release
+        raise UpdateCheckError("invalid_manifest", "Manifest release entry is invalid.")
 
     raise UpdateCheckError("channel_not_found", "Requested update channel not found.")
+
+
+def _resolve_manifest_entry(manifest: Any, channel: str) -> dict[str, Any]:
+    release = _resolve_manifest_release(manifest, channel)
+    return {"version": release.version, "download_url": release.download_url}
+
+
+def _manifest_has_release_shape(manifest_obj: dict[str, Any]) -> bool:
+    return "version" in manifest_obj or "latest" in manifest_obj
 
 
 def _validate_entry_channel(manifest_obj: dict[str, Any], requested_channel: str, *, channel_key_matched: bool) -> None:
@@ -254,9 +313,14 @@ def _validate_entry_channel(manifest_obj: dict[str, Any], requested_channel: str
         raise UpdateCheckError("channel_mismatch", "Manifest channel does not match configured update channel.")
 
 
-def _normalize_manifest_entry(manifest_obj: dict[str, Any]) -> dict[str, Any] | None:
+def _normalize_manifest_release(
+    manifest_obj: dict[str, Any],
+    channel: str,
+    *,
+    validate_metadata: bool = True,
+) -> ManifestRelease | None:
     if "version" in manifest_obj:
-        return manifest_obj
+        return _build_direct_release(manifest_obj, channel, validate_metadata=validate_metadata)
 
     if "latest" not in manifest_obj:
         return None
@@ -279,21 +343,220 @@ def _normalize_manifest_entry(manifest_obj: dict[str, Any]) -> dict[str, Any] | 
     if not isinstance(download_url, str):
         raise UpdateCheckError("invalid_manifest", "Manifest latest.download.url is required and must be a string.")
 
-    return {
-        "version": version,
-        "download_url": download_url,
-    }
+    return _build_canonical_release(latest_obj, download, channel, validate_metadata=validate_metadata)
 
 
-def _validate_download_url(entry: dict[str, Any]) -> str | None:
+def _build_direct_release(entry: dict[str, Any], channel: str, *, validate_metadata: bool) -> ManifestRelease:
+    version = entry.get("version")
+    if not isinstance(version, str):
+        raise UpdateCheckError("missing_version", "Manifest version is required and must be a string.")
+    if not _is_semver(version):
+        raise UpdateCheckError("invalid_manifest_version", "Manifest version must be strict SemVer.")
+
+    download_url = _validate_download_url(entry)
+    if not validate_metadata:
+        return ManifestRelease(version=version, channel=channel, download_url=download_url)
+
+    _validate_direct_entry_metadata(entry)
+    return ManifestRelease(
+        version=version,
+        channel=channel,
+        download_url=download_url,
+        declared_sha256=_optional_sha256(*_metadata_lookup((entry,), ("sha256",))),
+        declared_size_bytes=_optional_size_bytes(*_metadata_lookup((entry,), ("size_bytes",))),
+        release_notes_url=_optional_release_notes_url(*_metadata_lookup((entry,), ("release_notes_url",))),
+        artifact_type=_metadata_token((entry,), ("artifact_type", "type")),
+        artifact_kind=_metadata_token((entry,), ("artifact_kind", "kind")),
+        platform=_metadata_token((entry,), ("artifact_platform", "platform")),
+        signature_url=_optional_signature_url(*_metadata_lookup((entry,), ("signature_url",))),
+        publisher=_optional_text_metadata(*_metadata_lookup((entry,), ("publisher",)), field_name="publisher"),
+        signer=_optional_text_metadata(*_metadata_lookup((entry,), ("signer",)), field_name="signer"),
+    )
+
+
+def _build_canonical_release(
+    latest_obj: dict[str, Any],
+    download_obj: dict[str, Any],
+    channel: str,
+    *,
+    validate_metadata: bool,
+) -> ManifestRelease:
+    version = latest_obj.get("version")
+    if not isinstance(version, str):
+        raise UpdateCheckError("invalid_manifest", "Manifest latest.version is required and must be a string.")
+    if not _is_semver(version):
+        raise UpdateCheckError("invalid_manifest_version", "Manifest version must be strict SemVer.")
+
+    download_url = _validate_download_url({"download_url": download_obj.get("url")})
+    if not validate_metadata:
+        return ManifestRelease(version=version, channel=channel, download_url=download_url)
+
+    _validate_canonical_entry_metadata(latest_obj, download_obj)
+    return ManifestRelease(
+        version=version,
+        channel=channel,
+        download_url=download_url,
+        declared_sha256=_optional_sha256(*_metadata_lookup((download_obj, latest_obj), ("sha256",))),
+        declared_size_bytes=_optional_size_bytes(*_metadata_lookup((download_obj, latest_obj), ("size_bytes",))),
+        release_notes_url=_optional_release_notes_url(*_metadata_lookup((latest_obj,), ("release_notes_url",))),
+        artifact_type=_metadata_token((download_obj, latest_obj), ("artifact_type", "type")),
+        artifact_kind=_metadata_token((download_obj, latest_obj), ("artifact_kind", "kind")),
+        platform=_metadata_token((download_obj, latest_obj), ("artifact_platform", "platform")),
+        signature_url=_optional_signature_url(*_metadata_lookup((download_obj, latest_obj), ("signature_url",))),
+        publisher=_optional_text_metadata(
+            *_metadata_lookup((download_obj, latest_obj), ("publisher",)),
+            field_name="publisher",
+        ),
+        signer=_optional_text_metadata(
+            *_metadata_lookup((download_obj, latest_obj), ("signer",)),
+            field_name="signer",
+        ),
+    )
+
+
+def _validate_direct_entry_metadata(entry: dict[str, Any]) -> None:
+    _validate_optional_sha256(entry.get("sha256"), present="sha256" in entry)
+    _validate_optional_size_bytes(entry.get("size_bytes"), present="size_bytes" in entry)
+    _validate_optional_release_notes_url(entry.get("release_notes_url"), present="release_notes_url" in entry)
+    _validate_optional_signature_url(entry.get("signature_url"), present="signature_url" in entry)
+    _validate_optional_text_metadata(entry.get("publisher"), present="publisher" in entry, field_name="publisher")
+    _validate_optional_text_metadata(entry.get("signer"), present="signer" in entry, field_name="signer")
+    _validate_artifact_metadata_fields(entry)
+
+
+def _validate_canonical_entry_metadata(latest_obj: dict[str, Any], download_obj: dict[str, Any]) -> None:
+    _validate_optional_sha256(latest_obj.get("sha256"), present="sha256" in latest_obj)
+    _validate_optional_sha256(download_obj.get("sha256"), present="sha256" in download_obj)
+    _validate_optional_size_bytes(latest_obj.get("size_bytes"), present="size_bytes" in latest_obj)
+    _validate_optional_size_bytes(download_obj.get("size_bytes"), present="size_bytes" in download_obj)
+    _validate_optional_release_notes_url(
+        latest_obj.get("release_notes_url"),
+        present="release_notes_url" in latest_obj,
+    )
+    _validate_optional_signature_url(latest_obj.get("signature_url"), present="signature_url" in latest_obj)
+    _validate_optional_signature_url(download_obj.get("signature_url"), present="signature_url" in download_obj)
+    _validate_optional_text_metadata(latest_obj.get("publisher"), present="publisher" in latest_obj, field_name="publisher")
+    _validate_optional_text_metadata(download_obj.get("publisher"), present="publisher" in download_obj, field_name="publisher")
+    _validate_optional_text_metadata(latest_obj.get("signer"), present="signer" in latest_obj, field_name="signer")
+    _validate_optional_text_metadata(download_obj.get("signer"), present="signer" in download_obj, field_name="signer")
+    _validate_artifact_metadata_fields(latest_obj)
+    _validate_artifact_metadata_fields(download_obj)
+
+
+def _metadata_lookup(containers: tuple[dict[str, Any], ...], keys: tuple[str, ...]) -> tuple[Any, bool]:
+    for container in containers:
+        for key in keys:
+            if key in container:
+                return container.get(key), True
+    return None, False
+
+
+def _metadata_token(containers: tuple[dict[str, Any], ...], keys: tuple[str, ...]) -> str | None:
+    value, present = _metadata_lookup(containers, keys)
+    if not present:
+        return None
+    return _artifact_token(value)
+
+
+def _validate_optional_sha256(value: Any, *, present: bool) -> None:
+    _optional_sha256(value, present)
+
+
+def _optional_sha256(value: Any, present: bool) -> str | None:
+    if not present:
+        return None
+    if not isinstance(value, str) or not SHA256_PATTERN.fullmatch(value):
+        raise UpdateCheckError("invalid_manifest_sha256", "Manifest sha256 must be 64 hex characters.")
+    return value
+
+
+def _validate_optional_size_bytes(value: Any, *, present: bool) -> None:
+    _optional_size_bytes(value, present)
+
+
+def _optional_size_bytes(value: Any, present: bool) -> int | None:
+    if not present:
+        return None
+    if type(value) is not int or value <= 0:
+        raise UpdateCheckError("invalid_manifest_size", "Manifest size_bytes must be a positive integer.")
+    return value
+
+
+def _validate_optional_release_notes_url(value: Any, *, present: bool) -> None:
+    _optional_release_notes_url(value, present)
+
+
+def _optional_release_notes_url(value: Any, present: bool) -> str | None:
+    if not present:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise UpdateCheckError("invalid_release_notes_url", "Manifest release_notes_url is invalid.")
+
+    try:
+        parsed = httpx.URL(value.strip())
+    except Exception:
+        raise UpdateCheckError("invalid_release_notes_url", "Manifest release_notes_url is invalid.")
+    if parsed.scheme not in {"http", "https"} or not parsed.host:
+        raise UpdateCheckError("invalid_release_notes_url", "Manifest release_notes_url is invalid.")
+    return value.strip()
+
+
+def _validate_optional_signature_url(value: Any, *, present: bool) -> None:
+    _optional_signature_url(value, present)
+
+
+def _optional_signature_url(value: Any, present: bool) -> str | None:
+    if not present:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise UpdateCheckError("invalid_signature_url", "Manifest signature_url is invalid.")
+    try:
+        return validate_update_manifest_url(value.strip())
+    except UpdatePolicyError as exc:
+        raise UpdateCheckError("invalid_signature_url", exc.message) from exc
+
+
+def _validate_optional_text_metadata(value: Any, *, present: bool, field_name: str) -> None:
+    _optional_text_metadata(value, present, field_name=field_name)
+
+
+def _optional_text_metadata(value: Any, present: bool, *, field_name: str) -> str | None:
+    if not present:
+        return None
+    if not isinstance(value, str) or not value.strip() or value.strip() != value or len(value) > 128:
+        raise UpdateCheckError("invalid_artifact_metadata", f"Manifest {field_name} must be a non-empty string.")
+    if any(ord(char) < 32 for char in value):
+        raise UpdateCheckError("invalid_artifact_metadata", f"Manifest {field_name} must be a non-empty string.")
+    return value
+
+
+def _validate_artifact_metadata_fields(container: dict[str, Any]) -> None:
+    for key in ARTIFACT_METADATA_KEYS:
+        if key not in container:
+            continue
+        _artifact_token(container.get(key))
+
+
+def _artifact_token(value: Any) -> str:
+    stripped = value.strip() if isinstance(value, str) else ""
+    if not isinstance(value, str) or stripped != value or not ARTIFACT_TOKEN_PATTERN.fullmatch(value):
+        raise UpdateCheckError(
+            "invalid_artifact_metadata",
+            "Manifest artifact metadata fields must be non-empty token strings.",
+        )
+    return value
+
+
+def _validate_download_url(entry: dict[str, Any]) -> str:
     if "download_url" not in entry:
-        return None
+        raise UpdateCheckError("invalid_manifest", "Manifest download_url is required.")
     download_url = entry.get("download_url")
-    if download_url is None:
-        return None
-    if not isinstance(download_url, str):
+    if not isinstance(download_url, str) or not download_url.strip():
         raise UpdateCheckError("invalid_download_url", "Manifest download_url must be a string when present.")
-    return download_url
+    try:
+        return validate_update_manifest_url(download_url.strip())
+    except UpdatePolicyError as exc:
+        raise UpdateCheckError("invalid_download_url", exc.message) from exc
 
 
 def _is_semver(raw: str) -> bool:

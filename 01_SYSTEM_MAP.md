@@ -10,7 +10,7 @@
 ## Project identity
 
 - BUS Core is the sovereign local-first business utility runtime with a FastAPI backend and a static SPA frontend.
-- Repository evidence shows active domains for inventory, ledger/stock, recipes, manufacturing, contacts/vendors, finance, backups/imports, plugin-backed file/Drive cataloging, and opt-in update checks.
+- Repository evidence shows active domains for inventory, ledger/stock, recipes, manufacturing, contacts/vendors, finance, backups/imports, plugin-backed file/Drive cataloging, and default-on / opt-out update checks.
 - Native runtime is Windows-first (`launcher.py`, `BUS-Core.spec`); container runtime also exists (`Dockerfile`, `docker-compose.yml`).
 - Current stabilization priority is preserving one canonical surface per concern and preventing parallel truths from reappearing through alternate entrypoints, duplicated state authority, or update/version ambiguity.
 
@@ -116,7 +116,7 @@ Stability in the current phase comes from keeping these authority lines singular
 | --- | --- | --- | --- |
 | Config authority (`config.json` vs `app\\config.json`) | Resolved | `%LOCALAPPDATA%\BUSCore\config.json` is canonical; `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Session/token split | Narrowed drift | `core.api.http` is the canonical validator authority, `AppState.tokens` is the canonical runtime token source, `tgc.security.require_token_ctx` is a compatibility wrapper, and the global/token-file mirrors still participate secondarily. | `04_SECURITY_TRUST_AND_OPERATIONS.md` |
-| Version/update authority drift | Narrowed drift | `core/version.py` is now the public release/update source, and `.github/workflows/release-mirror.yml` machine-checks `tag == v{VERSION}` before publishing manifest metadata; remaining drift is limited to unsigned/unverified artifact metadata and release-history dependence on GitHub release assets. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
+| Version/update authority drift | Narrowed drift | `core/version.py` is now the public release/update source, and `.github/workflows/release-mirror.yml` machine-checks `tag == v{VERSION}` before publishing manifest metadata; remaining drift is limited to declared-but-unverified artifact metadata, stable-only release automation, and release-history dependence on GitHub release assets. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
 | Repo-local mutable state | Drifted | Some live state is stored in repo `data/` instead of AppData. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Placeholder/stale UI surfaces | Drifted | `#/runs`, `#/import`, backup UI, and stub transaction widgets can mislead contract assumptions. | `02_API_AND_UI_CONTRACT_MAP.md` |
 | Runtime authority | Canonical | Legacy alternate entry surfaces were removed; `scripts/launch.ps1` remains dev/smoke-only around the canonical factory. | This file |

@@ -371,7 +371,7 @@ def test_canonical_manifest_shape_update_available(bus_client, monkeypatch: pyte
                 "size_bytes": 12345,
                 "download": {
                     "url": "https://example.test/canonical-dl",
-                    "sha256": "abc123",
+                    "sha256": "a" * 64,
                     "size_bytes": 12345,
                 },
             },

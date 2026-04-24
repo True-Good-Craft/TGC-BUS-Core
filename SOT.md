@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.0.3 **Updated:** 2026-03-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.0.3 **Updated:** 2026-04-24 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -99,6 +99,14 @@
 * Canonical public release artifact naming MUST be `TGC-BUS-Core-<VERSION>.zip`; manifest download URLs MUST be absolute Lighthouse URLs in the form `https://lighthouse.buscore.ca/releases/TGC-BUS-Core-<VERSION>.zip`.
 
 * Current release automation publishes the stable manifest lane only. `updates.channel` exists structurally in Core configuration, but no current workflow publishes multiple channel manifests.
+
+* Allowed Core update channels are `stable`, `test`, `partner-3dque`, `lts-1.1`, and `security-hotfix`. Non-stable channels MUST require an explicit channel-specific manifest entry and MUST NOT silently fall back to a public channel-less stable/latest manifest.
+
+* Current and future manifests MUST preserve backward compatibility for deployed Core clients by keeping top-level `latest.version` and `latest.download.url`. Additive metadata and a `channels` map are allowed, and `channels.stable` SHOULD mirror top-level `latest` unless a release owner intentionally documents a divergence.
+
+* This release is an update-chain hardening bridge release. It validates and carries declared manifest metadata internally for future verification work, but it does not yet verify artifact hash, signature, publisher, or size.
+
+* DB ownership / single-instance control is a prerequisite for any future staged/apply update flow. This bridge release does not add staged update application.
 
 * Windows code signing is currently a manual post-build ceremony. `scripts/build_core.ps1` builds the onefile EXE and prints optional `signtool sign` / `signtool verify` commands; it does not sign or verify artifacts automatically.
 
@@ -373,6 +381,10 @@
 
 
 *
+**Channel/config hardening:** Missing `updates.channel` defaults to `stable`. Valid channels are `stable`, `test`, `partner-3dque`, `lts-1.1`, and `security-hotfix`. Invalid channels are rejected on save and safely loaded as `stable`. `updates.manifest_url` is trust-sensitive: only `http(s)` schemes are allowed, HTTPS is required outside explicit dev/test allowance, and localhost/private/link-local/loopback/unspecified manifest hosts are blocked outside `BUS_DEV=1` or `BUS_ALLOW_DEV_UPDATE_MANIFEST_URLS=1`.
+
+
+*
 **Config Authority:** `%LOCALAPPDATA%\BUSCore\config.json` is the canonical app-runtime config file. `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only for recognized older keys when canonical values are absent.
 
 
@@ -386,6 +398,18 @@
 
 *
 **Artifact trust limits:** The in-app update check validates manifest URL policy, JSON shape/content type, response size, and strict SemVer. It does not verify artifact hash, signature, publisher, or artifact size before surfacing a release `download_url`.
+
+
+*
+**Manifest validation:** Supported manifest shapes are legacy direct stable manifests, canonical top-level `latest`, `channels.<channel>`, and top-level channel-keyed entries. Stable remains backward-compatible with top-level `latest.version` and `latest.download.url`. Non-stable channels require an explicit channel-specific entry and must not fall back to channel-less public stable/latest metadata. Optional artifact metadata (`sha256`, `size_bytes`, `release_notes_url`, `signature_url`, artifact kind/type/platform, publisher, signer) is shape-validated when present.
+
+
+*
+**ManifestRelease metadata:** `core.services.update.ManifestRelease` carries selected manifest metadata internally as declared, manifest-provided values. These values are not trusted or verified until a future artifact verification phase consumes them.
+
+
+*
+**Backward-compatible manifest requirement:** Public manifests must keep top-level `latest.version` and `latest.download.url` so existing deployed BUS Core clients can still detect a newer version and open the Lighthouse-provided download link. Channel-aware and metadata-rich fields must remain additive.
 
 
 *
@@ -406,6 +430,20 @@
 * The previous hidden 15-minute stale recheck loop and `bus.updates.last_success_ms` tracking were removed.
 
 * This correction did not add auto-update behavior and did not add artifact hash/signature/publisher/size verification.
+
+#### Phase 1-3 Bridge Hardening (2026-04-24)
+
+* Phase 1 made update channel and manifest URL behavior explicit and policy-validated without changing Lighthouse, Docker, release automation, or update installation behavior.
+
+* Phase 2 added manifest schema validation while preserving legacy stable/current `latest.version` + `latest.download.url` compatibility and the six-field `/app/update/check` response.
+
+* Phase 3 added internal `ManifestRelease` carry-forward for declared artifact metadata so future verification can use already-validated manifest values.
+
+* Phase 3 fix restored the public API error-code contract: policy-blocked localhost/private/link-local/loopback/unspecified manifest URLs return `manifest_url_not_allowed`, while malformed URLs and bad schemes remain `invalid_manifest_url`.
+
+* Remaining update-chain work includes artifact hash/signature/publisher/size verification, keeping the manual signing ceremony explicit, Docker release hardening if that lane becomes release-governed, and DB ownership/single-instance control before any staged/apply update path.
+
+* This bridge release still performs no auto-download, no staging, no install, no execution, and no artifact hash/signature/publisher/size verification.
 
 
 
@@ -1352,7 +1390,7 @@ https://lighthouse.buscore.ca/update/check
 
 4.2 Canonical manifest schema (minimum required fields)
 
-The stable manifest MUST be valid JSON. Lighthouse may publish richer metadata, but BUS Core currently consumes only strict SemVer `latest.version` and `latest.download.url` during in-app update checks. Current hosted manifests include:
+The stable manifest MUST be valid JSON. Backward-compatible manifests MUST keep top-level strict SemVer `latest.version` and `latest.download.url` so deployed BUS Core clients can still detect updates and open the Lighthouse-provided download link. Newer Core clients may also consume additive metadata and channel-specific entries. Current hosted manifests include:
 
 min_supported (string, SemVer x.y.z)
 
@@ -1366,6 +1404,8 @@ latest.download.sha256 (string, lowercase hex)
 
 latest.size_bytes (integer)
 
+Optional future-compatible fields may include a top-level `channels` map and declared artifact metadata such as `latest.download.signature_url`, artifact kind/type/platform, publisher, and signer. These fields are additive and must not require removing or renaming top-level `latest.version` or `latest.download.url`.
+
 4.3 Manifest determinism rules
 
 The manifest is the single source of truth for “latest release” metadata.
@@ -1374,7 +1414,7 @@ Publishing a new release requires `core/version.py::VERSION`, the strict externa
 
 Canonical public release assets referenced by Lighthouse/manifest metadata MUST use `TGC-BUS-Core-<VERSION>.zip` naming.
 
-Manifest must never contain placeholders or non-JSON tokens. Checksum, size, and release-notes fields are currently informational to the app unless future code explicitly starts enforcing them.
+Manifest must never contain placeholders or non-JSON tokens. Checksum, size, release-notes, signature, publisher, signer, and artifact-kind fields are currently validated for shape and may be retained internally as declared manifest metadata, but Core does not verify those artifact claims unless future code explicitly starts enforcing them.
 
 (5) LIGHTHOUSE SERVICE CONTRACT
 
@@ -1438,7 +1478,7 @@ GET /app/update/check remains the canonical in-app one-shot check surface
 
 Core sot
 
-Manifest checksum, size, release-notes, and signature-style metadata are informational to Core until explicit artifact verification is implemented.
+Manifest checksum, size, release-notes, and signature-style metadata are declared metadata only. Core may validate their shape and retain them internally, but they remain unverified until explicit artifact verification is implemented.
 
 Lighthouse is allowed to exist as the public manifest proxy + download redirect target that Core and the website can point at. This does not convert Core into a telemetry product.
 
@@ -1518,11 +1558,14 @@ This delta documents the implemented in-app Update Check system behavior and har
 - Strict SemVer enforcement for versions: `X.Y.Z` only.
 - Timeout cap: 4 seconds.
 - Redirects are not followed (`follow_redirects=False`); 3xx is treated as an error.
+- Configured update channels are restricted to `stable`, `test`, `partner-3dque`, `lts-1.1`, and `security-hotfix`.
+- Stable accepts backward-compatible top-level `latest.version` and `latest.download.url` manifests; non-stable channels require explicit `channels.<channel>`, top-level channel-keyed, or direct manifests with matching channel metadata.
 - Deterministic SSRF blocking on manifest URL for:
   - `localhost` / `localhost.`
   - literal private, link-local, loopback, and `0.0.0.0` IP hosts
 - Manifest is JSON-only (`Content-Type` must include `application/json` when present).
 - Manifest read is streaming with a hard 64KB cap (`65536` bytes).
+- Optional artifact metadata (`sha256`, `size_bytes`, `release_notes_url`, `signature_url`, artifact kind/type/platform, publisher, signer) is shape-validated when present and retained internally as declared manifest metadata by `ManifestRelease`.
 - No checksum, signature, publisher, or artifact-size verification is performed before surfacing `download_url` to the UI.
 
 ## UI Behavior
