@@ -19,6 +19,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Bootstrap repo root onto sys.path to allow core.* imports when run directly from shell or CI.
+_REPO_ROOT = Path(__file__).parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key
 

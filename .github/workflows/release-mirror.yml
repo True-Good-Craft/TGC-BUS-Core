@@ -203,6 +203,7 @@ jobs:
       - name: Sign manifest
         env:
           BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY: ${{ secrets.BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY }}
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           if [ -z "${BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY}" ]; then
             echo "::error::BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY secret is required to publish a signed manifest."
