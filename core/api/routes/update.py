@@ -6,6 +6,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from core.config.manager import load_config
+from core.runtime.manifest_keys import active_manifest_public_keys
 from core.services.update import UpdateResult, UpdateService
 from core.version import VERSION as CURRENT_VERSION
 
@@ -13,7 +14,7 @@ router = APIRouter()
 
 
 def get_update_service() -> UpdateService:
-    return UpdateService()
+    return UpdateService(trusted_manifest_public_keys=active_manifest_public_keys())
 
 
 def _result_payload(result: UpdateResult) -> dict[str, object | None]:

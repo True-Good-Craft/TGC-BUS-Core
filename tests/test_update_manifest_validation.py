@@ -9,6 +9,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from core.config.update_policy import ALLOWED_UPDATE_CHANNELS, DEFAULT_UPDATE_CHANNEL
+from core.runtime.manifest_keys import ManifestPublicKeyPolicy, PRODUCTION_MANIFEST_PUBLIC_KEY_ID, active_manifest_public_keys
 from core.runtime.manifest_trust import canonicalize_manifest_payload
 from core.services.update import ManifestRelease, UpdateService, _resolve_manifest_release
 
@@ -141,6 +142,21 @@ def test_embedded_signed_manifest_verifies_and_parses_normally():
     assert result.download_url == "https://example.test/embedded.zip"
 
 
+def test_embedded_signed_manifest_verifies_with_active_manifest_public_keys_policy_map():
+    payload = {"latest": _latest("https://example.test/embedded-active.zip")}
+    manifest, trusted_keys = _signed_embedded_manifest(payload, key_id=PRODUCTION_MANIFEST_PUBLIC_KEY_ID)
+    policy_map = active_manifest_public_keys(
+        (ManifestPublicKeyPolicy(key_id=PRODUCTION_MANIFEST_PUBLIC_KEY_ID, public_key=trusted_keys[PRODUCTION_MANIFEST_PUBLIC_KEY_ID]),)
+    )
+    service = UpdateService(fetch_manifest=lambda _url, _timeout: manifest, trusted_manifest_public_keys=policy_map)
+
+    result = service.check(manifest_url="https://example.test/manifest.json", channel="stable")
+
+    assert result.error_code is None
+    assert result.update_available is True
+    assert result.download_url == "https://example.test/embedded-active.zip"
+
+
 def test_embedded_signed_manifest_bad_signature_fails_closed():
     payload = {"latest": _latest("https://example.test/embedded.zip")}
     manifest, trusted_keys = _signed_embedded_manifest(payload)
@@ -180,10 +196,30 @@ def test_unsigned_manifest_fails_when_signed_manifest_is_required():
     assert result.download_url is None
 
 
-def test_signed_manifest_unknown_key_fails_closed():
+def test_signed_manifest_unknown_key_is_rejected_when_enforcement_is_off():
     payload = {"latest": _latest("https://example.test/signed.zip")}
     envelope, _trusted_keys = _signed_envelope(payload, key_id="unknown")
-    service = UpdateService(fetch_manifest=lambda _url, _timeout: envelope, trusted_manifest_public_keys={})
+    service = UpdateService(
+        fetch_manifest=lambda _url, _timeout: envelope,
+        trusted_manifest_public_keys={},
+        require_signed_manifest=False,
+    )
+
+    result = service.check(manifest_url="https://example.test/manifest.json", channel="stable")
+
+    assert result.error_code == "unknown_key_id"
+    assert result.update_available is False
+    assert result.download_url is None
+
+
+def test_signed_manifest_unknown_key_is_rejected_when_enforcement_is_on():
+    payload = {"latest": _latest("https://example.test/signed.zip")}
+    envelope, _trusted_keys = _signed_envelope(payload, key_id="unknown")
+    service = UpdateService(
+        fetch_manifest=lambda _url, _timeout: envelope,
+        trusted_manifest_public_keys={},
+        require_signed_manifest=True,
+    )
 
     result = service.check(manifest_url="https://example.test/manifest.json", channel="stable")
 

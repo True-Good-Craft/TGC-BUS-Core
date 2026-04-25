@@ -5,8 +5,12 @@ import json
 import time
 import pytest
 from _httpx_stub import Client as StubHttpxClient
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from core.config.manager import Config, UpdatesConfig
+from core.runtime.manifest_keys import ManifestPublicKeyPolicy, PRODUCTION_MANIFEST_PUBLIC_KEY_ID, active_manifest_public_keys
+from core.runtime.manifest_trust import canonicalize_manifest_payload
 from core.services.update import REQUEST_TIMEOUT_SECONDS, UpdateService
 
 pytestmark = pytest.mark.api
@@ -69,6 +73,21 @@ def _force_client_stream_fallback(monkeypatch: pytest.MonkeyPatch, update_module
     monkeypatch.setattr(update_module.httpx, "Client", StubHttpxClient, raising=False)
 
 
+def _signed_embedded_manifest(payload: dict, *, key_id: str) -> tuple[dict, bytes]:
+    private_key = Ed25519PrivateKey.generate()
+    public_bytes = private_key.public_key().public_bytes(encoding=Encoding.Raw, format=PublicFormat.Raw)
+    signature = private_key.sign(canonicalize_manifest_payload(payload))
+    import base64
+
+    manifest = dict(payload)
+    manifest["signature"] = {
+        "alg": "Ed25519",
+        "key_id": key_id,
+        "sig": base64.b64encode(signature).decode("ascii"),
+    }
+    return manifest, public_bytes
+
+
 def test_update_check_works_even_when_updates_disabled(bus_client, monkeypatch: pytest.MonkeyPatch):
     from core.api.routes import update as update_routes
 
@@ -84,6 +103,67 @@ def test_update_check_works_even_when_updates_disabled(bus_client, monkeypatch: 
     assert body["error_code"] is None
     assert body["update_available"] is True
     assert body["download_url"] == "https://example.test/dl"
+
+
+def test_get_update_service_uses_active_manifest_public_keys_and_keeps_enforcement_off(monkeypatch: pytest.MonkeyPatch):
+    from core.api.routes import update as update_routes
+
+    private_key = Ed25519PrivateKey.generate()
+    public_bytes = private_key.public_key().public_bytes(encoding=Encoding.Raw, format=PublicFormat.Raw)
+    expected = {PRODUCTION_MANIFEST_PUBLIC_KEY_ID: public_bytes}
+    monkeypatch.setattr(
+        update_routes,
+        "active_manifest_public_keys",
+        lambda: active_manifest_public_keys(
+            (ManifestPublicKeyPolicy(key_id=PRODUCTION_MANIFEST_PUBLIC_KEY_ID, public_key=public_bytes),)
+        ),
+    )
+
+    service = update_routes.get_update_service()
+
+    assert service._trusted_manifest_public_keys == expected
+    assert service._require_signed_manifest is False
+
+
+def test_update_check_accepts_valid_signed_manifest_with_active_key_map(bus_client, monkeypatch: pytest.MonkeyPatch):
+    from core.api.routes import update as update_routes
+    from core.services import update as update_module
+
+    _set_updates(monkeypatch, enabled=True)
+    payload = {
+        "latest": {
+            "version": "9.9.9",
+            "download": {"url": "https://example.test/signed-dl"},
+        }
+    }
+    manifest, public_bytes = _signed_embedded_manifest(payload, key_id=PRODUCTION_MANIFEST_PUBLIC_KEY_ID)
+    body_bytes = json.dumps(manifest).encode("utf-8")
+
+    def _fake_stream(_method, _url, **_kwargs):
+        response = _StreamResponse(
+            status_code=200,
+            headers={"content-type": "application/json", "content-length": str(len(body_bytes))},
+            chunks=[body_bytes],
+        )
+        return _StreamContext(response)
+
+    _force_client_stream_fallback(monkeypatch, update_module)
+    monkeypatch.setattr(update_module.httpx, "stream", _fake_stream, raising=False)
+    monkeypatch.setattr(
+        update_routes,
+        "active_manifest_public_keys",
+        lambda: active_manifest_public_keys(
+            (ManifestPublicKeyPolicy(key_id=PRODUCTION_MANIFEST_PUBLIC_KEY_ID, public_key=public_bytes),)
+        ),
+    )
+
+    response = bus_client["client"].get("/app/update/check")
+
+    body = response.json()
+    _assert_contract(body)
+    assert body["error_code"] is None
+    assert body["update_available"] is True
+    assert body["download_url"] == "https://example.test/signed-dl"
 
 
 def test_update_check_invalid_scheme_rejected_no_network_call(bus_client, monkeypatch: pytest.MonkeyPatch):
