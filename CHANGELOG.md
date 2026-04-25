@@ -12,6 +12,7 @@
 ## [Unreleased]
 
 ### Added
+- Added secure-update foundation documentation for the post-v1.0.4 bridge work: DB/app ownership locking, local update cache/state scaffolding, Ed25519 manifest trust primitives, embedded backward-compatible manifest signatures, the pinned production manifest public-key policy, the release-side `scripts/sign_manifest.py` helper, and release-mirror manifest signing before upload.
 - Added `scripts/validate_version_governance.py` to machine-check `pyproject.toml`, `SOT.md`, and `scripts/_win_version_info.txt` against the canonical values in `core/version.py`.
 - Added `scripts/validate_change_trace.py`, `scripts/governance-check.ps1`, and `.github/workflows/governance-guard.yml` so code/control-surface changes fail hard unless `CHANGELOG.md` and `core/version.py` are part of the same change set.
 - Added fortheemperor UI authority freeze documentation capturing canonical UI styling authority, active module standardization status, completed parity remediation scope, and deferred follow-on work.
@@ -24,6 +25,9 @@
 - Added internal `ManifestRelease` metadata carry-forward so validated manifest-provided `sha256`, `size_bytes`, release notes, signature URL, artifact kind/type/platform, publisher, and signer fields can be retained as declared metadata for future verification work.
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.0.4.1` to `1.0.4.2` for the secure-update foundation governance/signing-pipeline alignment pass without changing public `VERSION`.
+- Documented that the release mirror now signs generated `stable.json` into `stable.signed.json` with `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`, verifies backward-compatible `latest.version` / `latest.download.url` plus Ed25519 signature metadata, verifies against Core's pinned public key policy, and publishes the signed manifest in place as `manifest/core/stable.json`.
+- Clarified secure-update limits: client-side signed-manifest enforcement remains off, unsigned manifest compatibility remains available, `verified_ready` is only a state shape, and no artifact download, ZIP hash verification, extraction, EXE Authenticode/publisher verification, real verified-ready write, handoff launch, or update UI button exists yet.
 - Added launcher-level DB ownership preflight so duplicate native launches are rejected before migrations, server bind, or browser open while retaining the app-level startup guard for server-only entrypoints.
 - Bumped `INTERNAL_VERSION` from `1.0.4.0` to `1.0.4.1` for the DB ownership/single-instance launcher hardening without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.0.3.2` to `1.0.3.3` for the final pre-release update-hardening governance pass without changing public `VERSION`.

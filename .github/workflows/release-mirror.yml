@@ -34,6 +34,9 @@ jobs:
       - name: Install Wrangler CLI
         run: npm install -g wrangler
 
+      - name: Install manifest signing dependencies
+        run: python3 -m pip install "cryptography>=46.0.0"
+
       - name: Determine release tag
         run: |
           TAG="${{ github.event.release.tag_name || github.event.inputs.tag }}"
@@ -167,6 +170,46 @@ jobs:
             }' \
             > stable.json
 
+      - name: Sign manifest
+        env:
+          BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY: ${{ secrets.BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "${BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY}" ]; then
+            echo "::error::BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY secret is required to publish a signed manifest."
+            exit 1
+          fi
+
+          python3 scripts/sign_manifest.py stable.json stable.signed.json \
+            --key-id bus-core-prod-ed25519-2026-04-25 \
+            --private-key-env BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY
+
+      - name: Verify signed manifest
+        run: |
+          jq -e \
+            --arg expected_version "${{ env.CANONICAL_VERSION }}" \
+            --arg expected_url "${{ env.RELEASE_PUBLIC_BASE_URL }}/releases/${{ env.ASSET_NAME }}" \
+            '.latest.version == $expected_version
+              and .latest.download.url == $expected_url
+              and .signature.alg == "Ed25519"
+              and .signature.key_id == "bus-core-prod-ed25519-2026-04-25"' \
+            stable.signed.json > /dev/null
+
+          python3 - <<'PY'
+          import json
+          import pathlib
+
+          from core.runtime.manifest_keys import active_manifest_public_keys
+          from core.runtime.manifest_trust import verify_embedded_manifest_signature
+
+          manifest = json.loads(pathlib.Path("stable.signed.json").read_text(encoding="utf-8"))
+          unsigned = verify_embedded_manifest_signature(
+              manifest,
+              trusted_public_keys=active_manifest_public_keys(),
+          )
+          assert unsigned["latest"]["version"]
+          assert unsigned["latest"]["download"]["url"]
+          PY
+
       - name: Upload manifest to R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -174,5 +217,5 @@ jobs:
         run: |
           wrangler r2 object put --remote \
             "${{ secrets.R2_BUCKET }}/manifest/core/stable.json" \
-            --file stable.json \
+            --file stable.signed.json \
             --content-type "application/json"

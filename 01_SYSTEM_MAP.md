@@ -1,11 +1,11 @@
 # 01_SYSTEM_MAP
 
 - Document purpose: Fast skeletal map of BUS Core runtime, canonical authority owners, trust boundaries, and the main drift paths that threaten stability.
-- Primary authority basis: `core/api/http.py`, `launcher.py`, `core/ui/app.js`, `core/appdb/*`, `core/appdata/paths.py`, `core/runtime/core_alpha.py`.
+- Primary authority basis: `core/api/http.py`, `launcher.py`, `core/ui/app.js`, `core/appdb/*`, `core/appdata/paths.py`, `core/runtime/core_alpha.py`, `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`.
 - Best use: First read when locating canonical runtime surfaces or deciding where deeper truth lives.
 - Refresh triggers: Entrypoint changes, router remounting, new mutable-state authority, startup-flow changes, new external service dependencies.
 - Highest-risk drift areas: Split authority, session/auth drift, version/update drift, and repo-local mutable state outside AppData.
-- Key dependent files / modules: `core/api/http.py`, `launcher.py`, `core/ui/app.js`, `core/config/manager.py`, `core/config/paths.py`, `core/appdb/engine.py`, `core/runtime/core_alpha.py`.
+- Key dependent files / modules: `core/api/http.py`, `launcher.py`, `core/ui/app.js`, `core/config/manager.py`, `core/config/paths.py`, `core/appdb/engine.py`, `core/runtime/core_alpha.py`, `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`.
 
 ## Project identity
 
@@ -20,6 +20,7 @@
 | --- | --- | --- | --- |
 | Runtime HTTP surface | Canonical | `core/api/http.py::create_app()` and mounted routers | Referenced by `Dockerfile`, `docker-compose.yml`, `launcher.py`, and dev/smoke helper `scripts/launch.ps1`. |
 | Native app entry | Canonical | `launcher.py` | Only supported native entry; starts BUS Core locally, opens `/ui/shell.html`, and manages tray lifecycle. |
+| DB/app ownership | Canonical | `launcher.py` preflight plus app-level lock | Prevents two live BUS Core owners of the same DB/app root; prerequisite for future verified version handoff. |
 | Container entry | Canonical | `Dockerfile` command `uvicorn core.api.http:create_app --factory` | Only supported container entry; same HTTP surface as native runtime. |
 | Dev/smoke HTTP launcher | Secondary | `scripts/launch.ps1` | Scripted helper for smoke/dev automation against `core.api.http:create_app`; not a supported native runtime entry. |
 | UI routing / boot | Canonical | `core/ui/app.js`, `core/ui/shell.html` | Hash routes, onboarding redirects, version badge, startup update check. |
@@ -27,7 +28,8 @@
 | Persistence schema | Canonical | `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/api/http.py::startup_migrations()` | SQL files in `migrations/` are supplementary, not the only authority. |
 | Durable settings config | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` via `core/config/manager.py` | Root config is the single app-runtime settings authority; `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only. |
 | Session/auth authority | Canonical with secondary mirrors | `core.api.http` auth stack, `GET /session/token`, `tgc.security.require_token_ctx` | `core.api.http` owns authorization decisions; `tgc.security.require_token_ctx` is a compatibility wrapper, and `SESSION_TOKEN` / `session_token.txt` remain secondary mirrors. See `04_SECURITY_TRUST_AND_OPERATIONS.md`. |
-| Update check behavior | Canonical | `core/api/routes/update.py`, `core/services/update.py`, `core/config/manager.py` | UI contract lives in `core/ui/js/update-check.js`. |
+| Update check behavior | Canonical | `core/api/routes/update.py`, `core/services/update.py`, `core/config/manager.py` | UI contract lives in `core/ui/js/update-check.js`; client-side signed-manifest enforcement remains off. |
+| Manifest authenticity | Bridge groundwork | `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`, `scripts/sign_manifest.py`, `.github/workflows/release-mirror.yml` | Release publication signs manifests; Core can verify Ed25519 manifest metadata, but artifact verification/handoff is not implemented. |
 | Release version | Canonical | `core/version.py` | `VERSION` is the strict SemVer release authority; `INTERNAL_VERSION` is the working revision. |
 | Repository docs | Secondary | `README.md`, `SOT.md`, `API_CONTRACT.md`, `CHANGELOG.md`, `docs/*` | Useful context; code wins on conflict. |
 
@@ -59,14 +61,14 @@ Stability in the current phase comes from keeping these authority lines singular
 | Journals / logs | Canonical | `core/journal/*`, `core/api/http.py`, `tgc/logging_setup.py` | `%LOCALAPPDATA%\BUSCore\app\data\journals`, runtime log files. |
 | Broker / providers | Canonical | `core/domain/bootstrap.py`, `core/adapters/*`, plugin loader | Local FS, Google Drive, plugin services. |
 | Background indexer | Canonical | `core/api/http.py` | `data/index_state.json`, broker catalog surfaces. |
-| Update check path | Canonical | `core/services/update.py` | Hosted manifest URL from config. |
+| Update check path | Canonical | `core/services/update.py` | Hosted manifest URL from config; supports backward-compatible signed manifest shapes. |
 | Removed legacy entry surfaces | Resolved | `app.py`, `tgc/http.py`, `core/main.py`, `tgc_controller.spec` | Deleted to prevent parallel runtime/package authority. |
 
 ## Startup and Request Skeleton
 
 ### Startup path
 
-1. Native path: `launcher.py` prepares runtime dirs, calls `build_app()`, starts Uvicorn on `127.0.0.1:<port>`, opens `/ui/shell.html`.
+1. Native path: `launcher.py` prepares runtime dirs, acquires DB/app ownership before browser open or Uvicorn bind, calls `build_app()`, starts Uvicorn on `127.0.0.1:<port>`, opens `/ui/shell.html`.
 2. App build: `build_app()` creates `CoreAlpha`, sets `RUN_ID`, writes `session_token.txt`, sets `LOG_FILE`, and logs the trust banner.
 3. App init: `create_app()` attaches `AppState`, mounts domain routers, and exposes static assets.
 4. Lifespan: `startup_migrations()`, `_buscore_writeflag_startup()`, `ensure_core_initialized()`, `_auto_index_if_stale()`, `_start_indexer_event()`.
@@ -116,7 +118,7 @@ Stability in the current phase comes from keeping these authority lines singular
 | --- | --- | --- | --- |
 | Config authority (`config.json` vs `app\\config.json`) | Resolved | `%LOCALAPPDATA%\BUSCore\config.json` is canonical; `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Session/token split | Narrowed drift | `core.api.http` is the canonical validator authority, `AppState.tokens` is the canonical runtime token source, `tgc.security.require_token_ctx` is a compatibility wrapper, and the global/token-file mirrors still participate secondarily. | `04_SECURITY_TRUST_AND_OPERATIONS.md` |
-| Version/update authority drift | Narrowed drift | `core/version.py` is now the public release/update source, and `.github/workflows/release-mirror.yml` machine-checks `tag == v{VERSION}` before publishing manifest metadata; remaining drift is limited to declared-but-unverified artifact metadata, stable-only release automation, and release-history dependence on GitHub release assets. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
+| Version/update authority drift | Narrowed drift | `core/version.py` is now the public release/update source, `.github/workflows/release-mirror.yml` machine-checks `tag == v{VERSION}` and signs manifests before publishing; remaining drift is limited to client enforcement being off, declared-but-unverified artifact metadata, stable-only release automation, and release-history dependence on GitHub release assets. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
 | Repo-local mutable state | Drifted | Some live state is stored in repo `data/` instead of AppData. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Placeholder/stale UI surfaces | Drifted | `#/runs`, `#/import`, backup UI, and stub transaction widgets can mislead contract assumptions. | `02_API_AND_UI_CONTRACT_MAP.md` |
 | Runtime authority | Canonical | Legacy alternate entry surfaces were removed; `scripts/launch.ps1` remains dev/smoke-only around the canonical factory. | This file |
