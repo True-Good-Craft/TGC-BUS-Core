@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 import httpx
 
@@ -72,8 +72,13 @@ class UpdateService:
     def __init__(
         self,
         fetch_manifest: Callable[[str, float], Any] | None = None,
+        *,
+        trusted_manifest_public_keys: Mapping[str, Any] | None = None,
+        require_signed_manifest: bool = False,
     ) -> None:
         self._fetch_manifest = fetch_manifest or self._http_fetch_manifest
+        self._trusted_manifest_public_keys = trusted_manifest_public_keys or {}
+        self._require_signed_manifest = require_signed_manifest
 
     def check(self, *, manifest_url: str, channel: str) -> UpdateResult:
         if not _is_semver(CURRENT_VERSION):
@@ -83,6 +88,7 @@ class UpdateService:
             _validate_manifest_url(manifest_url)
             selected_channel = _validate_update_channel(channel)
             manifest = self._fetch_manifest(manifest_url, REQUEST_TIMEOUT_SECONDS)
+            manifest = self._unwrap_manifest(manifest)
             release = _resolve_manifest_release(manifest, selected_channel)
 
             latest_version = release.version
@@ -105,6 +111,21 @@ class UpdateService:
             return self._error_result("network_error", "Failed to fetch update manifest.")
         except Exception:
             return self._error_result("update_check_failed", "Update check failed.")
+
+    def _unwrap_manifest(self, manifest: Any) -> Any:
+        if not self._require_signed_manifest and not _looks_like_signed_manifest(manifest):
+            return manifest
+
+        from core.runtime.manifest_trust import ManifestTrustError, unwrap_manifest
+
+        try:
+            return unwrap_manifest(
+                manifest,
+                trusted_public_keys=self._trusted_manifest_public_keys,
+                require_signature=self._require_signed_manifest,
+            )
+        except ManifestTrustError as exc:
+            raise UpdateCheckError(exc.code, exc.message) from exc
 
     @staticmethod
     def _http_fetch_manifest(url: str, timeout_s: float) -> Any:
@@ -283,6 +304,10 @@ def _resolve_manifest_release(manifest: Any, channel: str) -> ManifestRelease:
         raise UpdateCheckError("invalid_manifest", "Manifest release entry is invalid.")
 
     raise UpdateCheckError("channel_not_found", "Requested update channel not found.")
+
+
+def _looks_like_signed_manifest(manifest: Any) -> bool:
+    return isinstance(manifest, dict) and "signature" in manifest
 
 
 def _resolve_manifest_entry(manifest: Any, channel: str) -> dict[str, Any]:
