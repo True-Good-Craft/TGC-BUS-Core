@@ -142,6 +142,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | `GET` | `/local/available_drives` | Canonical | Enumerate local drives/mounts. | `core/api/http.py` |
 | `GET` | `/local/validate_path` | Canonical | Validate local directory path. | `core/api/http.py` |
 | `POST` | `/open/local` | Canonical | Open allow-listed local path in OS explorer. | `core/api/http.py` |
+| `POST` | `/app/update/stage` | Canonical | Manual trusted update staging behind session auth and write gate; prepares `verified_ready` only. | `core/api/routes/update.py` |
 | `POST` | `/server/restart` | Canonical | Exit process for manual restart. | `core/api/http.py` |
 | `POST` | `/reader/local/resolve_ids` | Canonical | Map local paths -> reader IDs. | `core/reader/api.py` |
 | `POST` | `/reader/local/resolve_paths` | Canonical | Map reader IDs -> local paths. | `core/reader/api.py` |
@@ -211,10 +212,18 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | Manufacturing | `/app/recipes`, `/app/recipes/{id}`, `/app/manufacture`, `/app/ledger/history` |
 | Recipes | `/app/items`, `/app/recipes`, `/app/recipes/{id}`, `/app/recipes` `POST`, `/app/recipes/{id}` `PUT|DELETE` |
 | Contacts | `/app/vendors?is_org=true`, `/app/vendors?is_vendor=true`, `/app/contacts?...`, `/app/contacts` `POST`, `/app/vendors/{id}` `PUT|DELETE`, `/app/contacts/{id}` `PUT|DELETE` |
-| Settings | `/app/config`, `/app/update/check` |
+| Settings | `/app/config`, `/app/update/check`, `/app/update/stage` |
 | Settings/Admin | `/app/db/export`, `/app/db/exports`, `/app/db/import/upload`, `/app/db/import/preview`, `/app/db/import/commit` |
 | Logs | `/app/logs?limit=...&cursor_id=...` |
 | Finance | `/app/finance/summary?from=...&to=...`, `/app/finance/transactions?from=...&to=...&limit=100` |
+
+## Update UX and Handoff Notes
+
+- The Settings/sidebar update UX is a manual `Update` button, not a raw download-link primary action.
+- `GET /app/update/check` remains read-only and only reports update availability/state.
+- `POST /app/update/stage` performs the trusted staging chain and can return `verified_ready` plus restart guidance, but it does not force restart.
+- Launcher handoff to `verified_ready` happens only on next start, after DB ownership lock, and follows configured verified launch policy.
+- The running EXE is not overwritten; staged versions remain confined under the local update cache until a later launcher handoff.
 
 ## Contract-sensitive payloads
 

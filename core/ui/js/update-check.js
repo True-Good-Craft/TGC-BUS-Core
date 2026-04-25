@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { apiGet, ensureToken } from './api.js';
-
-const LIGHTHOUSE_BASE_URL = 'https://lighthouse.buscore.ca';
+import { apiGet, apiPost, ensureToken } from './api.js';
 
 let startupCheckDone = false;
 
@@ -9,7 +7,7 @@ function sidebarEls() {
   return {
     status: document.querySelector('[data-role="update-status"]'),
     checkNow: document.querySelector('[data-role="update-check-now"]'),
-    download: document.querySelector('[data-role="update-download"]'),
+    stage: document.querySelector('[data-role="update-stage"]'),
   };
 }
 
@@ -20,25 +18,16 @@ function setSidebarStatus(text = '', tone = 'neutral') {
   status.dataset.tone = tone;
 }
 
-function resolveDownloadUrl(downloadUrl) {
-  if (!downloadUrl || typeof downloadUrl !== 'string') return null;
-  if (/^https?:\/\//i.test(downloadUrl)) return downloadUrl;
-
-  const normalizedPath = downloadUrl.startsWith('/') ? downloadUrl : `/${downloadUrl}`;
-  return `${LIGHTHOUSE_BASE_URL}${normalizedPath}`;
-}
-
-function setDownloadLink(downloadUrl) {
-  const { download } = sidebarEls();
-  if (!download) return;
-  const resolvedDownloadUrl = resolveDownloadUrl(downloadUrl);
-  if (!resolvedDownloadUrl) {
-    download.classList.add('hidden');
-    download.removeAttribute('href');
+function setStageButton({ visible, disabled = false, label = 'Update' }) {
+  const { stage } = sidebarEls();
+  if (!stage) return;
+  stage.textContent = label;
+  stage.disabled = !!disabled;
+  if (visible) {
+    stage.classList.remove('hidden');
     return;
   }
-  download.classList.remove('hidden');
-  download.href = resolvedDownloadUrl;
+  stage.classList.add('hidden');
 }
 
 async function getStartupPolicyEnabled() {
@@ -52,7 +41,7 @@ async function getStartupPolicyEnabled() {
 async function executeCheck({ manual = false } = {}) {
   const { checkNow } = sidebarEls();
   if (manual && checkNow) checkNow.disabled = true;
-  setDownloadLink(null);
+  setStageButton({ visible: false, disabled: false, label: 'Update' });
   setSidebarStatus('Checking for updates...', 'neutral');
 
   try {
@@ -63,7 +52,7 @@ async function executeCheck({ manual = false } = {}) {
     }
     if (res.update_available && res.latest_version) {
       setSidebarStatus(`Update available: ${res.latest_version}`, 'warn');
-      setDownloadLink(res.download_url || null);
+      setStageButton({ visible: true, disabled: false, label: 'Update' });
     } else {
       setSidebarStatus('Up to date', 'success');
     }
@@ -81,17 +70,59 @@ export async function runSidebarManualUpdateCheck() {
 }
 
 export function bindSidebarUpdateControls() {
-  const { checkNow } = sidebarEls();
+  const { checkNow, stage } = sidebarEls();
   if (!checkNow || checkNow.dataset.bound === '1') return;
   checkNow.dataset.bound = '1';
   checkNow.addEventListener('click', () => {
     runSidebarManualUpdateCheck();
   });
+
+  if (stage && stage.dataset.bound !== '1') {
+    stage.dataset.bound = '1';
+    stage.addEventListener('click', () => {
+      runSidebarManualUpdateStage();
+    });
+  }
 }
 
 export async function runUpdateCheck() {
   await ensureToken();
   return apiGet('/app/update/check');
+}
+
+export async function runSidebarManualUpdateStage() {
+  const { checkNow } = sidebarEls();
+  setStageButton({ visible: true, disabled: true, label: 'Updating...' });
+  if (checkNow) checkNow.disabled = true;
+  setSidebarStatus('Staging verified update...', 'neutral');
+
+  try {
+    await ensureToken();
+    const res = await apiPost('/app/update/stage', {});
+    if (!res?.ok) {
+      setSidebarStatus(`Update failed: ${res?.error_message || res?.error_code || 'unknown_error'}`, 'error');
+      setStageButton({ visible: true, disabled: false, label: 'Update' });
+      return res;
+    }
+
+    setStageButton({ visible: false, disabled: false, label: 'Update' });
+    setSidebarStatus('Update verified and ready.', 'success');
+
+    const nextVersion = res.latest_version ? ` ${res.latest_version}` : '';
+    const prompt = `Update${nextVersion} is verified and ready. Restart into verified version now?`;
+    if (window.confirm(prompt)) {
+      setSidebarStatus('Update is verified and ready. Restart BUS Core to run the verified newer version.', 'success');
+    } else {
+      setSidebarStatus('Update is verified and ready. Restart BUS Core when you are ready.', 'success');
+    }
+    return res;
+  } catch {
+    setSidebarStatus('Update staging failed.', 'error');
+    setStageButton({ visible: true, disabled: false, label: 'Update' });
+    return null;
+  } finally {
+    if (checkNow) checkNow.disabled = false;
+  }
 }
 
 export async function maybeRunStartupUpdateCheck() {
@@ -102,7 +133,7 @@ export async function maybeRunStartupUpdateCheck() {
     const enabled = await getStartupPolicyEnabled();
     if (!enabled) {
       setSidebarStatus('Startup update checks disabled\n(use Check now)', 'neutral');
-      setDownloadLink(null);
+      setStageButton({ visible: false, disabled: false, label: 'Update' });
       return;
     }
 

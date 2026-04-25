@@ -56,6 +56,23 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
     - `error_code`
     - `error_message`
 
+- `POST /app/update/stage`
+  - Canonical manual update staging route.
+  - Requires session auth and `require_writes`.
+  - Executes trusted staging only after the user clicks the UI `Update` button.
+  - Returns exactly:
+    - `ok`
+    - `status`
+    - `current_version`
+    - `latest_version`
+    - `exe_path`
+    - `restart_available`
+    - `error_code`
+    - `error_message`
+  - Success means a newer version is verified and written to conservative `verified_ready` state.
+  - It does not force restart, does not overwrite the running EXE, and does not itself launch the staged executable.
+  - Launcher handoff, when enabled by config, is evaluated on next start after DB ownership lock.
+
 - `GET /app/system/state`
   - Canonical system boot/state probe.
   - Returns:

@@ -29,6 +29,8 @@
 - Added a narrow `verified_ready` promotion helper that writes `verified_ready` only when `hash_verified`, `extracted`, and `exe_verified` all agree on version/channel/hash/path data and the cached ZIP, extracted version directory, and extracted EXE still exist inside the confined update-cache roots.
 
 ### Changed
+- Sidebar update UX now uses a manual `Update` button instead of a raw download link as the primary action; it calls `POST /app/update/stage` only on user click, shows in-progress status, and reports verified-ready restart guidance without forcing restart.
+- Updated security/release docs (`README.md`, `04_SECURITY_TRUST_AND_OPERATIONS.md`, `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md`) to reflect current behavior accurately: `/app/update/check` remains read-only, manual `/app/update/stage` performs trusted staging, launcher policy-based handoff occurs after DB lock on next start, and there is no overwrite, forced restart, or startup auto-stage.
 - Bumped `INTERNAL_VERSION` from `1.0.4.4` to `1.0.4.5` for the EXE trust, `verified_ready`, and targeted governance/docs pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.0.4.2` to `1.0.4.3` for the release-mirror tooling separation and manifest-signing script import-path hardening without changing public `VERSION`.
 - Updated `.github/workflows/release-mirror.yml` to separate tooling checkout (`tooling_ref`) from release identity (`release_tag`), enabling manual `workflow_dispatch` backfills to use current signing tooling while mirroring historical releases like `v1.0.4`.

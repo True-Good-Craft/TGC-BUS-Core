@@ -13,8 +13,11 @@ import atexit
 import threading
 import time
 import traceback
+import re
+import subprocess
 import webbrowser
 from pathlib import Path
+from typing import Any, Callable
 
 # --- 1. Dependency Guard ---
 try:
@@ -23,6 +26,8 @@ try:
     from PIL import Image
     from core.appdata.paths import resolve_db_path
     from core.config.manager import load_config
+    from core.runtime import update_cache
+    from core.version import VERSION as CURRENT_VERSION
     from tgc.bootstrap_fs import DATA, LOGS
     from core.config.paths import APP_ROOT, STATE_DIR
     from core.runtime.instance_lock import (
@@ -54,6 +59,7 @@ except Exception:
     pystray = None
 
 logger = logging.getLogger(__name__)
+_SEMVER_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
 
 def _write_launcher_log(message: str) -> None:
@@ -62,6 +68,14 @@ def _write_launcher_log(message: str) -> None:
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     with log_path.open("a", encoding="utf-8") as fh:
         fh.write(f"[{timestamp}] {message}\n")
+
+
+def _startup_log(message: str) -> None:
+    logger.info(message)
+    try:
+        _write_launcher_log(message)
+    except Exception:
+        pass
 
 
 def _write_tray_failure_log(exc: Exception) -> Path:
@@ -148,6 +162,145 @@ def acquire_launcher_db_lock(port: int) -> InstanceLock:
     return acquire_db_owner_lock(db_path, app_root=APP_ROOT, port=port, export_env=True)
 
 
+def _parse_semver(raw: str) -> tuple[int, int, int] | None:
+    match = _SEMVER_PATTERN.fullmatch(raw)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def _current_executable_path() -> Path | None:
+    executable = getattr(sys, "executable", None)
+    if not executable:
+        return None
+    try:
+        return Path(executable).resolve(strict=False)
+    except Exception:
+        return None
+
+
+def _verified_ready_candidate(
+    *,
+    state: dict[str, Any],
+    cache_root: Path,
+    current_version: str,
+    current_executable: Path | None,
+) -> dict[str, str] | None:
+    ready = state.get("verified_ready")
+    if not isinstance(ready, dict):
+        _startup_log("[launcher] verified_ready not present; continuing current version.")
+        return None
+
+    version = ready.get("version")
+    exe_path_value = ready.get("exe_path")
+    if not isinstance(version, str) or not isinstance(exe_path_value, str) or not exe_path_value.strip():
+        _startup_log("[launcher] verified_ready invalid/incomplete; continuing current version.")
+        return None
+
+    candidate_semver = _parse_semver(version)
+    current_semver = _parse_semver(current_version)
+    if candidate_semver is None or current_semver is None or candidate_semver <= current_semver:
+        _startup_log("[launcher] verified_ready present but not newer; continuing current version.")
+        return None
+
+    candidate_exe = Path(exe_path_value).resolve(strict=False)
+    if not candidate_exe.exists() or not candidate_exe.is_file():
+        _startup_log("[launcher] verified_ready executable missing; continuing current version.")
+        return None
+
+    versions_root = update_cache.versions_dir(cache_root).resolve(strict=False)
+    expected_dir = (versions_root / version).resolve(strict=False)
+    try:
+        candidate_exe.relative_to(expected_dir)
+    except ValueError:
+        _startup_log("[launcher] verified_ready executable path is outside versions/<version>; continuing current version.")
+        return None
+
+    if current_executable is not None and candidate_exe == current_executable:
+        _startup_log("[launcher] verified_ready executable matches current executable; continuing current version.")
+        return None
+
+    return {"version": version, "exe_path": str(candidate_exe)}
+
+
+def _ask_windows_use_verified(version: str) -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        prompt = f"A verified newer BUS Core version is ready. Run version {version} now?"
+        MB_YESNO = 0x4
+        MB_ICONQUESTION = 0x20
+        IDYES = 6
+        result = ctypes.windll.user32.MessageBoxW(0, prompt, "TGC BUS Core Update", MB_YESNO | MB_ICONQUESTION)
+        return result == IDYES
+    except Exception:
+        return False
+
+
+def _decide_verified_launch_action(
+    *,
+    verified_launch_policy: str,
+    candidate: dict[str, str] | None,
+    ask_user: Callable[[str], bool],
+) -> tuple[str, dict[str, str] | None]:
+    if candidate is None:
+        return "current", None
+
+    policy = (verified_launch_policy or "ask").strip().lower()
+    if policy == "current_only":
+        _startup_log("[launcher] verified_ready present but policy is current_only; continuing current version.")
+        return "current", None
+    if policy == "always_newest":
+        _startup_log(f"[launcher] verified_ready selected by policy always_newest (version {candidate['version']}).")
+        return "launch", candidate
+
+    if os.name != "nt":
+        _startup_log("[launcher] verified_ready available; ask policy defaults to current on non-Windows.")
+        return "current", None
+
+    if ask_user(candidate["version"]):
+        _startup_log(f"[launcher] verified_ready selected by user prompt (version {candidate['version']}).")
+        return "launch", candidate
+
+    _startup_log("[launcher] verified_ready prompt declined; continuing current version.")
+    return "current", None
+
+
+def _launch_verified_executable(*, exe_path: str, port: int, force_dev: bool) -> bool:
+    command = [exe_path, "--port", str(port)]
+    if force_dev:
+        command.append("--dev")
+    try:
+        subprocess.Popen(command)  # noqa: S603
+        return True
+    except Exception as exc:
+        _startup_log(f"[launcher] verified launch failed ({exc}); continuing current version.")
+        return False
+
+
+def _maybe_handoff_to_verified_ready(*, verified_launch_policy: str, port: int, force_dev: bool) -> bool:
+    cache_root = update_cache.cache_root()
+    state = update_cache.read_state(cache_root, active_version=CURRENT_VERSION)
+    candidate = _verified_ready_candidate(
+        state=state,
+        cache_root=cache_root,
+        current_version=CURRENT_VERSION,
+        current_executable=_current_executable_path(),
+    )
+    action, selection = _decide_verified_launch_action(
+        verified_launch_policy=verified_launch_policy,
+        candidate=candidate,
+        ask_user=_ask_windows_use_verified,
+    )
+    if action != "launch" or selection is None:
+        return False
+
+    launched = _launch_verified_executable(exe_path=selection["exe_path"], port=port, force_dev=force_dev)
+    if launched:
+        _startup_log(f"[launcher] handoff launched verified version {selection['version']}; exiting bootstrap process.")
+    return launched
+
+
 def _exit_already_running(exc: InstanceOwnershipError) -> None:
     db_path = getattr(exc, "db_path", None) or Path(resolve_db_path())
     user_message = (
@@ -189,6 +342,14 @@ def main():
         _exit_already_running(exc)
     atexit.register(launcher_lock.release)
 
+    cfg = load_config()
+    if _maybe_handoff_to_verified_ready(
+        verified_launch_policy=cfg.updates.verified_launch_policy,
+        port=args.port,
+        force_dev=force_dev,
+    ):
+        sys.exit(0)
+
     if force_dev and not getattr(sys, "frozen", False):
         print("--- DEV MODE: Console Visible ---")
         os.environ["BUS_DEV"] = "1" # Enforce strict SOT rule
@@ -211,9 +372,6 @@ def main():
 
     # C. PROD MODE: Stealth Default
     hide_console()
-
-    # Load Config
-    cfg = load_config()
 
     is_frozen = getattr(sys, "frozen", False)
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))

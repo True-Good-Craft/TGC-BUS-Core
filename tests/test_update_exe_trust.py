@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from core.runtime import update_cache
+from core.services import update_exe_trust
 from core.services.update_exe_trust import ALLOWED_SIGNER_THUMBPRINTS, ExecutableTrustError, UpdateExecutableTrustService
 
 pytestmark = pytest.mark.unit
@@ -50,12 +51,12 @@ def _write_exe(root: Path, name: str = "BUS-Core-1.0.5.exe") -> Path:
     return exe_path
 
 
-def _completed_process(payload: dict[str, str], *, returncode: int = 0) -> subprocess.CompletedProcess[str]:
+def _completed_process(payload: dict[str, str] | str, *, returncode: int = 0, stderr: str = "") -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(
         args=["powershell.exe"],
         returncode=returncode,
-        stdout=json.dumps(payload),
-        stderr="",
+        stdout=payload if isinstance(payload, str) else json.dumps(payload),
+        stderr=stderr,
     )
 
 
@@ -189,7 +190,7 @@ def test_non_exe_path_is_rejected(tmp_path: Path):
     assert exc_info.value.code == "invalid_exe_path"
 
 
-def test_invalid_signature_status_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_status_not_signed_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     root = _root(tmp_path)
     update_cache.ensure_cache_dirs(root)
     exe_path = _write_exe(root)
@@ -200,10 +201,11 @@ def test_invalid_signature_status_fails_closed(tmp_path: Path, monkeypatch: pyte
         "core.services.update_exe_trust.subprocess.run",
         lambda *args, **kwargs: _completed_process(
             {
-                "status": "NotSigned",
-                "status_message": "No signature.",
-                "subject": "",
-                "thumbprint": "",
+                "Status": "NotSigned",
+                "StatusMessage": "No signature.",
+                "Subject": "",
+                "Thumbprint": "",
+                "Issuer": "",
             }
         ),
     )
@@ -211,7 +213,35 @@ def test_invalid_signature_status_fails_closed(tmp_path: Path, monkeypatch: pyte
     with pytest.raises(ExecutableTrustError) as exc_info:
         UpdateExecutableTrustService().verify(state["extracted"], root=root)
 
-    assert exc_info.value.code == "invalid_signature"
+    assert exc_info.value.code == "signature_check_failed"
+    assert "authenticode_status_not_valid" in exc_info.value.message
+
+
+def test_status_unknown_error_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    root = _root(tmp_path)
+    update_cache.ensure_cache_dirs(root)
+    exe_path = _write_exe(root)
+    state = _seed_extracted_state(root, exe_path)
+
+    monkeypatch.setattr("core.services.update_exe_trust._is_windows_platform", lambda: True)
+    monkeypatch.setattr(
+        "core.services.update_exe_trust.subprocess.run",
+        lambda *args, **kwargs: _completed_process(
+            {
+                "Status": "UnknownError",
+                "StatusMessage": "Catalog lookup failed.",
+                "Subject": "CN=True Good Craft, O=True Good Craft, C=US",
+                "Thumbprint": ALLOWED_SIGNER_THUMBPRINTS[0],
+                "Issuer": "CN=Issuer",
+            }
+        ),
+    )
+
+    with pytest.raises(ExecutableTrustError) as exc_info:
+        UpdateExecutableTrustService().verify(state["extracted"], root=root)
+
+    assert exc_info.value.code == "signature_check_failed"
+    assert "authenticode_status_not_valid" in exc_info.value.message
 
 
 def test_wrong_publisher_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -225,10 +255,11 @@ def test_wrong_publisher_fails_closed(tmp_path: Path, monkeypatch: pytest.Monkey
         "core.services.update_exe_trust.subprocess.run",
         lambda *args, **kwargs: _completed_process(
             {
-                "status": "Valid",
-                "status_message": "Signature verified.",
-                "subject": "CN=Other Publisher, O=Other Publisher, C=US",
-                "thumbprint": ALLOWED_SIGNER_THUMBPRINTS[0],
+                "Status": "Valid",
+                "StatusMessage": "Signature verified.",
+                "Subject": "CN=Other Publisher, O=Other Publisher, C=US",
+                "Thumbprint": ALLOWED_SIGNER_THUMBPRINTS[0],
+                "Issuer": "CN=Issuer",
             }
         ),
     )
@@ -237,6 +268,34 @@ def test_wrong_publisher_fails_closed(tmp_path: Path, monkeypatch: pytest.Monkey
         UpdateExecutableTrustService().verify(state["extracted"], root=root)
 
     assert exc_info.value.code == "wrong_publisher"
+    assert "wrong_publisher" in exc_info.value.message
+
+
+def test_missing_subject_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    root = _root(tmp_path)
+    update_cache.ensure_cache_dirs(root)
+    exe_path = _write_exe(root)
+    state = _seed_extracted_state(root, exe_path)
+
+    monkeypatch.setattr("core.services.update_exe_trust._is_windows_platform", lambda: True)
+    monkeypatch.setattr(
+        "core.services.update_exe_trust.subprocess.run",
+        lambda *args, **kwargs: _completed_process(
+            {
+                "Status": "Valid",
+                "StatusMessage": "Signature verified.",
+                "Subject": "",
+                "Thumbprint": ALLOWED_SIGNER_THUMBPRINTS[0],
+                "Issuer": "CN=Issuer",
+            }
+        ),
+    )
+
+    with pytest.raises(ExecutableTrustError) as exc_info:
+        UpdateExecutableTrustService().verify(state["extracted"], root=root)
+
+    assert exc_info.value.code == "signature_check_failed"
+    assert "missing_signer_certificate" in exc_info.value.message
 
 
 def test_wrong_thumbprint_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -250,10 +309,11 @@ def test_wrong_thumbprint_fails_closed(tmp_path: Path, monkeypatch: pytest.Monke
         "core.services.update_exe_trust.subprocess.run",
         lambda *args, **kwargs: _completed_process(
             {
-                "status": "Valid",
-                "status_message": "Signature verified.",
-                "subject": "CN=True Good Craft, O=True Good Craft, C=US",
-                "thumbprint": "A" * 40,
+                "Status": "Valid",
+                "StatusMessage": "Signature verified.",
+                "Subject": "CN=True Good Craft, O=True Good Craft, C=US",
+                "Thumbprint": "A" * 40,
+                "Issuer": "CN=Issuer",
             }
         ),
     )
@@ -261,7 +321,8 @@ def test_wrong_thumbprint_fails_closed(tmp_path: Path, monkeypatch: pytest.Monke
     with pytest.raises(ExecutableTrustError) as exc_info:
         UpdateExecutableTrustService().verify(state["extracted"], root=root)
 
-    assert exc_info.value.code == "untrusted_signer"
+    assert exc_info.value.code == "wrong_thumbprint"
+    assert "wrong_thumbprint" in exc_info.value.message
 
 
 def test_missing_thumbprint_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -275,10 +336,11 @@ def test_missing_thumbprint_fails_closed(tmp_path: Path, monkeypatch: pytest.Mon
         "core.services.update_exe_trust.subprocess.run",
         lambda *args, **kwargs: _completed_process(
             {
-                "status": "Valid",
-                "status_message": "Signature verified.",
-                "subject": "CN=True Good Craft, O=True Good Craft, C=US",
-                "thumbprint": "",
+                "Status": "Valid",
+                "StatusMessage": "Signature verified.",
+                "Subject": "CN=True Good Craft, O=True Good Craft, C=US",
+                "Thumbprint": "",
+                "Issuer": "CN=Issuer",
             }
         ),
     )
@@ -286,7 +348,8 @@ def test_missing_thumbprint_fails_closed(tmp_path: Path, monkeypatch: pytest.Mon
     with pytest.raises(ExecutableTrustError) as exc_info:
         UpdateExecutableTrustService().verify(state["extracted"], root=root)
 
-    assert exc_info.value.code == "untrusted_signer"
+    assert exc_info.value.code == "wrong_thumbprint"
+    assert "wrong_thumbprint" in exc_info.value.message
 
 
 def test_powershell_failure_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -298,11 +361,72 @@ def test_powershell_failure_fails_closed(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setattr("core.services.update_exe_trust._is_windows_platform", lambda: True)
     monkeypatch.setattr(
         "core.services.update_exe_trust.subprocess.run",
-        lambda *args, **kwargs: _completed_process({}, returncode=1),
+        lambda *args, **kwargs: _completed_process({}, returncode=1, stderr="Get-AuthenticodeSignature failed"),
     )
 
     with pytest.raises(ExecutableTrustError) as exc_info:
         UpdateExecutableTrustService().verify(state["extracted"], root=root)
 
     assert exc_info.value.code == "signature_check_failed"
+    assert "powershell_nonzero_exit" in exc_info.value.message
     assert update_cache.read_state(root, active_version="1.0.4")["exe_verified"] is None
+
+
+def test_invalid_json_output_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    root = _root(tmp_path)
+    update_cache.ensure_cache_dirs(root)
+    exe_path = _write_exe(root)
+    state = _seed_extracted_state(root, exe_path)
+
+    monkeypatch.setattr("core.services.update_exe_trust._is_windows_platform", lambda: True)
+    monkeypatch.setattr(
+        "core.services.update_exe_trust.subprocess.run",
+        lambda *args, **kwargs: _completed_process("warning text before json"),
+    )
+
+    with pytest.raises(ExecutableTrustError) as exc_info:
+        UpdateExecutableTrustService().verify(state["extracted"], root=root)
+
+    assert exc_info.value.code == "signature_check_failed"
+    assert "invalid_authenticode_json" in exc_info.value.message
+    assert update_cache.read_state(root, active_version="1.0.4")["exe_verified"] is None
+
+
+def test_probe_uses_path_argument_and_shell_false(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    captured: dict[str, object] = {}
+    script_path = tmp_path / "probe-script.ps1"
+    script_path.write_text("param([string]$FilePath)", encoding="utf-8")
+
+    def _fake_run(*args, **kwargs):
+        captured["args"] = args[0]
+        captured["kwargs"] = kwargs
+        return _completed_process(
+            {
+                "Status": "Valid",
+                "StatusMessage": "Signature verified.",
+                "Subject": "CN=True Good Craft, O=True Good Craft, C=US",
+                "Thumbprint": ALLOWED_SIGNER_THUMBPRINTS[0],
+                "Issuer": "CN=Issuer",
+            }
+        )
+
+    monkeypatch.setattr("core.services.update_exe_trust.subprocess.run", _fake_run)
+    monkeypatch.setattr("core.services.update_exe_trust._powershell_executable", lambda: r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+    monkeypatch.setattr("core.services.update_exe_trust._write_authenticode_script", lambda: script_path)
+
+    exe_path = tmp_path / "BUS-Core.exe"
+    probe = update_exe_trust._probe_authenticode_signature(exe_path)
+
+    command = captured["args"]
+    kwargs = captured["kwargs"]
+
+    assert isinstance(command, list)
+    assert command[0] == r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+    assert "-File" in command
+    assert command[command.index("-File") + 1] == str(script_path)
+    assert "-FilePath" in command
+    assert command[-2] == "-FilePath"
+    assert command[-1] == str(exe_path)
+    assert kwargs["shell"] is False
+    assert probe.status == "Valid"
+    assert not script_path.exists()

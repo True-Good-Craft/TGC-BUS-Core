@@ -21,6 +21,19 @@ from core.config.update_policy import (
     validate_update_manifest_url,
 )
 
+ALLOWED_VERIFIED_LAUNCH_POLICIES = {"ask", "always_newest", "current_only"}
+DEFAULT_VERIFIED_LAUNCH_POLICY = "ask"
+
+
+def validate_verified_launch_policy(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("updates.verified_launch_policy must be a string")
+    normalized = value.strip().lower()
+    if normalized not in ALLOWED_VERIFIED_LAUNCH_POLICIES:
+        allowed = ", ".join(sorted(ALLOWED_VERIFIED_LAUNCH_POLICIES))
+        raise ValueError(f"updates.verified_launch_policy must be one of: {allowed}")
+    return normalized
+
 
 class LauncherConfig(BaseModel):
     auto_start_in_tray: bool = False
@@ -45,6 +58,7 @@ class UpdatesConfig(BaseModel):
     # Canonical update gateway served by Lighthouse.
     manifest_url: str = DEFAULT_UPDATE_MANIFEST_URL
     check_on_startup: bool = True
+    verified_launch_policy: Literal["ask", "always_newest", "current_only"] = DEFAULT_VERIFIED_LAUNCH_POLICY
 
     @field_validator("channel")
     @classmethod
@@ -55,6 +69,11 @@ class UpdatesConfig(BaseModel):
     @classmethod
     def _validate_manifest_url(cls, value: object) -> str:
         return validate_update_manifest_url(value)
+
+    @field_validator("verified_launch_policy")
+    @classmethod
+    def _validate_verified_launch_policy(cls, value: object) -> str:
+        return validate_verified_launch_policy(value)
 
 
 class Config(BaseModel):
@@ -161,6 +180,17 @@ def _sanitize_public_config_for_load(public: dict[str, Any]) -> dict[str, Any]:
                 sanitized.get("manifest_url"),
             )
             sanitized["manifest_url"] = DEFAULT_UPDATE_MANIFEST_URL
+
+    if "verified_launch_policy" in sanitized:
+        try:
+            sanitized["verified_launch_policy"] = validate_verified_launch_policy(sanitized["verified_launch_policy"])
+        except ValueError:
+            _log.warning(
+                "[updates] invalid configured verified_launch_policy %r; using %s for this load.",
+                sanitized.get("verified_launch_policy"),
+                DEFAULT_VERIFIED_LAUNCH_POLICY,
+            )
+            sanitized["verified_launch_policy"] = DEFAULT_VERIFIED_LAUNCH_POLICY
 
     public = dict(public)
     public["updates"] = sanitized

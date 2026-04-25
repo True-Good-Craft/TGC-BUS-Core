@@ -85,11 +85,7 @@ class UpdateService:
             return self._error_result("invalid_current_version", "Current version is not strict SemVer.")
 
         try:
-            _validate_manifest_url(manifest_url)
-            selected_channel = _validate_update_channel(channel)
-            manifest = self._fetch_manifest(manifest_url, REQUEST_TIMEOUT_SECONDS)
-            manifest = self._unwrap_manifest(manifest)
-            release = _resolve_manifest_release(manifest, selected_channel)
+            release = self.select_release(manifest_url=manifest_url, channel=channel)
 
             latest_version = release.version
             if not _is_semver(latest_version):
@@ -111,6 +107,13 @@ class UpdateService:
             return self._error_result("network_error", "Failed to fetch update manifest.")
         except Exception:
             return self._error_result("update_check_failed", "Update check failed.")
+
+    def select_release(self, *, manifest_url: str, channel: str) -> ManifestRelease:
+        _validate_manifest_url(manifest_url)
+        selected_channel = _validate_update_channel(channel)
+        manifest = self._fetch_manifest(manifest_url, REQUEST_TIMEOUT_SECONDS)
+        manifest = self._unwrap_manifest(manifest)
+        return _resolve_manifest_release(manifest, selected_channel)
 
     def _unwrap_manifest(self, manifest: Any) -> Any:
         if not self._require_signed_manifest and not _looks_like_signed_manifest(manifest):
