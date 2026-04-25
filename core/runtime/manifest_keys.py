@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from typing import Literal
 
@@ -17,13 +18,20 @@ class ManifestPublicKeyPolicy:
     status: ManifestKeyStatus = "active"
 
 
-# No production manifest signing key has been provisioned yet.
 # Future rotation model:
 # 1. Add the new public key as active.
 # 2. Publish manifests signed by the new key.
 # 3. Mark the previous key deprecated while old clients migrate.
 # 4. Revoke the previous key only after supported clients trust the replacement.
-PRODUCTION_MANIFEST_PUBLIC_KEYS: tuple[ManifestPublicKeyPolicy, ...] = ()
+PRODUCTION_MANIFEST_PUBLIC_KEY_ID = "bus-core-prod-ed25519-2026-04-25"
+PRODUCTION_MANIFEST_PUBLIC_KEY_B64 = "VHIfioWOPlzQUmN4F/TGLbA8lvsr/BCgHNT2bevNuPw="
+
+PRODUCTION_MANIFEST_PUBLIC_KEYS: tuple[ManifestPublicKeyPolicy, ...] = (
+    ManifestPublicKeyPolicy(
+        key_id=PRODUCTION_MANIFEST_PUBLIC_KEY_ID,
+        public_key=base64.b64decode(PRODUCTION_MANIFEST_PUBLIC_KEY_B64, validate=True),
+    ),
+)
 
 
 def production_manifest_key_policies() -> tuple[ManifestPublicKeyPolicy, ...]:

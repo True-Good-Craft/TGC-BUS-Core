@@ -1,11 +1,11 @@
 # 04_SECURITY_TRUST_AND_OPERATIONS
 
 - Document purpose: Fast trust, auth, enforcement, sensitive-operation, and audit reference for BUS Core, treating trust as a product requirement as well as a security concern.
-- Primary authority basis: `core/api/http.py`, `core/api/security.py`, `tgc/security.py`, `tgc/tokens.py`, `core/policy/*`, `core/secrets/manager.py`, `core/utils/export.py`, `core/services/capabilities/registry.py`, `pyproject.toml`, `SECURITY.md`, `docs/security/remediation_audit_log.md`.
+- Primary authority basis: `core/api/http.py`, `core/api/security.py`, `tgc/security.py`, `tgc/tokens.py`, `core/policy/*`, `core/secrets/manager.py`, `core/utils/export.py`, `core/services/capabilities/registry.py`, `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`, `pyproject.toml`, `SECURITY.md`, `docs/security/remediation_audit_log.md`.
 - Best use: Determine who can do what, where enforcement happens, and which trust splits remain live in code.
-- Refresh triggers: Session/auth changes, route guard changes, write-policy changes, secrets handling changes, backup/import flow changes, provider integration changes.
+- Refresh triggers: Session/auth changes, route guard changes, write-policy changes, secrets handling changes, backup/import flow changes, provider integration changes, manifest-signing changes.
 - Highest-risk drift areas: Split token authority, inconsistent route-local guard patterns, optional owner-policy enforcement, release-artifact validation absence, and license/manifest mismatch.
-- Key dependent files / modules: `core/api/http.py`, `core/api/security.py`, `tgc/security.py`, `tgc/state.py`, `tgc/tokens.py`, `core/policy/guard.py`, `core/secrets/manager.py`, `core/utils/export.py`, `core/services/capabilities/registry.py`.
+- Key dependent files / modules: `core/api/http.py`, `core/api/security.py`, `tgc/security.py`, `tgc/state.py`, `tgc/tokens.py`, `core/policy/guard.py`, `core/secrets/manager.py`, `core/utils/export.py`, `core/services/capabilities/registry.py`, `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`.
 
 ## Trust and Enforcement Matrix
 
@@ -28,8 +28,9 @@ Core trust is not only about preventing compromise. It is also about preserving 
 | Owner/tester commit gate | Canonical | `require_owner_commit()` | Selected write operations | Strict role/plan enforcement activates only when `BUS_POLICY_ENFORCE=1`. |
 | Dev-only gate | Canonical | `session_guard` path check plus `require_dev()` | `/dev/*` routes and detailed health | `/dev/*` stays hidden as 404 when disabled; when enabled, session auth still applies. |
 | Capability manifest validation | Canonical | HMAC signature in `core/services/capabilities/registry.py` | `/capabilities`, `/nodes.manifest.sync` | Local manifest trust only. |
-| Update manifest validation | Canonical | `core/services/update.py` | `/app/update/check` | URL/content-type/size/SemVer, channel selection, supported manifest-shape, and optional declared metadata shape validation. |
-| Release artifact validation | Drifted | No code path found | Update/install surface | Manifest metadata may include `sha256`, `size_bytes`, signature URL, publisher, signer, and artifact kind/type/platform, but the app still surfaces `download_url` without artifact checksum/signature/publisher/size verification. |
+| Update manifest validation | Canonical | `core/services/update.py` | `/app/update/check` | URL/content-type/size/SemVer, channel selection, supported manifest-shape, optional signed-manifest unwrapping, and optional declared metadata shape validation. |
+| Manifest authenticity primitives | Bridge groundwork | `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`, `scripts/sign_manifest.py`, release mirror workflow | Manifest metadata | Ed25519 verification and embedded signatures exist; production public key `bus-core-prod-ed25519-2026-04-25` is pinned, but client enforcement remains off and unsigned compatibility remains available. |
+| Release artifact validation | Drifted | No code path found | Update/install surface | Manifest metadata may include `sha256`, `size_bytes`, signature URL, publisher, signer, and artifact kind/type/platform, but the app still surfaces `download_url` without ZIP checksum, artifact signature, publisher, or artifact-size verification. |
 
 ## Trust model
 
@@ -111,6 +112,7 @@ This is the core trust boundary as implemented today: local runtime first, bound
 | Organizer plan routes | Canonical | `core/organizer/api.py` | Generates file-operation plans only under allowed roots. |
 | Plugin broker and transforms | Canonical | `core/runtime/core_alpha.py`, `core/api/http.py` | Runs provider probes and transform proposals; Windows plugin-host sandbox check exists. |
 | Update manifest host | Canonical | `core/services/update.py` | Outbound fetch only; security relevance is manifest validation, not install execution. |
+| Manifest signing key | Operational secret | GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY` | Private Ed25519 signing key must never be committed. Public key is pinned in Core and is safe to commit. |
 
 ## Logs and audit surfaces
 
@@ -136,6 +138,8 @@ This is the core trust boundary as implemented today: local runtime first, bound
 | `role`, `plan_only` | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` `policy.*`, with `%LOCALAPPDATA%\BUSCore\app\config.json` as legacy fallback only | Commit-policy inputs, only strictly enforced when `BUS_POLICY_ENFORCE=1`. |
 | Google client ID / secret / refresh token | Canonical | OS keyring or `%LOCALAPPDATA%\BUSCore\secrets\secrets.json.enc` | OAuth and Drive access. |
 | Capability HMAC key | Canonical | `%LOCALAPPDATA%\BUSCore\state\capabilities_hmac.key` | Signs capability manifest. |
+| Manifest signing private key | External release secret | GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY` | Used by release mirror only to sign public manifest metadata; private material must stay outside the repo. |
+| Manifest signing public key | Canonical public key | `core/runtime/manifest_keys.py` | Ed25519 production public key pinned as `bus-core-prod-ed25519-2026-04-25`; safe to commit. |
 
 ## Evidence-backed findings
 
@@ -146,8 +150,9 @@ This is the core trust boundary as implemented today: local runtime first, bound
 - Canonical: legacy alternate `/session/token` surfaces (`app.py`, `tgc/http.py`) were removed; `core/api/http.py` is the only supported bootstrap route.
 - Canonical: backup import/export paths enforce password-based decryption, exports-root path confinement, maintenance mode, and journal archiving during restore.
 - Canonical: update manifest fetch blocks localhost and literal private/loopback/link-local/unspecified IP hosts, rejects redirects, caps response size, validates allowed channel selection, and validates supported manifest shapes.
+- Canonical bridge groundwork: manifest authenticity support exists with Ed25519 canonical JSON verification, envelope support, backward-compatible embedded top-level signatures, and a pinned production public key. Release publication signs manifests before upload, but Core does not yet require signed manifests.
 - Canonical bridge groundwork: optional artifact metadata is validated for shape and retained internally as declared manifest-provided values by `ManifestRelease`.
-- Drifted: update/download path does not verify release artifact checksum, signature, publisher, or artifact size before surfacing `download_url` to the UI; current docs must describe these fields as declared/unverified only.
+- Drifted: update/download path does not verify release artifact checksum, artifact signature, publisher, or artifact size before surfacing `download_url` to the UI; current docs must describe these fields as declared/unverified only. ZIP hash verification and EXE Authenticode/publisher verification are future work.
 
 The current security posture is therefore trustworthy in some important local-first ways, but not yet fully consolidated. The right documentation posture is honesty about remaining auth, config, and release-validation drift rather than overstating cleanliness.
 
@@ -157,6 +162,6 @@ The current security posture is therefore trustworthy in some important local-fi
 
 ## Freeze Notes
 
-- Refresh on: token/session flow changes, route-guard changes, provider integration changes, restore/export changes, or policy enforcement changes.
+- Refresh on: token/session flow changes, route-guard changes, provider integration changes, restore/export changes, manifest-signing changes, or policy enforcement changes.
 - Fastest invalidators: consolidating token authority, moving ledger/finance to explicit route-local guards, changing secrets storage, or altering update validation behavior.
 - Check alongside: `02_API_AND_UI_CONTRACT_MAP.md` for route ownership and `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for update-path release validation details.

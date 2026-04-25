@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.0.4 **Updated:** 2026-04-24 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.0.4 **Updated:** 2026-04-25 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -96,17 +96,23 @@
 
 * `scripts/validate_version_governance.py` machine-checks the version mirrors, and `.github/workflows/governance-guard.yml` runs both governance validators on `push`, `pull_request`, and `workflow_dispatch`.
 
-* Canonical public release artifact naming MUST be `TGC-BUS-Core-<VERSION>.zip`; manifest download URLs MUST be absolute Lighthouse URLs in the form `https://lighthouse.buscore.ca/releases/TGC-BUS-Core-<VERSION>.zip`.
+* Canonical public release artifact naming MUST be `BUS-Core-<VERSION>.zip`; manifest download URLs MUST be absolute Lighthouse URLs in the form `https://lighthouse.buscore.ca/releases/BUS-Core-<VERSION>.zip`.
 
 * Current release automation publishes the stable manifest lane only. `updates.channel` exists structurally in Core configuration, but no current workflow publishes multiple channel manifests.
 
+* `.github/workflows/release-mirror.yml` is the manifest signing authority for release publication. It generates `stable.json`, signs it into `stable.signed.json` with `scripts/sign_manifest.py`, fails if GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY` is missing, verifies the signed manifest, and uploads the signed file as `manifest/core/stable.json`. Lighthouse serves/proxies the signed manifest but does not own signing authority.
+
 * Allowed Core update channels are `stable`, `test`, `partner-3dque`, `lts-1.1`, and `security-hotfix`. Non-stable channels MUST require an explicit channel-specific manifest entry and MUST NOT silently fall back to a public channel-less stable/latest manifest.
 
-* Current and future manifests MUST preserve backward compatibility for deployed Core clients by keeping top-level `latest.version` and `latest.download.url`. Additive metadata and a `channels` map are allowed, and `channels.stable` SHOULD mirror top-level `latest` unless a release owner intentionally documents a divergence.
+* Current and future manifests MUST preserve backward compatibility for deployed Core clients by keeping top-level `latest.version` and `latest.download.url`. Additive metadata, a `channels` map, and the top-level embedded `signature` object are allowed, and `channels.stable` SHOULD mirror top-level `latest` unless a release owner intentionally documents a divergence.
 
-* This release is an update-chain hardening bridge release. It validates and carries declared manifest metadata internally for future verification work, but it does not yet verify artifact hash, signature, publisher, or size.
+* Manifest authenticity support uses Ed25519. Embedded manifest signatures cover deterministic canonical JSON of the manifest with the top-level `signature` removed. The production public manifest key is pinned in Core with key ID `bus-core-prod-ed25519-2026-04-25`; the private signing key MUST NOT be committed and currently lives only in the GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`.
 
-* DB ownership / single-instance control is a prerequisite for any future staged/apply update flow. This bridge release does not add staged update application.
+* Client-side signed-manifest enforcement remains off and unsigned compatibility remains available. Manifest signature verification protects manifest metadata only when a client chooses or is later configured to require it.
+
+* This release is an update-chain hardening bridge release. It validates and carries declared manifest metadata internally for future verification work, but it does not yet verify artifact hash, artifact signature, publisher, or size.
+
+* BUS Core has a DB/app ownership lock that prevents multiple live owners of the same DB/app root. Launcher preflight blocks duplicate native launches before browser open / uvicorn bind, and the app-level lock remains defense-in-depth. This ownership lock is a prerequisite for future verified version handoff, but this bridge release does not add staged update application.
 
 * Windows code signing is currently a manual post-build ceremony. `scripts/build_core.ps1` builds the onefile EXE and prints optional `signtool sign` / `signtool verify` commands; it does not sign or verify artifacts automatically.
 
@@ -401,7 +407,11 @@
 
 
 *
-**Manifest validation:** Supported manifest shapes are legacy direct stable manifests, canonical top-level `latest`, `channels.<channel>`, and top-level channel-keyed entries. Stable remains backward-compatible with top-level `latest.version` and `latest.download.url`. Non-stable channels require an explicit channel-specific entry and must not fall back to channel-less public stable/latest metadata. Optional artifact metadata (`sha256`, `size_bytes`, `release_notes_url`, `signature_url`, artifact kind/type/platform, publisher, signer) is shape-validated when present.
+**Manifest validation and authenticity primitives:** Supported manifest shapes are legacy direct stable manifests, canonical top-level `latest`, `channels.<channel>`, top-level channel-keyed entries, signature envelopes, and backward-compatible embedded signatures. Stable remains backward-compatible with top-level `latest.version` and `latest.download.url`. Non-stable channels require an explicit channel-specific entry and must not fall back to channel-less public stable/latest metadata. Optional artifact metadata (`sha256`, `size_bytes`, `release_notes_url`, `signature_url`, artifact kind/type/platform, publisher, signer) is shape-validated when present. Ed25519 verification and deterministic JSON canonicalization exist, including embedded top-level signatures that cover the manifest with `signature` removed, but production enforcement remains off.
+
+
+*
+**Trusted manifest key policy:** Core pins production manifest public key ID `bus-core-prod-ed25519-2026-04-25`. Public keys are safe to commit; private manifest signing keys must stay outside the repo. Release signing currently uses GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`.
 
 
 *
@@ -410,6 +420,10 @@
 
 *
 **Backward-compatible manifest requirement:** Public manifests must keep top-level `latest.version` and `latest.download.url` so existing deployed BUS Core clients can still detect a newer version and open the Lighthouse-provided download link. Channel-aware and metadata-rich fields must remain additive.
+
+
+*
+**Local update cache/state skeleton:** `%LOCALAPPDATA%\BUSCore\updates\` exists as the future update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `verified_ready` exists only as a state shape; no real artifact download, hash verification, extraction, EXE signature/publisher verification, verified-ready write from real artifacts, or handoff launch exists yet.
 
 
 *
@@ -444,6 +458,20 @@
 * Remaining update-chain work includes artifact hash/signature/publisher/size verification, keeping the manual signing ceremony explicit, Docker release hardening if that lane becomes release-governed, and DB ownership/single-instance control before any staged/apply update path.
 
 * This bridge release still performs no auto-download, no staging, no install, no execution, and no artifact hash/signature/publisher/size verification.
+
+#### Secure Update Foundation (2026-04-25)
+
+* DB/app ownership locking prevents two live BUS Core owners from using the same DB/app root. Launcher preflight blocks a duplicate native instance before browser open / uvicorn bind, and the app-level lock remains defense-in-depth.
+
+* The update cache/state skeleton exists under `%LOCALAPPDATA%\BUSCore\updates\` with `manifests\`, `downloads\`, `versions\`, and `state.json`. `verified_ready` is a state shape only until real artifact verification and handoff code are implemented.
+
+* Manifest authenticity primitives support Ed25519 signatures, deterministic canonical JSON, signature envelopes, and embedded top-level signatures. Embedded signatures preserve public compatibility by keeping top-level `latest.version` and `latest.download.url`; the signature covers canonical JSON after removing top-level `signature`.
+
+* The production manifest public key is pinned in Core as `bus-core-prod-ed25519-2026-04-25`. Release publication signs manifests with `scripts/sign_manifest.py` using GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`; the helper has no publishing side effects and removes any previous top-level signature before signing.
+
+* `.github/workflows/release-mirror.yml` now signs generated `stable.json` into `stable.signed.json`, verifies backward-compatible fields plus `signature.alg` / `signature.key_id`, verifies the embedded signature with Core's pinned public key policy, and uploads the signed manifest as `manifest/core/stable.json`.
+
+* Enforcement is deliberately not enabled: unsigned manifest compatibility remains available, no client requires signed manifests, no artifact verification is enforced, and no download/extraction/handoff/update-button behavior exists.
 
 
 
@@ -1404,7 +1432,7 @@ latest.download.sha256 (string, lowercase hex)
 
 latest.size_bytes (integer)
 
-Optional future-compatible fields may include a top-level `channels` map and declared artifact metadata such as `latest.download.signature_url`, artifact kind/type/platform, publisher, and signer. These fields are additive and must not require removing or renaming top-level `latest.version` or `latest.download.url`.
+Optional future-compatible fields may include a top-level `channels` map, a top-level embedded `signature` object, and declared artifact metadata such as `latest.download.signature_url`, artifact kind/type/platform, publisher, and signer. These fields are additive and must not require removing or renaming top-level `latest.version` or `latest.download.url`.
 
 4.3 Manifest determinism rules
 
@@ -1412,9 +1440,9 @@ The manifest is the single source of truth for “latest release” metadata.
 
 Publishing a new release requires `core/version.py::VERSION`, the strict external release tag `v{VERSION}`, and hosted manifest metadata to agree. The release mirror workflow machine-checks that tag/version match before publishing manifest metadata.
 
-Canonical public release assets referenced by Lighthouse/manifest metadata MUST use `TGC-BUS-Core-<VERSION>.zip` naming.
+Canonical public release assets referenced by Lighthouse/manifest metadata MUST use `BUS-Core-<VERSION>.zip` naming.
 
-Manifest must never contain placeholders or non-JSON tokens. Checksum, size, release-notes, signature, publisher, signer, and artifact-kind fields are currently validated for shape and may be retained internally as declared manifest metadata, but Core does not verify those artifact claims unless future code explicitly starts enforcing them.
+Manifest must never contain placeholders or non-JSON tokens. Release publication signs the manifest metadata with an embedded Ed25519 `signature` object, but client-side signature enforcement remains off. Checksum, size, release-notes, artifact signature URL, publisher, signer, and artifact-kind fields are currently validated for shape and may be retained internally as declared manifest metadata, but Core does not verify artifact bytes or artifact publisher claims unless future code explicitly starts enforcing them.
 
 (5) LIGHTHOUSE SERVICE CONTRACT
 
@@ -1478,7 +1506,7 @@ GET /app/update/check remains the canonical in-app one-shot check surface
 
 Core sot
 
-Manifest checksum, size, release-notes, and signature-style metadata are declared metadata only. Core may validate their shape and retain them internally, but they remain unverified until explicit artifact verification is implemented.
+Manifest checksum, size, release-notes, and artifact signature-style metadata are declared metadata only. Core may validate their shape and retain them internally, but they remain unverified until explicit artifact verification is implemented. Manifest authenticity primitives exist separately for Ed25519-signed manifest metadata; production client enforcement is not enabled yet.
 
 Lighthouse is allowed to exist as the public manifest proxy + download redirect target that Core and the website can point at. This does not convert Core into a telemetry product.
 

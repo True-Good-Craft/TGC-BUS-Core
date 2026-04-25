@@ -1,4 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+"""Sign a BUS Core manifest for a local/manual release ceremony.
+
+Private signing keys must live outside this repository. In automation, provide
+the key from a GitHub Actions secret; for local use, pass an external key file.
+Accepted private key encodings are unencrypted PEM PKCS8 Ed25519 text or base64
+raw 32-byte Ed25519 seed material. Before production enforcement is enabled,
+the matching public key must be pinned in Core. This helper only writes a signed
+manifest JSON file; it does not publish, upload, or mutate release state.
+"""
+
 from __future__ import annotations
 
 import argparse

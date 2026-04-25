@@ -9,6 +9,9 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from core.runtime.manifest_keys import (
     ManifestPublicKeyPolicy,
+    PRODUCTION_MANIFEST_PUBLIC_KEY_B64,
+    PRODUCTION_MANIFEST_PUBLIC_KEY_ID,
+    PRODUCTION_MANIFEST_PUBLIC_KEYS,
     active_manifest_public_keys,
     production_manifest_key_policies,
 )
@@ -39,9 +42,15 @@ def _signed_envelope(payload: dict, *, key_id: str):
     )
 
 
-def test_production_key_policy_is_empty_until_key_provisioning():
-    assert production_manifest_key_policies() == ()
-    assert active_manifest_public_keys() == {}
+def test_production_key_policy_contains_pinned_release_key():
+    assert production_manifest_key_policies() == PRODUCTION_MANIFEST_PUBLIC_KEYS
+    assert len(PRODUCTION_MANIFEST_PUBLIC_KEYS) == 1
+
+    policy = PRODUCTION_MANIFEST_PUBLIC_KEYS[0]
+    assert policy.key_id == PRODUCTION_MANIFEST_PUBLIC_KEY_ID
+    assert base64.b64encode(policy.public_key).decode("ascii") == PRODUCTION_MANIFEST_PUBLIC_KEY_B64
+    assert active_manifest_public_keys() == {policy.key_id: policy.public_key}
+    assert len(policy.public_key) == 32
 
 
 def test_trusted_key_policy_shape_and_active_filter():
