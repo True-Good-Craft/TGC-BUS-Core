@@ -30,7 +30,9 @@ Core trust is not only about preventing compromise. It is also about preserving 
 | Capability manifest validation | Canonical | HMAC signature in `core/services/capabilities/registry.py` | `/capabilities`, `/nodes.manifest.sync` | Local manifest trust only. |
 | Update manifest validation | Canonical | `core/services/update.py` | `/app/update/check` | URL/content-type/size/SemVer, channel selection, supported manifest-shape, optional signed-manifest unwrapping, and optional declared metadata shape validation. |
 | Manifest authenticity primitives | Bridge groundwork | `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`, `scripts/sign_manifest.py`, release mirror workflow | Manifest metadata | Ed25519 verification and embedded signatures exist; production public key `bus-core-prod-ed25519-2026-04-25` is pinned, but client enforcement remains off and unsigned compatibility remains available. |
-| Release artifact validation | Drifted | No code path found | Update/install surface | Manifest metadata may include `sha256`, `size_bytes`, signature URL, publisher, signer, and artifact kind/type/platform, but the app still surfaces `download_url` without ZIP checksum, artifact signature, publisher, or artifact-size verification. |
+| Release artifact hash verification | Bridge groundwork | `core/services/update_artifact.py`, `core/runtime/update_cache.py` | Cached ZIP under `updates\downloads\` | Internal helper requires declared `sha256`, enforces declared `size_bytes` when present, verifies the downloaded ZIP against signed manifest metadata, and records `hash_verified` only. |
+| Safe ZIP extraction | Bridge groundwork | `core/services/update_extract.py`, `core/runtime/update_cache.py` | Local update cache under `updates\versions\<version>\` | Internal helper stages extraction through a temp dir, rejects zip-slip / absolute / escaping / suspicious entries, requires exactly one `.exe`, and records `extracted` only. |
+| Executable trust verification | Drifted | No Authenticode/publisher verification path found | Extracted EXE | Extracted artifacts are not yet publisher-verified or runnable-trusted; `verified_ready` and handoff remain future work. |
 
 ## Trust model
 
@@ -152,7 +154,7 @@ This is the core trust boundary as implemented today: local runtime first, bound
 - Canonical: update manifest fetch blocks localhost and literal private/loopback/link-local/unspecified IP hosts, rejects redirects, caps response size, validates allowed channel selection, and validates supported manifest shapes.
 - Canonical bridge groundwork: manifest authenticity support exists with Ed25519 canonical JSON verification, envelope support, backward-compatible embedded top-level signatures, and a pinned production public key. Release publication signs manifests before upload, but Core does not yet require signed manifests.
 - Canonical bridge groundwork: optional artifact metadata is validated for shape and retained internally as declared manifest-provided values by `ManifestRelease`.
-- Drifted: update/download path does not verify release artifact checksum, artifact signature, publisher, or artifact size before surfacing `download_url` to the UI; current docs must describe these fields as declared/unverified only. ZIP hash verification and EXE Authenticode/publisher verification are future work.
+- Narrowed drift: internal helpers now hash-verify downloaded release ZIPs against signed manifest metadata and safely extract them into the local update cache, but `/app/update/check` still only surfaces `download_url` and executable trust is incomplete until EXE Authenticode/publisher verification exists.
 
 The current security posture is therefore trustworthy in some important local-first ways, but not yet fully consolidated. The right documentation posture is honesty about remaining auth, config, and release-validation drift rather than overstating cleanliness.
 

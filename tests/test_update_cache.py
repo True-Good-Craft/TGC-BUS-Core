@@ -19,6 +19,7 @@ def _valid_state(root: Path) -> dict:
     return {
         "schema": 1,
         "active_version": "1.0.4",
+        "extracted": None,
         "verified_ready": {
             "version": "1.0.5",
             "channel": "stable",
@@ -134,6 +135,61 @@ def test_hash_verified_round_trips_and_normalizes_download_path(tmp_path):
     assert written["hash_verified"]["artifact_path"] == str((root / "downloads" / "BUS-Core-1.0.5-stable.zip").resolve())
     assert written["hash_verified"]["sha256"] == "a" * 64
     assert written["verified_ready"]["version"] == "1.0.5"
+
+
+def test_extracted_round_trips_and_normalizes_version_paths(tmp_path):
+    root = _root(tmp_path)
+    state = _valid_state(root)
+    state["hash_verified"] = {
+        "version": "1.0.5",
+        "channel": "stable",
+        "artifact_path": str(root / "downloads" / "BUS-Core-1.0.5-stable.zip"),
+        "sha256": "a" * 64,
+        "size_bytes": 123,
+        "downloaded": True,
+        "hash_verified": True,
+        "downloaded_at": "2026-04-25T12:00:00Z",
+        "verified_at": "2026-04-25T12:00:00Z",
+    }
+    state["extracted"] = {
+        "version": "1.0.5",
+        "channel": "stable",
+        "artifact_path": str(root / "downloads" / "BUS-Core-1.0.5-stable.zip"),
+        "extracted_dir": str(root / "versions" / "1.0.5"),
+        "exe_path": str(root / "versions" / "1.0.5" / "BUS-Core-1.0.5.exe"),
+        "sha256": "B" * 64,
+        "size_bytes": 123,
+        "extracted_at": "2026-04-25T12:01:00Z",
+    }
+
+    written = update_cache.write_state(state, root, active_version="1.0.4")
+
+    assert written["extracted"]["artifact_path"] == str((root / "downloads" / "BUS-Core-1.0.5-stable.zip").resolve())
+    assert written["extracted"]["extracted_dir"] == str((root / "versions" / "1.0.5").resolve())
+    assert written["extracted"]["exe_path"] == str((root / "versions" / "1.0.5" / "BUS-Core-1.0.5.exe").resolve())
+    assert written["extracted"]["sha256"] == "b" * 64
+
+
+def test_existing_state_without_extracted_remains_compatible(tmp_path):
+    root = _root(tmp_path)
+    update_cache.ensure_cache_dirs(root)
+    legacy_state = {
+        "schema": 1,
+        "active_version": "1.0.4",
+        "hash_verified": None,
+        "verified_ready": None,
+        "handoff": {
+            "last_attempted_version": None,
+            "attempt_count": 0,
+            "last_result": None,
+        },
+    }
+    (root / "state.json").write_text(json.dumps(legacy_state), encoding="utf-8")
+
+    state = update_cache.read_state(root, active_version="1.0.4")
+
+    assert state["extracted"] is None
+    assert state["hash_verified"] is None
 
 
 def test_hash_verified_rejects_path_outside_downloads_dir(tmp_path):

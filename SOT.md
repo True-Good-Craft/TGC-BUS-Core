@@ -110,7 +110,7 @@
 
 * Client-side signed-manifest enforcement remains off and unsigned compatibility remains available. Manifest signature verification protects manifest metadata only when a client chooses or is later configured to require it.
 
-* This release is an update-chain hardening bridge release. It validates and carries declared manifest metadata internally for future verification work, but it does not yet verify artifact hash, artifact signature, publisher, or size.
+* This release is an update-chain hardening bridge release. It validates and carries declared manifest metadata internally, can hash-verify downloaded ZIP artifacts against signed manifest `sha256` metadata while enforcing declared size when present, and can safely extract those hash-verified ZIPs into the local update cache. It still does not verify EXE Authenticode/publisher trust, promote `verified_ready`, or launch anything.
 
 * BUS Core has a DB/app ownership lock that prevents multiple live owners of the same DB/app root. Launcher preflight blocks duplicate native launches before browser open / uvicorn bind, and the app-level lock remains defense-in-depth. This ownership lock is a prerequisite for future verified version handoff, but this bridge release does not add staged update application.
 
@@ -412,18 +412,21 @@
 
 *
 **Trusted manifest key policy:** Core pins production manifest public key ID `bus-core-prod-ed25519-2026-04-25`. Public keys are safe to commit; private manifest signing keys must stay outside the repo. Release signing currently uses GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`.
+*
+**Trusted manifest key policy:** Core pins production manifest public key ID `bus-core-prod-ed25519-2026-04-25`. Public keys are safe to commit; private manifest signing keys must stay outside the repo. Release signing currently uses GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`.
+*
+**Backward-compatible manifest requirement:** Public manifests must keep top-level `latest.version` and `latest.download.url` so existing deployed BUS Core clients can still detect a newer version and open the Lighthouse-provided download link. Channel-aware and metadata-rich fields must remain additive.
 
 
 *
-**ManifestRelease metadata:** `core.services.update.ManifestRelease` carries selected manifest metadata internally as declared, manifest-provided values. These values are not trusted or verified until a future artifact verification phase consumes them.
-
+**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `extracted` does not mean trusted or runnable. `verified_ready` remains forbidden until EXE Authenticode/publisher verification exists.
 
 *
 **Backward-compatible manifest requirement:** Public manifests must keep top-level `latest.version` and `latest.download.url` so existing deployed BUS Core clients can still detect a newer version and open the Lighthouse-provided download link. Channel-aware and metadata-rich fields must remain additive.
 
 
 *
-**Local update cache/state skeleton:** `%LOCALAPPDATA%\BUSCore\updates\` exists as the future update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `verified_ready` exists only as a state shape; no real artifact download, hash verification, extraction, EXE signature/publisher verification, verified-ready write from real artifacts, or handoff launch exists yet.
+**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `extracted` does not mean trusted or runnable. `verified_ready` remains forbidden until EXE Authenticode/publisher verification exists.
 
 
 *
@@ -443,7 +446,7 @@
 
 * The previous hidden 15-minute stale recheck loop and `bus.updates.last_success_ms` tracking were removed.
 
-* This correction did not add auto-update behavior and did not add artifact hash/signature/publisher/size verification.
+* This correction did not add auto-update behavior. Later bridge work added internal ZIP hash verification plus safe extraction helpers, but it still did not add executable trust verification, verified-ready promotion, handoff, or UI-driven update application.
 
 #### Phase 1-3 Bridge Hardening (2026-04-24)
 
@@ -455,15 +458,15 @@
 
 * Phase 3 fix restored the public API error-code contract: policy-blocked localhost/private/link-local/loopback/unspecified manifest URLs return `manifest_url_not_allowed`, while malformed URLs and bad schemes remain `invalid_manifest_url`.
 
-* Remaining update-chain work includes artifact hash/signature/publisher/size verification, keeping the manual signing ceremony explicit, Docker release hardening if that lane becomes release-governed, and DB ownership/single-instance control before any staged/apply update path.
+* Remaining update-chain work includes EXE Authenticode/publisher verification, `verified_ready` promotion rules, safe handoff/launch behavior, keeping the manual signing ceremony explicit, Docker release hardening if that lane becomes release-governed, and preserving DB ownership/single-instance control before any staged/apply update path.
 
-* This bridge release still performs no auto-download, no staging, no install, no execution, and no artifact hash/signature/publisher/size verification.
+* This bridge release still performs no auto-download, no auto-install, no executable launch, and no handoff. Artifact download and extraction exist only as internal helpers; executable trust verification is still incomplete.
 
 #### Secure Update Foundation (2026-04-25)
 
 * DB/app ownership locking prevents two live BUS Core owners from using the same DB/app root. Launcher preflight blocks a duplicate native instance before browser open / uvicorn bind, and the app-level lock remains defense-in-depth.
 
-* The update cache/state skeleton exists under `%LOCALAPPDATA%\BUSCore\updates\` with `manifests\`, `downloads\`, `versions\`, and `state.json`. `verified_ready` is a state shape only until real artifact verification and handoff code are implemented.
+* The update cache/state model now supports conservative `hash_verified` and `extracted` stages under `%LOCALAPPDATA%\BUSCore\updates\state.json`. `hash_verified` means the cached ZIP matched signed manifest hash metadata; `extracted` means that hash-verified ZIP was safely unpacked into `updates\versions\<version>\`. Neither state means the EXE is trusted or runnable.
 
 * Manifest authenticity primitives support Ed25519 signatures, deterministic canonical JSON, signature envelopes, and embedded top-level signatures. Embedded signatures preserve public compatibility by keeping top-level `latest.version` and `latest.download.url`; the signature covers canonical JSON after removing top-level `signature`.
 
@@ -471,7 +474,9 @@
 
 * `.github/workflows/release-mirror.yml` now signs generated `stable.json` into `stable.signed.json`, verifies backward-compatible fields plus `signature.alg` / `signature.key_id`, verifies the embedded signature with Core's pinned public key policy, and uploads the signed manifest as `manifest/core/stable.json`.
 
-* Enforcement is deliberately not enabled: unsigned manifest compatibility remains available, no client requires signed manifests, no artifact verification is enforced, and no download/extraction/handoff/update-button behavior exists.
+* Internal helpers can download a ZIP into `updates\downloads\`, verify SHA256 and optional declared size against signed manifest metadata, then safely extract that ZIP into `updates\versions\<version>\` through a temporary extraction directory while rejecting unsafe archive contents and zero/multiple EXE candidates.
+
+* Enforcement is deliberately incomplete: unsigned manifest compatibility remains available, no client requires signed manifests, no EXE Authenticode/publisher verification exists yet, `verified_ready` is not written, and no handoff/update-button behavior exists.
 
 
 
@@ -1442,7 +1447,7 @@ Publishing a new release requires `core/version.py::VERSION`, the strict externa
 
 Canonical public release assets referenced by Lighthouse/manifest metadata MUST use `BUS-Core-<VERSION>.zip` naming.
 
-Manifest must never contain placeholders or non-JSON tokens. Release publication signs the manifest metadata with an embedded Ed25519 `signature` object, but client-side signature enforcement remains off. Checksum, size, release-notes, artifact signature URL, publisher, signer, and artifact-kind fields are currently validated for shape and may be retained internally as declared manifest metadata, but Core does not verify artifact bytes or artifact publisher claims unless future code explicitly starts enforcing them.
+Manifest must never contain placeholders or non-JSON tokens. Release publication signs the manifest metadata with an embedded Ed25519 `signature` object, but client-side signature enforcement remains off. Checksum, size, release-notes, artifact signature URL, publisher, signer, and artifact-kind fields are currently validated for shape and may be retained internally as declared manifest metadata. Internal helpers may verify cached ZIP bytes against declared manifest `sha256` metadata and declared size when present, but Core does not yet verify executable Authenticode/publisher claims or treat extracted artifacts as runnable-trusted.
 
 (5) LIGHTHOUSE SERVICE CONTRACT
 
@@ -1506,7 +1511,7 @@ GET /app/update/check remains the canonical in-app one-shot check surface
 
 Core sot
 
-Manifest checksum, size, release-notes, and artifact signature-style metadata are declared metadata only. Core may validate their shape and retain them internally, but they remain unverified until explicit artifact verification is implemented. Manifest authenticity primitives exist separately for Ed25519-signed manifest metadata; production client enforcement is not enabled yet.
+Manifest checksum, size, release-notes, and artifact signature-style metadata are declared manifest metadata. Core validates their shape and retains them internally; internal helpers may use `sha256` and `size_bytes` to hash-verify a cached ZIP artifact, but executable trust is still incomplete until Authenticode/publisher verification is implemented. Manifest authenticity primitives exist separately for Ed25519-signed manifest metadata; production client enforcement is not enabled yet.
 
 Lighthouse is allowed to exist as the public manifest proxy + download redirect target that Core and the website can point at. This does not convert Core into a telemetry product.
 

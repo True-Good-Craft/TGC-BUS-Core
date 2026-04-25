@@ -1,0 +1,22 @@
+{
+  "active_version": "1.0.4",
+  "extracted": null,
+  "handoff": {
+    "attempt_count": 0,
+    "last_attempted_version": null,
+    "last_result": null
+  },
+  "hash_verified": {
+    "artifact_path": "C:\\Dev\\TGC-BUS-Core\\.codex-pytest-tmp-docs3\\test_download_success_writes_f0\\LocalAppData\\BUSCore\\updates\\downloads\\BUS-Core-1.0.5-stable.zip",
+    "channel": "stable",
+    "downloaded": true,
+    "downloaded_at": "2026-04-25T19:29:44.539095Z",
+    "hash_verified": true,
+    "sha256": "c847de74fd5231fc9051fbb4707c6330fa7439c34780d3f5ab0fe41843cc7f8f",
+    "size_bytes": 24,
+    "verified_at": "2026-04-25T19:29:44.539095Z",
+    "version": "1.0.5"
+  },
+  "schema": 1,
+  "verified_ready": null
+}

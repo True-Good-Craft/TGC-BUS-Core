@@ -60,6 +60,7 @@ def default_state(active_version: str = CURRENT_VERSION) -> dict[str, Any]:
         "schema": STATE_SCHEMA,
         "active_version": active_version,
         "hash_verified": None,
+        "extracted": None,
         "verified_ready": None,
         "handoff": {
             "last_attempted_version": None,
@@ -104,6 +105,7 @@ def validate_state(state: Any, root: Path | None = None, *, active_version: str 
 
     effective_active = active_version if _is_semver(active_version) else stored_active
     hash_verified = _validate_hash_verified(state.get("hash_verified"), root or cache_root(), effective_active)
+    extracted = _validate_extracted(state.get("extracted"), root or cache_root(), effective_active)
     verified_ready = _validate_verified_ready(state.get("verified_ready"), root or cache_root(), effective_active)
     handoff = _validate_handoff(state.get("handoff"))
 
@@ -111,6 +113,7 @@ def validate_state(state: Any, root: Path | None = None, *, active_version: str 
         "schema": STATE_SCHEMA,
         "active_version": stored_active,
         "hash_verified": hash_verified,
+        "extracted": extracted,
         "verified_ready": verified_ready,
         "handoff": handoff,
     }
@@ -207,6 +210,62 @@ def _validate_verified_ready(value: Any, root: Path, active_version: str) -> dic
     }
 
 
+def _validate_extracted(value: Any, root: Path, active_version: str) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise UpdateCacheStateError("extracted must be null or an object")
+
+    version = value.get("version")
+    if not isinstance(version, str) or not _is_semver(version):
+        raise UpdateCacheStateError("extracted.version must be strict SemVer")
+    if _is_semver(active_version) and _parse_semver(version) <= _parse_semver(active_version):
+        raise UpdateCacheStateError("extracted.version must be newer than active_version")
+
+    channel = validate_update_channel(value.get("channel"))
+
+    artifact_path = value.get("artifact_path")
+    if not isinstance(artifact_path, str) or not artifact_path.strip():
+        raise UpdateCacheStateError("extracted.artifact_path must be a non-empty string")
+    normalized_artifact = _normalize_confined_path(Path(artifact_path), downloads_dir(root))
+
+    extracted_dir = value.get("extracted_dir")
+    if not isinstance(extracted_dir, str) or not extracted_dir.strip():
+        raise UpdateCacheStateError("extracted.extracted_dir must be a non-empty string")
+    normalized_dir = _normalize_confined_path(Path(extracted_dir), versions_dir(root))
+    expected_dir = (versions_dir(root) / version).resolve(strict=False)
+    if normalized_dir != expected_dir:
+        raise UpdateCacheStateError("extracted.extracted_dir must match versions/<version>")
+
+    exe_path = value.get("exe_path")
+    if not isinstance(exe_path, str) or not exe_path.strip():
+        raise UpdateCacheStateError("extracted.exe_path must be a non-empty string")
+    normalized_exe = _normalize_confined_path(Path(exe_path), normalized_dir)
+
+    sha256 = value.get("sha256")
+    if not isinstance(sha256, str) or not re.fullmatch(r"[A-Fa-f0-9]{64}", sha256):
+        raise UpdateCacheStateError("extracted.sha256 must be 64 hex characters")
+
+    size_bytes = value.get("size_bytes")
+    if size_bytes is not None and (type(size_bytes) is not int or size_bytes <= 0):
+        raise UpdateCacheStateError("extracted.size_bytes must be null or a positive integer")
+
+    extracted_at = value.get("extracted_at")
+    if not isinstance(extracted_at, str) or not extracted_at.strip():
+        raise UpdateCacheStateError("extracted.extracted_at must be a non-empty string")
+
+    return {
+        "version": version,
+        "channel": channel,
+        "artifact_path": str(normalized_artifact),
+        "extracted_dir": str(normalized_dir),
+        "exe_path": str(normalized_exe),
+        "sha256": sha256.lower(),
+        "size_bytes": size_bytes,
+        "extracted_at": extracted_at,
+    }
+
+
 def _validate_handoff(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise UpdateCacheStateError("handoff must be an object")
@@ -241,7 +300,7 @@ def _normalize_confined_path(path: Path, allowed_root: Path) -> Path:
     try:
         resolved_path.relative_to(resolved_root)
     except ValueError as exc:
-        raise UpdateCacheStateError("update cache path escapes versions directory") from exc
+        raise UpdateCacheStateError("update cache path escapes allowed directory") from exc
     return resolved_path
 
 

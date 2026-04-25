@@ -24,11 +24,12 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 | Update-check route contract | `core/api/routes/update.py` | UI Settings/update notice consumes this response | Canonical | Fixed six-field response. |
 | Update manifest URL | `%LOCALAPPDATA%\BUSCore\config.json` `updates.manifest_url` | `SOT.md` | Canonical | Code and docs use the Lighthouse endpoint. |
 | Manifest `download_url` | `core/services/update.py` extracts and returns it | UI opens it in browser | Canonical | No artifact verification beyond manifest parsing, optional manifest signature support, and metadata validation. |
-| Manifest checksum / hash | `core/services/update.py` validates and carries declared metadata when present | Manifest may publish `sha256` metadata | Bridge groundwork | Update-check path retains declared metadata internally but does not verify artifact bytes. |
-| Local update cache/state skeleton | `core/runtime/update_cache.py` / update state model | Future verified handoff | Bridge groundwork | `%LOCALAPPDATA%\BUSCore\updates\` can hold `manifests\`, `downloads\`, `versions\`, and `state.json`; `verified_ready` is a shape only. |
+| Manifest checksum / hash | `core/services/update_artifact.py` plus `core/runtime/update_cache.py` | Internal update cache helper | Bridge groundwork | Internal download helper requires manifest-declared `sha256`, enforces `size_bytes` when present, verifies the cached ZIP bytes, and records `hash_verified` only. |
+| Safe extraction stage | `core/services/update_extract.py` plus `core/runtime/update_cache.py` | Internal update cache helper | Bridge groundwork | Internal extraction helper safely unpacks `hash_verified` ZIPs into `updates\versions\<version>\`, requires exactly one EXE candidate, and records `extracted` only. |
+| Local update cache/state lifecycle | `core/runtime/update_cache.py` / update state model | Future verified handoff | Bridge groundwork | `%LOCALAPPDATA%\BUSCore\updates\` holds `manifests\`, `downloads\`, `versions\`, and `state.json`; live conservative stages are now `hash_verified` and `extracted`, while `verified_ready` remains forbidden until executable trust verification exists. |
 | DB/app ownership lock | Launcher preflight plus app-level lock | Future verified handoff prerequisite | Canonical | Same DB/app root cannot have two live BUS Core owners. |
 | Manifest channel selection | `core/config/update_policy.py` + `core/services/update.py` | Configured channel decides selected release entry | Canonical | Non-stable channels require explicit channel-specific entries and must not fall back to public latest. |
-| Release artifact signature verification | No in-app verification path found | Build script prints manual signing hints only | Drifted but explicit | README and docs must not imply automatic signed-release enforcement. |
+| EXE Authenticode / publisher verification | No in-app verification path found | Build script prints manual signing hints only | Drifted but explicit | README and docs must not imply executable trust or automatic signed-release enforcement yet. |
 
 ## Build and package outputs
 
@@ -68,7 +69,7 @@ Manifest compatibility is a release boundary for this bridge release: deployed c
 5. Service validates the manifest URL and configured channel, fetches JSON with timeout and size caps, normalizes supported manifest shapes, supports signed manifest unwrapping when present, validates optional metadata shape, and compares the selected release version against runtime `VERSION`.
 6. Route returns normalized response keys: `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message`.
 7. UI exposes `download_url` in a browser tab when an update is available.
-8. No in-app download, installer handoff, ZIP checksum verification, artifact signature verification, publisher verification, or artifact-size verification is implemented. Client-side signed-manifest enforcement is also not enabled yet; unsigned compatibility remains available.
+8. `/app/update/check` still does not trigger in-app download or handoff. Separate internal helpers can download a release ZIP into `updates\downloads\`, verify its SHA256 against signed manifest metadata, enforce declared size when present, and safely extract it into `updates\versions\<version>\`, but no EXE Authenticode/publisher verification, `verified_ready` transition, launch, or installer behavior is implemented. Client-side signed-manifest enforcement is also not enabled yet; unsigned compatibility remains available.
 
 Update checks are part of the trust model because they are optional and non-blocking. Core remains usable without them, and an unavailable manifest host should not prevent normal local operation.
 
@@ -86,6 +87,8 @@ Update checks are part of the trust model because they are optional and non-bloc
 | Embedded manifest signing publication | Yes | Yes | Yes | Canonical |
 | Client requires signed manifest | No | Future work only | No | Explicitly not enabled |
 | Local update cache/state skeleton | Yes | Yes | No | Bridge groundwork |
+| `hash_verified` state from real artifacts | Yes | Yes | No | Conservative state only; downloaded ZIP matched signed manifest metadata |
+| `extracted` state from real artifacts | Yes | Yes | No | Conservative state only; safe ZIP extraction completed, but executable trust is not established |
 | `verified_ready` state from real artifacts | No | Future work only | No | Shape only; no real artifact verification writes yet |
 | Release notes link from manifest | Internal declared metadata only | Yes | No | Bridge groundwork |
 | Manifest checksum/hash use | Internal declared metadata only | Yes | No | Bridge groundwork |
@@ -127,7 +130,7 @@ Known remaining release/update work is explicit: enabling client-side signed-man
 - `VERSION` remains the only value allowed into release tags, published manifest `latest.version`, and update comparison logic.
 - `INTERNAL_VERSION` is for repo working-revision tracking only.
 - `.github/workflows/release-mirror.yml` now machine-checks `tag == v{VERSION}` before publishing release metadata.
-- Remaining unresolved drift is narrow and explicit: manifests are signed during release publication, but client enforcement is still off; manifest checksum/artifact-signature/publisher/size metadata may be published and retained internally as declared metadata, but the app does not verify artifact bytes or publisher identity, and release history still depends on GitHub release metadata plus matching BUS-Core assets.
+- Remaining unresolved drift is narrow and explicit: manifests are signed during release publication, but client enforcement is still off; manifest checksum/artifact-signature/publisher/size metadata may be published and retained internally as declared metadata, internal helpers can hash-verify cached ZIP bytes against signed manifest metadata, executable publisher identity is still unverified, and release history still depends on GitHub release metadata plus matching BUS-Core assets.
 
 ## Manifest Key Rotation
 
