@@ -59,6 +59,7 @@ def default_state(active_version: str = CURRENT_VERSION) -> dict[str, Any]:
     return {
         "schema": STATE_SCHEMA,
         "active_version": active_version,
+        "hash_verified": None,
         "verified_ready": None,
         "handoff": {
             "last_attempted_version": None,
@@ -102,14 +103,72 @@ def validate_state(state: Any, root: Path | None = None, *, active_version: str 
         raise UpdateCacheStateError("active_version must be strict SemVer")
 
     effective_active = active_version if _is_semver(active_version) else stored_active
+    hash_verified = _validate_hash_verified(state.get("hash_verified"), root or cache_root(), effective_active)
     verified_ready = _validate_verified_ready(state.get("verified_ready"), root or cache_root(), effective_active)
     handoff = _validate_handoff(state.get("handoff"))
 
     return {
         "schema": STATE_SCHEMA,
         "active_version": stored_active,
+        "hash_verified": hash_verified,
         "verified_ready": verified_ready,
         "handoff": handoff,
+    }
+
+
+def _validate_hash_verified(value: Any, root: Path, active_version: str) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise UpdateCacheStateError("hash_verified must be null or an object")
+
+    version = value.get("version")
+    if not isinstance(version, str) or not _is_semver(version):
+        raise UpdateCacheStateError("hash_verified.version must be strict SemVer")
+    if _is_semver(active_version) and _parse_semver(version) <= _parse_semver(active_version):
+        raise UpdateCacheStateError("hash_verified.version must be newer than active_version")
+
+    channel = validate_update_channel(value.get("channel"))
+
+    artifact_path = value.get("artifact_path")
+    if not isinstance(artifact_path, str) or not artifact_path.strip():
+        raise UpdateCacheStateError("hash_verified.artifact_path must be a non-empty string")
+    normalized_artifact = _normalize_confined_path(Path(artifact_path), downloads_dir(root))
+
+    sha256 = value.get("sha256")
+    if not isinstance(sha256, str) or not re.fullmatch(r"[A-Fa-f0-9]{64}", sha256):
+        raise UpdateCacheStateError("hash_verified.sha256 must be 64 hex characters")
+
+    size_bytes = value.get("size_bytes")
+    if type(size_bytes) is not int or size_bytes <= 0:
+        raise UpdateCacheStateError("hash_verified.size_bytes must be a positive integer")
+
+    downloaded = value.get("downloaded")
+    if downloaded is not True:
+        raise UpdateCacheStateError("hash_verified.downloaded must be true")
+
+    hash_verified = value.get("hash_verified")
+    if hash_verified is not True:
+        raise UpdateCacheStateError("hash_verified.hash_verified must be true")
+
+    downloaded_at = value.get("downloaded_at")
+    if not isinstance(downloaded_at, str) or not downloaded_at.strip():
+        raise UpdateCacheStateError("hash_verified.downloaded_at must be a non-empty string")
+
+    verified_at = value.get("verified_at")
+    if not isinstance(verified_at, str) or not verified_at.strip():
+        raise UpdateCacheStateError("hash_verified.verified_at must be a non-empty string")
+
+    return {
+        "version": version,
+        "channel": channel,
+        "artifact_path": str(normalized_artifact),
+        "sha256": sha256.lower(),
+        "size_bytes": size_bytes,
+        "downloaded": True,
+        "hash_verified": True,
+        "downloaded_at": downloaded_at,
+        "verified_at": verified_at,
     }
 
 

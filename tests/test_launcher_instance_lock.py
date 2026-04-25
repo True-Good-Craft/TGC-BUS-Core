@@ -60,18 +60,37 @@ def _stub_crypto(monkeypatch: pytest.MonkeyPatch) -> None:
         def decrypt(self, nonce: bytes, data: bytes, associated_data) -> bytes:
             return data[:-16]
 
+    class FakeInvalidSignature(Exception):
+        pass
+
+    class FakeEd25519PublicKey:
+        @staticmethod
+        def from_public_bytes(_data: bytes):
+            return FakeEd25519PublicKey()
+
+        def verify(self, _signature: bytes, _data: bytes) -> None:
+            return None
+
     crypto_pkg = types.ModuleType("cryptography")
+    exceptions_mod = types.ModuleType("cryptography.exceptions")
     hazmat_mod = types.ModuleType("cryptography.hazmat")
     primitives_mod = types.ModuleType("cryptography.hazmat.primitives")
+    asymmetric_mod = types.ModuleType("cryptography.hazmat.primitives.asymmetric")
+    ed25519_mod = types.ModuleType("cryptography.hazmat.primitives.asymmetric.ed25519")
     ciphers_mod = types.ModuleType("cryptography.hazmat.primitives.ciphers")
     aead_mod = types.ModuleType("cryptography.hazmat.primitives.ciphers.aead")
     fernet_mod = types.ModuleType("cryptography.fernet")
+    exceptions_mod.InvalidSignature = FakeInvalidSignature
+    ed25519_mod.Ed25519PublicKey = FakeEd25519PublicKey
     aead_mod.AESGCM = FakeAESGCM
     fernet_mod.Fernet = FakeFernet
     fernet_mod.InvalidToken = ValueError
     monkeypatch.setitem(sys.modules, "cryptography", crypto_pkg)
+    monkeypatch.setitem(sys.modules, "cryptography.exceptions", exceptions_mod)
     monkeypatch.setitem(sys.modules, "cryptography.hazmat", hazmat_mod)
     monkeypatch.setitem(sys.modules, "cryptography.hazmat.primitives", primitives_mod)
+    monkeypatch.setitem(sys.modules, "cryptography.hazmat.primitives.asymmetric", asymmetric_mod)
+    monkeypatch.setitem(sys.modules, "cryptography.hazmat.primitives.asymmetric.ed25519", ed25519_mod)
     monkeypatch.setitem(sys.modules, "cryptography.hazmat.primitives.ciphers", ciphers_mod)
     monkeypatch.setitem(sys.modules, "cryptography.hazmat.primitives.ciphers.aead", aead_mod)
     monkeypatch.setitem(sys.modules, "cryptography.fernet", fernet_mod)
