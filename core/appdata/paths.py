@@ -59,6 +59,10 @@ def state_dir() -> Path:
     return buscore_root() / "state"
 
 
+def update_cache_root() -> Path:
+    return buscore_root() / "updates"
+
+
 def app_db_default() -> Path:
     if _is_windows():
         return app_root() / "app.db"
