@@ -280,7 +280,7 @@ If you offer it as a network service, you must provide source access.
 
 See `LICENSE` for details.
 
-https://buscore.ca
+[https://buscore.ca](https://buscore.ca/?src=github_readme_1)
 
 Maintained by True Good Craft (Canada)
 
