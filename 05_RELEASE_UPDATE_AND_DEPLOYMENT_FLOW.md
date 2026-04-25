@@ -26,10 +26,10 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 | Manifest `download_url` | `core/services/update.py` extracts and returns it | UI opens it in browser | Canonical | No artifact verification beyond manifest parsing, optional manifest signature support, and metadata validation. |
 | Manifest checksum / hash | `core/services/update_artifact.py` plus `core/runtime/update_cache.py` | Internal update cache helper | Bridge groundwork | Internal download helper requires manifest-declared `sha256`, enforces `size_bytes` when present, verifies the cached ZIP bytes, and records `hash_verified` only. |
 | Safe extraction stage | `core/services/update_extract.py` plus `core/runtime/update_cache.py` | Internal update cache helper | Bridge groundwork | Internal extraction helper safely unpacks `hash_verified` ZIPs into `updates\versions\<version>\`, requires exactly one EXE candidate, and records `extracted` only. |
-| Local update cache/state lifecycle | `core/runtime/update_cache.py` / update state model | Future verified handoff | Bridge groundwork | `%LOCALAPPDATA%\BUSCore\updates\` holds `manifests\`, `downloads\`, `versions\`, and `state.json`; live conservative stages are now `hash_verified` and `extracted`, while `verified_ready` remains forbidden until executable trust verification exists. |
+| EXE Authenticode / publisher verification | `core/services/update_exe_trust.py` plus `core/runtime/update_cache.py` | Internal update cache helper | Bridge groundwork | Internal EXE-trust helper verifies Windows Authenticode validity, True Good Craft signer-subject identity, and the pinned signer thumbprint `55474AA9A2D562022A6590D487045E069457F985`, then records `exe_verified` only. |
+| Local update cache/state lifecycle | `core/runtime/update_cache.py` / update state model | Future verified handoff | Bridge groundwork | `%LOCALAPPDATA%\BUSCore\updates\` holds `manifests\`, `downloads\`, `versions\`, and `state.json`; live conservative stages are now `hash_verified`, `extracted`, `exe_verified`, and consistency-gated `verified_ready`. No launch or handoff occurs. |
 | DB/app ownership lock | Launcher preflight plus app-level lock | Future verified handoff prerequisite | Canonical | Same DB/app root cannot have two live BUS Core owners. |
 | Manifest channel selection | `core/config/update_policy.py` + `core/services/update.py` | Configured channel decides selected release entry | Canonical | Non-stable channels require explicit channel-specific entries and must not fall back to public latest. |
-| EXE Authenticode / publisher verification | No in-app verification path found | Build script prints manual signing hints only | Drifted but explicit | README and docs must not imply executable trust or automatic signed-release enforcement yet. |
 
 ## Build and package outputs
 
@@ -69,7 +69,7 @@ Manifest compatibility is a release boundary for this bridge release: deployed c
 5. Service validates the manifest URL and configured channel, fetches JSON with timeout and size caps, normalizes supported manifest shapes, supports signed manifest unwrapping when present, validates optional metadata shape, and compares the selected release version against runtime `VERSION`.
 6. Route returns normalized response keys: `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message`.
 7. UI exposes `download_url` in a browser tab when an update is available.
-8. `/app/update/check` still does not trigger in-app download or handoff. Separate internal helpers can download a release ZIP into `updates\downloads\`, verify its SHA256 against signed manifest metadata, enforce declared size when present, and safely extract it into `updates\versions\<version>\`, but no EXE Authenticode/publisher verification, `verified_ready` transition, launch, or installer behavior is implemented. Client-side signed-manifest enforcement is also not enabled yet; unsigned compatibility remains available.
+8. `/app/update/check` still does not trigger in-app download or handoff. Separate internal helpers can download a release ZIP into `updates\downloads\`, verify its SHA256 against signed manifest metadata, enforce declared size when present, safely extract it into `updates\versions\<version>\`, verify the extracted EXE with Authenticode plus pinned True Good Craft signer policy, and conservatively write `verified_ready` only when all staged gates agree. Launch, handoff, installer behavior, and client-side signed-manifest enforcement are still not enabled; unsigned manifest compatibility remains available.
 
 Update checks are part of the trust model because they are optional and non-blocking. Core remains usable without them, and an unavailable manifest host should not prevent normal local operation.
 
@@ -88,11 +88,12 @@ Update checks are part of the trust model because they are optional and non-bloc
 | Client requires signed manifest | No | Future work only | No | Explicitly not enabled |
 | Local update cache/state skeleton | Yes | Yes | No | Bridge groundwork |
 | `hash_verified` state from real artifacts | Yes | Yes | No | Conservative state only; downloaded ZIP matched signed manifest metadata |
-| `extracted` state from real artifacts | Yes | Yes | No | Conservative state only; safe ZIP extraction completed, but executable trust is not established |
-| `verified_ready` state from real artifacts | No | Future work only | No | Shape only; no real artifact verification writes yet |
+| `extracted` state from real artifacts | Yes | Yes | No | Conservative state only; safe ZIP extraction completed, but executable trust is not established until EXE verification succeeds |
+| `exe_verified` state from real artifacts | Yes | Yes | No | Conservative state only; extracted EXE passed Authenticode, True Good Craft subject, and pinned-thumbprint checks |
+| `verified_ready` state from real artifacts | Yes | Yes | No | Conservative state only; written only when prior cache stages agree and confined files still exist |
 | Release notes link from manifest | Internal declared metadata only | Yes | No | Bridge groundwork |
 | Manifest checksum/hash use | Internal declared metadata only | Yes | No | Bridge groundwork |
-| Artifact signature/publisher/size verification | No | Future work only | No | Drifted but explicit |
+| Artifact signature/publisher/size verification | Partial internal helper coverage | Yes | No | ZIP hash/size plus EXE Authenticode/publisher/thumbprint verification exist internally; `/app/update/check` still does not execute or hand off artifacts |
 | Binary signing execution | Manual script hint only | Some older docs implied more | No | Drifted |
 | Truthful release-check helper | Yes | Yes | Yes | Canonical |
 
