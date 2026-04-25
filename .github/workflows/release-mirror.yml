@@ -6,8 +6,15 @@ on:
 
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: "Release tag to mirror (example: v1.0.4)"
+        required: false
+      tooling_ref:
+        description: "Repository ref to checkout for workflow tooling during manual runs"
+        required: false
+        default: "main"
       tag:
-        description: "Release tag (example: v1.0.2)"
+        description: "Deprecated manual fallback for release_tag"
         required: false
 
 permissions:
@@ -24,7 +31,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || github.event.inputs.tag || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tooling_ref || github.event.release.tag_name || github.sha }}
 
       - name: Install Node.js (LTS)
         uses: actions/setup-node@v4
@@ -37,21 +44,29 @@ jobs:
       - name: Install manifest signing dependencies
         run: python3 -m pip install "cryptography>=46.0.0"
 
-      - name: Determine release tag
+      - name: Determine release tag and version
         run: |
-          TAG="${{ github.event.release.tag_name || github.event.inputs.tag }}"
+          TAG="${{ github.event.release.tag_name || github.event.inputs.release_tag || github.event.inputs.tag }}"
 
           if [ -z "$TAG" ]; then
             echo "::error::No release tag provided."
-            echo "Run this workflow from a release or supply a tag manually."
+            echo "Run this workflow from a release or supply workflow_dispatch input release_tag."
             exit 1
           fi
 
-          echo "RAW_TAG=$TAG" >> "$GITHUB_ENV"
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*)
+              ;;
+            *)
+              echo "::error::Release tag ${TAG} must match strict external SemVer form vX.Y.Z."
+              exit 1
+              ;;
+          esac
 
-      - name: Read canonical release version
-        run: |
-          CANONICAL_VERSION=$(python3 - <<'PY'
+          CANONICAL_VERSION="${TAG#v}"
+
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION_FROM_REPO=$(python3 - <<'PY'
           import pathlib
           import re
           import sys
@@ -63,29 +78,34 @@ jobs:
               sys.exit(1)
           print(match.group(1))
           PY
-          )
+            )
 
-          EXPECTED_TAG="v${CANONICAL_VERSION}"
-          if [ "${RAW_TAG}" != "${EXPECTED_TAG}" ]; then
-            echo "::error::Release tag ${RAW_TAG} does not match core/version.py VERSION ${CANONICAL_VERSION}."
-            exit 1
+            EXPECTED_TAG="v${VERSION_FROM_REPO}"
+            if [ "${TAG}" != "${EXPECTED_TAG}" ]; then
+              echo "::error::Release tag ${TAG} does not match core/version.py VERSION ${VERSION_FROM_REPO}."
+              exit 1
+            fi
+
+            CANONICAL_VERSION="${VERSION_FROM_REPO}"
           fi
 
+          echo "RAW_TAG=$TAG" >> "$GITHUB_ENV"
           echo "CANONICAL_VERSION=${CANONICAL_VERSION}" >> "$GITHUB_ENV"
           echo "EXPECTED_ASSET_NAME=BUS-Core-${CANONICAL_VERSION}.zip" >> "$GITHUB_ENV"
+          echo "RELEASE_NOTES_URL=https://github.com/${{ github.repository }}/releases/tag/${TAG}" >> "$GITHUB_ENV"
 
       - name: Download release asset
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "${{ env.RAW_TAG }}" \
-            --pattern "${{ env.EXPECTED_ASSET_NAME }}" \
+          gh release download "$RAW_TAG" \
+            --pattern "$EXPECTED_ASSET_NAME" \
             --dir ./release-assets
 
-          MATCH_COUNT=$(find ./release-assets -name "${{ env.EXPECTED_ASSET_NAME }}" -type f | wc -l)
+          MATCH_COUNT=$(find ./release-assets -name "$EXPECTED_ASSET_NAME" -type f | wc -l)
 
           if [ "$MATCH_COUNT" -eq 0 ]; then
-            echo "::error::No matching release asset found (${{ env.EXPECTED_ASSET_NAME }})"
+            echo "::error::No matching release asset found ($EXPECTED_ASSET_NAME)"
             exit 1
           fi
 
@@ -94,15 +114,15 @@ jobs:
             exit 1
           fi
 
-          ASSET_FILE=$(find ./release-assets -name "${{ env.EXPECTED_ASSET_NAME }}" -type f)
+          ASSET_FILE=$(find ./release-assets -name "$EXPECTED_ASSET_NAME" -type f)
 
           echo "ASSET_FILE=${ASSET_FILE}" >> "$GITHUB_ENV"
           echo "ASSET_NAME=$(basename "${ASSET_FILE}")" >> "$GITHUB_ENV"
 
       - name: Compute SHA256 checksum and metadata
         run: |
-          SHA256=$(sha256sum "${{ env.ASSET_FILE }}" | awk '{ print $1 }')
-          SIZE_BYTES=$(wc -c < "${{ env.ASSET_FILE }}")
+          SHA256=$(sha256sum "$ASSET_FILE" | awk '{ print $1 }')
+          SIZE_BYTES=$(wc -c < "$ASSET_FILE")
 
           echo "ASSET_SHA256=${SHA256}" >> "$GITHUB_ENV"
           echo "ASSET_SIZE_BYTES=${SIZE_BYTES}" >> "$GITHUB_ENV"
@@ -113,22 +133,22 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           wrangler r2 object put --remote \
-            "${{ secrets.R2_BUCKET }}/releases/${{ env.ASSET_NAME }}" \
-            --file "${{ env.ASSET_FILE }}"
+            "${{ secrets.R2_BUCKET }}/releases/$ASSET_NAME" \
+            --file "$ASSET_FILE"
 
       - name: Generate manifest (stable.json)
         env:
           MIN_SUPPORTED_VERSION: ${{ vars.MIN_SUPPORTED_VERSION }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-${{ env.CANONICAL_VERSION }}}"
+          MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-$CANONICAL_VERSION}"
           RELEASES_BASE_URL="${{ env.RELEASE_PUBLIC_BASE_URL }}/releases"
 
           RELEASES_JSON=$(gh api "repos/${{ github.repository }}/releases?per_page=10" 2>/dev/null || echo "[]")
 
           HISTORY_JSON=$(echo "$RELEASES_JSON" | jq -c \
-            --arg current_tag "${{ env.RAW_TAG }}" \
-            --arg current_sha256 "${{ env.ASSET_SHA256 }}" \
+            --arg current_tag "$RAW_TAG" \
+            --arg current_sha256 "$ASSET_SHA256" \
             --arg releases_base_url "$RELEASES_BASE_URL" \
             '[
               .[] |
@@ -148,11 +168,11 @@ jobs:
 
           jq -n \
             --arg min_supported "$MIN_SUPPORTED" \
-            --arg version "${{ env.CANONICAL_VERSION }}" \
-            --arg release_notes_url "https://github.com/${{ github.repository }}/releases/tag/${{ env.RAW_TAG }}" \
-            --argjson size_bytes "${{ env.ASSET_SIZE_BYTES }}" \
-            --arg download_url "$RELEASES_BASE_URL/${{ env.ASSET_NAME }}" \
-            --arg sha256 "${{ env.ASSET_SHA256 }}" \
+            --arg version "$CANONICAL_VERSION" \
+            --arg release_notes_url "$RELEASE_NOTES_URL" \
+            --argjson size_bytes "$ASSET_SIZE_BYTES" \
+            --arg download_url "$RELEASES_BASE_URL/$ASSET_NAME" \
+            --arg sha256 "$ASSET_SHA256" \
             --argjson history "$HISTORY_JSON" \
             '{
               min_supported: $min_supported,
@@ -170,6 +190,16 @@ jobs:
             }' \
             > stable.json
 
+      - name: Debug manifest signing tooling
+        run: |
+          pwd
+          ls -la scripts
+
+          if [ ! -f scripts/sign_manifest.py ]; then
+            echo "::error::Missing scripts/sign_manifest.py in the checked out repository ref. For workflow_dispatch backfills, set tooling_ref to a branch or ref that contains the current signing tooling."
+            exit 1
+          fi
+
       - name: Sign manifest
         env:
           BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY: ${{ secrets.BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY }}
@@ -186,8 +216,8 @@ jobs:
       - name: Verify signed manifest
         run: |
           jq -e \
-            --arg expected_version "${{ env.CANONICAL_VERSION }}" \
-            --arg expected_url "${{ env.RELEASE_PUBLIC_BASE_URL }}/releases/${{ env.ASSET_NAME }}" \
+            --arg expected_version "$CANONICAL_VERSION" \
+            --arg expected_url "${{ env.RELEASE_PUBLIC_BASE_URL }}/releases/$ASSET_NAME" \
             '.latest.version == $expected_version
               and .latest.download.url == $expected_url
               and .signature.alg == "Ed25519"
