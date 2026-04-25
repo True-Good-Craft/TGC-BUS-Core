@@ -25,6 +25,13 @@
 - Added internal `ManifestRelease` metadata carry-forward so validated manifest-provided `sha256`, `size_bytes`, release notes, signature URL, artifact kind/type/platform, publisher, and signer fields can be retained as declared metadata for future verification work.
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.0.4.2` to `1.0.4.3` for the release-mirror tooling separation and manifest-signing script import-path hardening without changing public `VERSION`.
+- Updated `.github/workflows/release-mirror.yml` to separate tooling checkout (`tooling_ref`) from release identity (`release_tag`), enabling manual `workflow_dispatch` backfills to use current signing tooling while mirroring historical releases like `v1.0.4`.
+- Added `workflow_dispatch` inputs `release_tag` and `tooling_ref` to release-mirror workflow; `release_tag` specifies the historical release to mirror, `tooling_ref` (default: `main`) specifies the repo ref to checkout for current `scripts/sign_manifest.py` and other tooling.
+- Added pre-sign debug step to release-mirror workflow that verifies `scripts/sign_manifest.py` exists before signing, failing with a clear error message if the checked-out `tooling_ref` is missing the signing script.
+- Added PYTHONPATH environment variable to release-mirror signing step to ensure core module imports resolve correctly in GitHub Actions.
+- Added repo-root sys.path bootstrap to `scripts/sign_manifest.py` so it can be run directly from shell or CI without requiring PYTHONPATH to be preset, allowing `from core.runtime.manifest_trust import ...` to succeed.
+- Updated `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` release-flow documentation to reflect that manual `workflow_dispatch` backfills validate `release_tag` as strict `vX.Y.Z` and derive manifest versioning from that requested tag instead of from the checked-out tooling ref.
 - Bumped `INTERNAL_VERSION` from `1.0.4.1` to `1.0.4.2` for the secure-update foundation governance/signing-pipeline alignment pass without changing public `VERSION`.
 - Documented that the release mirror now signs generated `stable.json` into `stable.signed.json` with `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`, verifies backward-compatible `latest.version` / `latest.download.url` plus Ed25519 signature metadata, verifies against Core's pinned public key policy, and publishes the signed manifest in place as `manifest/core/stable.json`.
 - Clarified secure-update limits: client-side signed-manifest enforcement remains off, unsigned manifest compatibility remains available, `verified_ready` is only a state shape, and no artifact download, ZIP hash verification, extraction, EXE Authenticode/publisher verification, real verified-ready write, handoff launch, or update UI button exists yet.
