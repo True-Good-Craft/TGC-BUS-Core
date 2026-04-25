@@ -9,6 +9,7 @@ import argparse
 import ctypes
 import logging
 import copy
+import atexit
 import threading
 import time
 import traceback
@@ -20,10 +21,15 @@ try:
     import requests
     import uvicorn
     from PIL import Image
-    from core.api.http import build_app
+    from core.appdata.paths import resolve_db_path
     from core.config.manager import load_config
     from tgc.bootstrap_fs import DATA, LOGS
     from core.config.paths import APP_ROOT, STATE_DIR
+    from core.runtime.instance_lock import (
+        InstanceLock,
+        InstanceOwnershipError,
+        acquire_db_owner_lock,
+    )
 except ImportError as e:
     print("!"*60)
     print(f"CRITICAL: Missing dependency - {e}")
@@ -48,6 +54,14 @@ except Exception:
     pystray = None
 
 logger = logging.getLogger(__name__)
+
+
+def _write_launcher_log(message: str) -> None:
+    _ensure_runtime_dirs()
+    log_path = LOGS / "launcher.log"
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    with log_path.open("a", encoding="utf-8") as fh:
+        fh.write(f"[{timestamp}] {message}\n")
 
 
 def _write_tray_failure_log(exc: Exception) -> Path:
@@ -128,6 +142,30 @@ def open_dashboard(port):
     url = f"http://127.0.0.1:{port}/ui/shell.html"
     webbrowser.open(url)
 
+
+def acquire_launcher_db_lock(port: int) -> InstanceLock:
+    db_path = Path(resolve_db_path())
+    return acquire_db_owner_lock(db_path, app_root=APP_ROOT, port=port, export_env=True)
+
+
+def _exit_already_running(exc: InstanceOwnershipError) -> None:
+    db_path = getattr(exc, "db_path", None) or Path(resolve_db_path())
+    user_message = (
+        "BUS Core is already running.\n\n"
+        f"Database:\n{db_path}\n\n"
+        "Close the existing BUS Core window before starting another copy."
+    )
+    log_message = str(exc)
+    if not log_message.startswith("BUS Core is already running for this database."):
+        log_message = f"BUS Core is already running for this database. {log_message}"
+    print(user_message)
+    try:
+        _write_launcher_log(log_message)
+    except Exception:
+        pass
+    sys.exit(2)
+
+
 # --- 4. Main Execution ---
 def main():
     _ensure_runtime_dirs()
@@ -144,6 +182,12 @@ def main():
     # B. Determine Mode
     # "No command = no devmode" -> Defaults to False
     force_dev = args.dev or os.environ.get("BUS_DEV") == "1"
+
+    try:
+        launcher_lock = acquire_launcher_db_lock(args.port)
+    except InstanceOwnershipError as exc:
+        _exit_already_running(exc)
+    atexit.register(launcher_lock.release)
 
     if force_dev and not getattr(sys, "frozen", False):
         print("--- DEV MODE: Console Visible ---")
@@ -182,6 +226,8 @@ def main():
         icon_image = Image.new('RGB', (64, 64), color=(73, 109, 137))
 
     # Threaded Server
+    from core.api.http import build_app
+
     app_instance, _ = build_app()
 
     server = uvicorn.Server(

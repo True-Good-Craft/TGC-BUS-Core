@@ -24,6 +24,8 @@
 - Added internal `ManifestRelease` metadata carry-forward so validated manifest-provided `sha256`, `size_bytes`, release notes, signature URL, artifact kind/type/platform, publisher, and signer fields can be retained as declared metadata for future verification work.
 
 ### Changed
+- Added launcher-level DB ownership preflight so duplicate native launches are rejected before migrations, server bind, or browser open while retaining the app-level startup guard for server-only entrypoints.
+- Bumped `INTERNAL_VERSION` from `1.0.4.0` to `1.0.4.1` for the DB ownership/single-instance launcher hardening without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.0.3.2` to `1.0.3.3` for the final pre-release update-hardening governance pass without changing public `VERSION`.
 - Corrected release mirror asset naming authority from `TGC-BUS-Core-<VERSION>.zip` to `BUS-Core-<VERSION>.zip` so release download, R2 mirror path, and manifest `latest.download.url` naming are aligned with the canonical artifact convention.
 - Documented this release as an update-chain hardening bridge release: manifest compatibility is preserved for existing clients using top-level `latest.version` and `latest.download.url`, while new clients can consume channel-aware/additive metadata.

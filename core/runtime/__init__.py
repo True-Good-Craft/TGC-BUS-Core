@@ -19,8 +19,20 @@
 
 """Runtime utilities for BUS Core."""
 
-from .core_alpha import CoreAlpha
-from .policy import PolicyDecision
-from .probe import PROBE_TIMEOUT_SEC
-
 __all__ = ["CoreAlpha", "PolicyDecision", "PROBE_TIMEOUT_SEC"]
+
+
+def __getattr__(name: str):
+    if name == "CoreAlpha":
+        from .core_alpha import CoreAlpha
+
+        return CoreAlpha
+    if name == "PolicyDecision":
+        from .policy import PolicyDecision
+
+        return PolicyDecision
+    if name == "PROBE_TIMEOUT_SEC":
+        from .probe import PROBE_TIMEOUT_SEC
+
+        return PROBE_TIMEOUT_SEC
+    raise AttributeError(name)

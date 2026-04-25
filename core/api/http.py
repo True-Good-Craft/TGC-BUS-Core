@@ -123,6 +123,7 @@ from core.appdb.migrate import ensure_vendors_flags
 from core.appdb.models import Base
 from core.appdb.paths import ui_dir
 from core.appdata.paths import db_path_for_mode, resolve_bus_mode
+from core.runtime.instance_lock import acquire_db_owner_lock
 
 if os.name == "nt":  # pragma: no cover - windows specific
     from core.broker.pipes import NamedPipeServer
@@ -170,6 +171,7 @@ def _check_state(state_b64: str) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.db_owner_lock = acquire_db_owner_lock(DB_FILE, app_root=BUS_ROOT, port=None)
     startup_migrations()
     _buscore_writeflag_startup()
     ensure_core_initialized()
@@ -179,6 +181,9 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await _stop_indexer_event()
+        lock = getattr(app.state, "db_owner_lock", None)
+        if lock is not None:
+            lock.release()
 
 
 INDEX_LOGGER = logging.getLogger(__name__)
