@@ -84,6 +84,8 @@
 
 * `scripts/validate_change_trace.py` is the hard traceability guard: if code/control surfaces change, both `CHANGELOG.md` and `core/version.py` MUST be in the same diff, and `INTERNAL_VERSION` MUST be bumped for meaningful repo changes.
 
+* `.github/workflows/security-audit.yml` is the canonical security-tooling workflow. It runs Bandit against `core`, `tgc`, `scripts`, and `launcher.py`; Medium/High findings fail CI while Low findings remain visible advisory output. It also runs `pip-audit` against `requirements.txt` in advisory mode until BUS Core has a fully pinned/locked audit input.
+
 ### Release and Update Boundary
 
 * Strict SemVer consumers MUST continue reading `VERSION` only.

@@ -17,6 +17,7 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 | Internal working version | `core/version.py` | Internal reports may expose `INTERNAL_VERSION` | Canonical | `INTERNAL_VERSION` is `X.Y.Z.R`, for repo working revisions only, and must not flow into strict SemVer consumers. |
 | Package metadata version | `pyproject.toml` | Packaging stub only | Checked mirror | `scripts/validate_version_governance.py` now fails if `pyproject.toml` diverges from canonical `core/version.py::VERSION`. |
 | Version-governance mirrors | `scripts/validate_version_governance.py` + `.github/workflows/governance-guard.yml` | `SOT.md`, Windows version metadata, package metadata | Canonical guard | Canonical version mirrors are now machine-checked on push, pull request, and manual workflow runs. |
+| Security audit workflow | `.github/workflows/security-audit.yml` | Python source and dependency audit evidence | Canonical guard | Bandit Medium/High findings fail CI. `pip-audit` runs against `requirements.txt` in advisory mode until the repo has a fully pinned/locked audit input. |
 | Release tag boundary | `.github/workflows/release-mirror.yml` checks `tag == v{VERSION}` | GitHub release tags | Canonical boundary | Tags remain strict external SemVer, but are machine-checked against `core/version.py` before manifest publication. |
 | Published manifest `latest.version` | `.github/workflows/release-mirror.yml` reads `core/version.py` | Hosted manifest consumers | Canonical | Published from canonical `VERSION`, not derived from tag parsing alone. |
 | Published manifest signature | `.github/workflows/release-mirror.yml` runs `scripts/sign_manifest.py` | GitHub Actions release workflow | Canonical | Generated `stable.json` is signed into `stable.signed.json`; missing `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY` fails the workflow before upload. |
@@ -132,7 +133,7 @@ Known remaining release/update work is explicit: deciding whether read-only upda
 ## Freeze Notes
 
 - Refresh on: version bumps, build script/spec changes, update-service changes, manifest URL changes, workflow changes, or signing/validation changes.
-- Fastest invalidators: changing the canonical version source, changing release asset naming, weakening staging signed-manifest enforcement, adding new artifact trust stages, or rewriting release publication flow.
+- Fastest invalidators: changing the canonical version source, changing release asset naming, weakening staging signed-manifest enforcement, disabling security-audit workflow evidence, adding new artifact trust stages, or rewriting release publication flow.
 - Check alongside: `02_API_AND_UI_CONTRACT_MAP.md` for `/app/update/check` contract shape and `04_SECURITY_TRUST_AND_OPERATIONS.md` for update-path security implications.
 
 ## Internal Version Boundary

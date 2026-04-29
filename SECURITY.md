@@ -24,11 +24,23 @@ Rules:
 - Suppressions must not replace real fixes when findings touch integrity-relevant boundary logic (for example, path-token or trust-boundary resolution paths).
 - Compatibility-preserving security hardening may use old-read/new-write transitions when needed to avoid breaking valid standing state while strengthening new emissions.
 
-Current baseline configuration excludes only build/environment directories:
+Current CI security workflow: `.github/workflows/security-audit.yml`.
+
+- Bandit runs on `core`, `tgc`, `scripts`, and `launcher.py`.
+- Low-severity Bandit findings are reported in advisory mode.
+- Medium and High Bandit findings fail CI.
+- `pip-audit` runs against `requirements.txt` in advisory mode because the repository currently has range-based requirements rather than a fully pinned lockfile. This is visible evidence, not a silent skip; promote it to blocking once BUS Core has a stable audit input.
+
+Current workflow exclusions are limited to tests, build/runtime outputs, virtual environments, caches, and local temporary tooling directories:
 
 - `.venv`
 - `build`
 - `dist`
+- `tests`
+- `.pytest_cache`
+- `.tmp_test_deps_*`
+- `.tmp_localappdata_*`
+- `.artifacts`
 
 ## Suppression Standard
 

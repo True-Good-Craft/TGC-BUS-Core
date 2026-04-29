@@ -12,6 +12,7 @@
 ## [Unreleased]
 
 ### Added
+- Added `.github/workflows/security-audit.yml` with Bandit source scanning, Medium/High Bandit CI failure, Low-severity advisory reporting, and advisory `pip-audit` evidence against `requirements.txt`.
 - Added update-staging signature-enforcement tests covering unsigned, trusted signed, bad-signature, unknown-key, explicit unsigned opt-out, and unchanged read-only update-check behavior.
 - Added a focused CORS loopback policy test that source-checks the FastAPI middleware configuration and verifies allowed loopback, rejected untrusted-origin, no-wildcard, and same-origin unaffected behavior.
 - Added a Docker loopback binding governance test that fails if default Compose publishing regresses to bare `8765:8765` and allows LAN exposure only in explicitly named, documented unsafe/advanced override files.
@@ -33,6 +34,7 @@
 - Added a narrow `verified_ready` promotion helper that writes `verified_ready` only when `hash_verified`, `extracted`, and `exe_verified` all agree on version/channel/hash/path data and the cached ZIP, extracted version directory, and extracted EXE still exist inside the confined update-cache roots.
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.0.4` to `1.1.0.5` for security-tooling workflow governance without changing public `VERSION`.
 - Required signed manifests for the default `/app/update/stage` service path while leaving read-only `/app/update/check` unsigned-manifest compatibility unchanged.
 - Bumped `INTERNAL_VERSION` from `1.1.0.3` to `1.1.0.4` for update-staging signed-manifest enforcement without changing public `VERSION`.
 - Restricted default FastAPI CORS from wildcard origins/methods to explicit loopback origins and explicit methods/headers, aligning browser-origin policy with BUS Core's local-first trust model.

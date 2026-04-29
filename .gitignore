@@ -21,6 +21,8 @@ env/
 .pytest-phase0a-2/
 .codex-tmp/
 codex-test-tmp*/
+.tmp_test_deps_*/
+.tmp_localappdata_*/
 .pytest_cache/
 __pycache__/
 *.pyc
