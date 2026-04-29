@@ -13,6 +13,8 @@
 
 ### Added
 - Added `.github/workflows/security-audit.yml` with Bandit source scanning, Medium/High Bandit CI failure, Low-severity advisory reporting, and advisory `pip-audit` evidence against `requirements.txt`.
+- Added tracked governance summary for the completed security hardening pass: route-local guard consistency, Docker loopback default, loopback-only CORS, signed-manifest update staging, active security-audit workflow, and the local post-hardening OWASP 2025 reassessment. The OWASP report itself remains a local ignored report and is not release evidence on its own.
+- Added explicit remaining-work framing for security governance: structured security audit events, dependency lockfile / blocking dependency audit, backup/restore safeguards, fallback secrets hardening, plugin/provider trust boundaries, and no LAN/public/multi-user hosting claim.
 - Added update-staging signature-enforcement tests covering unsigned, trusted signed, bad-signature, unknown-key, explicit unsigned opt-out, and unchanged read-only update-check behavior.
 - Added a focused CORS loopback policy test that source-checks the FastAPI middleware configuration and verifies allowed loopback, rejected untrusted-origin, no-wildcard, and same-origin unaffected behavior.
 - Added a Docker loopback binding governance test that fails if default Compose publishing regresses to bare `8765:8765` and allows LAN exposure only in explicitly named, documented unsafe/advanced override files.

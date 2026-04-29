@@ -31,6 +31,10 @@ Current CI security workflow: `.github/workflows/security-audit.yml`.
 - Medium and High Bandit findings fail CI.
 - `pip-audit` runs against `requirements.txt` in advisory mode because the repository currently has range-based requirements rather than a fully pinned lockfile. This is visible evidence, not a silent skip; promote it to blocking once BUS Core has a stable audit input.
 
+This security workflow and the April 2026 hardening pass are internal repository hardening evidence. They are not an independent audit, penetration test, OWASP certification, enterprise-readiness claim, or proof that BUS Core is safe for LAN/public multi-user hosting by default.
+
+Known remaining work includes structured security audit events, pinned dependency audit input or lockfile-based blocking dependency audit, backup/restore operator safeguards, fallback secrets hardening, and explicit plugin/provider trust-boundary enforcement.
+
 Current workflow exclusions are limited to tests, build/runtime outputs, virtual environments, caches, and local temporary tooling directories:
 
 - `.venv`

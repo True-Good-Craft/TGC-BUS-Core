@@ -267,7 +267,7 @@ BUS Core runs locally and does not require network access for normal use.
 - The update check path validates manifest URL policy, JSON/content type, payload size, strict SemVer, supported manifest shapes, configured channel selection, optional signed-manifest unwrapping, and optional artifact metadata shape.
 - Current manifests must remain backward-compatible for deployed clients by keeping top-level `latest.version` and `latest.download.url`; new clients can additionally read `channels.<channel>`, additive metadata, and the top-level embedded Ed25519 `signature`.
 - The release mirror signs the public manifest before upload using a private key stored outside the repo in GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`; the matching public key is pinned in Core as `bus-core-prod-ed25519-2026-04-25`.
-- Client-side signed-manifest enforcement is not enabled yet, and unsigned compatibility remains available.
+- Manual update staging now requires trusted signed manifests. Read-only `/app/update/check` still preserves unsigned-manifest compatibility for discovery.
 - `/app/update/stage` runs the trusted manual staging chain: signed release selection, hash-verified ZIP download, safe extraction, EXE Authenticode plus True Good Craft signer checks with pinned thumbprint, and conservative `verified_ready` promotion.
 - `/app/update/check` remains read-only and does not stage or launch artifacts.
 - BUS Core does not overwrite the running EXE. After successful staging, the launcher can hand off on next start (after DB ownership lock) using configured verified launch policy.

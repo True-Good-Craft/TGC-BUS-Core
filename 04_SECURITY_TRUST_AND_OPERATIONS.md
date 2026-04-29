@@ -4,7 +4,7 @@
 - Primary authority basis: `core/api/http.py`, `core/api/security.py`, `tgc/security.py`, `tgc/tokens.py`, `core/policy/*`, `core/secrets/manager.py`, `core/utils/export.py`, `core/services/capabilities/registry.py`, `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`, `pyproject.toml`, `SECURITY.md`, `docs/security/remediation_audit_log.md`.
 - Best use: Determine who can do what, where enforcement happens, and which trust splits remain live in code.
 - Refresh triggers: Session/auth changes, route guard changes, write-policy changes, secrets handling changes, backup/import flow changes, provider integration changes, manifest-signing changes.
-- Highest-risk drift areas: Split token authority, future route-local guard drift, Docker/LAN exposure drift, optional owner-policy enforcement, release-artifact validation absence, and license/manifest mismatch.
+- Highest-risk drift areas: Split token authority, future route-local guard drift, Docker/LAN exposure drift, optional owner-policy enforcement, remaining release/Docker artifact governance gaps, and license/manifest mismatch.
 - Key dependent files / modules: `core/api/http.py`, `core/api/security.py`, `tgc/security.py`, `tgc/state.py`, `tgc/tokens.py`, `core/policy/guard.py`, `core/secrets/manager.py`, `core/utils/export.py`, `core/services/capabilities/registry.py`, `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`.
 
 ## Trust and Enforcement Matrix
