@@ -14,9 +14,9 @@
 ## 3. Compliance status
 - Status: COMPLIANT
 - Source audit report: `tgc-ops/indexes/daily-estate-compliance-report.md`
-- Source audit UTC: 2026-04-25T13:05:36.7011063Z
+- Source audit UTC: 2026-04-29T13:09:16.5520646Z
 - Last projected by: Codex Local Automation
-- Projection date UTC: 2026-04-25T13:31:05.1987574Z
+- Projection date UTC: 2026-04-29T13:32:25.3832155Z
 
 ## 4. Baseline checks
 - README: YES

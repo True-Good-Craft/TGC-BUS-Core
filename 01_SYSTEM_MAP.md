@@ -11,7 +11,7 @@
 
 - BUS Core is the sovereign local-first business utility runtime with a FastAPI backend and a static SPA frontend.
 - Repository evidence shows active domains for inventory, ledger/stock, recipes, manufacturing, contacts/vendors, finance, backups/imports, plugin-backed file/Drive cataloging, and default-on / opt-out update checks.
-- Native runtime is Windows-first (`launcher.py`, `BUS-Core.spec`); container runtime also exists (`Dockerfile`, `docker-compose.yml`).
+- Native runtime is Windows-first (`launcher.py`, `BUS-Core.spec`); container runtime also exists (`Dockerfile`, `docker-compose.yml`) and defaults to host-loopback publishing.
 - Current stabilization priority is preserving one canonical surface per concern and preventing parallel truths from reappearing through alternate entrypoints, duplicated state authority, or update/version ambiguity.
 
 ## System Authority Map
@@ -21,7 +21,7 @@
 | Runtime HTTP surface | Canonical | `core/api/http.py::create_app()` and mounted routers | Referenced by `Dockerfile`, `docker-compose.yml`, `launcher.py`, and dev/smoke helper `scripts/launch.ps1`. |
 | Native app entry | Canonical | `launcher.py` | Only supported native entry; starts BUS Core locally, opens `/ui/shell.html`, and manages tray lifecycle. |
 | DB/app ownership | Canonical | `launcher.py` preflight plus app-level lock | Prevents two live BUS Core owners of the same DB/app root; prerequisite for future verified version handoff. |
-| Container entry | Canonical | `Dockerfile` command `uvicorn core.api.http:create_app --factory` | Only supported container entry; same HTTP surface as native runtime. |
+| Container entry | Canonical | `Dockerfile` command `uvicorn core.api.http:create_app --factory`; `docker-compose.yml` publishes `127.0.0.1:8765:8765` by default | Only supported container entry; same HTTP surface as native runtime. Container-internal `0.0.0.0` bind is acceptable, but default host exposure is loopback-only. |
 | Dev/smoke HTTP launcher | Secondary | `scripts/launch.ps1` | Scripted helper for smoke/dev automation against `core.api.http:create_app`; not a supported native runtime entry. |
 | UI routing / boot | Canonical | `core/ui/app.js`, `core/ui/shell.html` | Hash routes, onboarding redirects, version badge, startup update check. |
 | API contract | Canonical | Mounted routes in `core/api/http.py` and `core/api/routes/*` | Detailed in `02_API_AND_UI_CONTRACT_MAP.md`. |
@@ -106,10 +106,11 @@ Stability in the current phase comes from keeping these authority lines singular
 
 | Boundary | Status | What crosses it |
 | --- | --- | --- |
-| Browser UI <-> local FastAPI | Canonical | Session cookie, SPA API calls, static assets. |
+| Browser UI <-> local FastAPI | Canonical | Session cookie, same-origin SPA API calls, static assets. Default CORS is limited to explicit loopback origins only for local/dev browser-origin access. |
 | FastAPI <-> local DB/files | Canonical | DB writes, exports/imports, journals, logs, secrets, config. |
 | FastAPI <-> OS actions | Canonical | Tray/browser launch, Explorer open, process exit/restart, local path validation. |
 | FastAPI <-> external network | Canonical | Update manifest fetches, Google OAuth/token exchange, Google Drive API calls. |
+| Docker host publish <-> local network | Canonical default | Compose publishes BUS Core to `127.0.0.1` only. LAN/public exposure is unsafe by default and requires explicit advanced operator action plus stronger access controls. |
 | Runtime authority | Canonical | `launcher.py` (native), `core/api/http.py::create_app()` (HTTP surface), and Docker `uvicorn core.api.http:create_app --factory` are the only supported runtime paths. |
 
 ## Coupling Hotspots

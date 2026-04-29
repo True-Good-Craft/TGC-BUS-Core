@@ -68,6 +68,7 @@ pnpm-debug.log*
 __snapshots__/
 *.pdf
 *.xlsx
+OWASP_2025_SECURITY_REVIEW_AND_ACTION_PLAN.md
 # --- allowlist: official BUS Core brand assets in repo root ---
 !Flat-Dark.png
 !Glow-Hero.png

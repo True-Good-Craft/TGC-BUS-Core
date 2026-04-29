@@ -12,6 +12,9 @@
 ## [Unreleased]
 
 ### Added
+- Added a focused CORS loopback policy test that source-checks the FastAPI middleware configuration and verifies allowed loopback, rejected untrusted-origin, no-wildcard, and same-origin unaffected behavior.
+- Added a Docker loopback binding governance test that fails if default Compose publishing regresses to bare `8765:8765` and allows LAN exposure only in explicitly named, documented unsafe/advanced override files.
+- Added route-guard consistency regression coverage for scoped ledger, finance, config, update, and app-log routes, including source-level mutation/read guard checks plus anonymous and writes-disabled API checks.
 - Added secure-update foundation documentation for the post-v1.0.4 bridge work: DB/app ownership locking, local update cache/state scaffolding, Ed25519 manifest trust primitives, embedded backward-compatible manifest signatures, the pinned production manifest public-key policy, the release-side `scripts/sign_manifest.py` helper, and release-mirror manifest signing before upload.
 - Added `scripts/validate_version_governance.py` to machine-check `pyproject.toml`, `SOT.md`, and `scripts/_win_version_info.txt` against the canonical values in `core/version.py`.
 - Added `scripts/validate_change_trace.py`, `scripts/governance-check.ps1`, and `.github/workflows/governance-guard.yml` so code/control-surface changes fail hard unless `CHANGELOG.md` and `core/version.py` are part of the same change set.
@@ -29,6 +32,13 @@
 - Added a narrow `verified_ready` promotion helper that writes `verified_ready` only when `hash_verified`, `extracted`, and `exe_verified` all agree on version/channel/hash/path data and the cached ZIP, extracted version directory, and extracted EXE still exist inside the confined update-cache roots.
 
 ### Changed
+- Restricted default FastAPI CORS from wildcard origins/methods to explicit loopback origins and explicit methods/headers, aligning browser-origin policy with BUS Core's local-first trust model.
+- Bumped `INTERNAL_VERSION` from `1.1.0.2` to `1.1.0.3` for CORS loopback restriction without changing public `VERSION`.
+- Hardened Docker Compose default exposure to publish BUS Core on host loopback only (`127.0.0.1:8765:8765`) while preserving the container-internal Uvicorn bind, and updated runtime/security/release docs to state LAN/public exposure is unsafe by default.
+- Bumped `INTERNAL_VERSION` from `1.1.0.1` to `1.1.0.2` for Docker loopback exposure hardening without changing public `VERSION`.
+- Added explicit route-local session-token dependencies to sensitive ledger, finance, config, update-check, and app-log reads; added explicit route-local token + write-gate dependencies to ledger, finance, config, and update-stage mutations without changing payload contracts or public `VERSION`.
+- Reconciled stale `pyproject.toml` and `SOT.md` public-version mirrors to the existing canonical `VERSION` value `1.1.0` from `core/version.py`.
+- Bumped `INTERNAL_VERSION` from `1.1.0.0` to `1.1.0.1` for the route-local guard consistency patch without changing public `VERSION`.
 - Sidebar update UX now uses a manual `Update` button instead of a raw download link as the primary action; it calls `POST /app/update/stage` only on user click, shows in-progress status, and reports verified-ready restart guidance without forcing restart.
 - Updated security/release docs (`README.md`, `04_SECURITY_TRUST_AND_OPERATIONS.md`, `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md`) to reflect current behavior accurately: `/app/update/check` remains read-only, manual `/app/update/stage` performs trusted staging, launcher policy-based handoff occurs after DB lock on next start, and there is no overwrite, forced restart, or startup auto-stage.
 - Bumped `INTERNAL_VERSION` from `1.0.4.4` to `1.0.4.5` for the EXE trust, `verified_ready`, and targeted governance/docs pass without changing public `VERSION`.

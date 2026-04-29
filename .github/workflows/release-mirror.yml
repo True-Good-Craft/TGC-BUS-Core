@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag to mirror (example: v1.0.4)"
+        description: "Release tag to mirror (example: v1.1.0)"
         required: false
       tooling_ref:
         description: "Repository ref to checkout for workflow tooling during manual runs"

@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.0.4 **Updated:** 2026-04-25 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.1.0 **Updated:** 2026-04-29 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -34,7 +34,7 @@
 
 * **UI:** Single-page application (SPA) shell (`core/ui/shell.html`) with modular JS cards.
 
-* **Server:** Uvicorn at `127.0.0.1:8765` (Local) or `0.0.0.0:8765` (Docker).
+* **Server:** Uvicorn at `127.0.0.1:8765` (native local) or `0.0.0.0:8765` inside the Docker container, with default Docker Compose host publishing restricted to `127.0.0.1:8765:8765`. Browser CORS defaults are loopback-only (`http://127.0.0.1:8765`, `http://localhost:8765`); wildcard CORS is not part of the supported default runtime.
 
 
 
@@ -42,7 +42,7 @@
 
 * **Native Windows:** Uses `%LOCALAPPDATA%\BUSCore\` for DB, config, and journals. Launch via `launcher.py` (or the thin wrapper `Run Core.bat`).
 
-* **Docker:** Uses `python:3.12-slim`. Persistence via volume mounted at `/data` (e.g., `BUS_DB=/data/app.db`). Runs as non-root `appuser`.
+* **Docker:** Uses `python:3.12-slim`. Persistence via volume mounted at `/data` (e.g., `BUS_DB=/data/app.db`). Runs as non-root `appuser`. Docker Compose is loopback-only by default and must not publish BUS Core to LAN/public interfaces without explicit operator action and stronger access controls.
 
 * **Dev/smoke helper:** `scripts/launch.ps1` runs the same `core.api.http:create_app` factory for scripted local checks only; it is not the supported native app entry.
 
@@ -116,7 +116,7 @@
 
 * Windows code signing is currently a manual post-build ceremony. `scripts/build_core.ps1` builds the onefile EXE and prints optional `signtool sign` / `signtool verify` commands; it does not sign or verify artifacts automatically.
 
-* Docker is a separate deployment lane. `.github/workflows/publish-image.yml` currently publishes GHCR `latest` and commit-SHA image tags only; it does not publish SemVer tags, sign images, generate SBOM/provenance, scan images, or define a formal Docker update policy.
+* Docker is a separate deployment lane. `.github/workflows/publish-image.yml` currently publishes GHCR `latest` and commit-SHA image tags only; it does not publish SemVer tags, sign images, generate SBOM/provenance, scan images, or define a formal Docker update policy. Default Compose networking is host-loopback only because BUS Core is local-first software and the session bootstrap model is not designed for multi-user network hosting.
 
 ---
 
@@ -304,6 +304,15 @@
 
 
 * Legacy endpoints may exist but are non-authoritative and must wrap canonical handlers per the Phase 1 delta.
+
+
+### Route-Local Protection Rule
+
+* Sensitive `/app/*` reads MUST declare an explicit route-local session-token dependency unless the route is intentionally documented as public.
+
+* Sensitive `/app/*` mutations MUST declare explicit route-local session-token and write-gate dependencies. Global session middleware remains defense-in-depth, not the only authority.
+
+* Owner commit enforcement MUST be added only where the existing domain policy requires it; adding owner commit to a domain that did not previously require it is a behavior/authority change.
 
 
 

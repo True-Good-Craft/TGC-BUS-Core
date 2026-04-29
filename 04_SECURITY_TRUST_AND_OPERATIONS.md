@@ -4,7 +4,7 @@
 - Primary authority basis: `core/api/http.py`, `core/api/security.py`, `tgc/security.py`, `tgc/tokens.py`, `core/policy/*`, `core/secrets/manager.py`, `core/utils/export.py`, `core/services/capabilities/registry.py`, `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`, `pyproject.toml`, `SECURITY.md`, `docs/security/remediation_audit_log.md`.
 - Best use: Determine who can do what, where enforcement happens, and which trust splits remain live in code.
 - Refresh triggers: Session/auth changes, route guard changes, write-policy changes, secrets handling changes, backup/import flow changes, provider integration changes, manifest-signing changes.
-- Highest-risk drift areas: Split token authority, inconsistent route-local guard patterns, optional owner-policy enforcement, release-artifact validation absence, and license/manifest mismatch.
+- Highest-risk drift areas: Split token authority, future route-local guard drift, Docker/LAN exposure drift, optional owner-policy enforcement, release-artifact validation absence, and license/manifest mismatch.
 - Key dependent files / modules: `core/api/http.py`, `core/api/security.py`, `tgc/security.py`, `tgc/state.py`, `tgc/tokens.py`, `core/policy/guard.py`, `core/secrets/manager.py`, `core/utils/export.py`, `core/services/capabilities/registry.py`, `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`.
 
 ## Trust and Enforcement Matrix
@@ -23,11 +23,12 @@ Core trust is not only about preventing compromise. It is also about preserving 
 | Concern | Status | Enforced by | Scope | Notes |
 | --- | --- | --- | --- | --- |
 | Session gate for non-public routes | Canonical | `session_guard` middleware | Broad route surface | Main route-entry auth barrier. |
-| Route-local token checks | Canonical with compatibility wrapper | `core.api.http.require_token_ctx` plus `tgc.security.require_token_ctx` | Selected modules/routes | `core.api.http` owns validation; `tgc.security.require_token_ctx` is a compatibility wrapper only. |
+| Route-local token checks | Canonical with compatibility wrapper | `core.api.http.require_token_ctx` plus `tgc.security.require_token_ctx` | Sensitive reads/writes in routed modules | `core.api.http` owns validation; `tgc.security.require_token_ctx` is a compatibility wrapper only. |
 | Write gate | Canonical | `require_write_access()` / `require_writes()` | Writes and selected admin routes | Controlled by app state plus env/config. |
 | Owner/tester commit gate | Canonical | `require_owner_commit()` | Selected write operations | Strict role/plan enforcement activates only when `BUS_POLICY_ENFORCE=1`. |
 | Dev-only gate | Canonical | `session_guard` path check plus `require_dev()` | `/dev/*` routes and detailed health | `/dev/*` stays hidden as 404 when disabled; when enabled, session auth still applies. |
 | Capability manifest validation | Canonical | HMAC signature in `core/services/capabilities/registry.py` | `/capabilities`, `/nodes.manifest.sync` | Local manifest trust only. |
+| Docker default network exposure | Canonical | `docker-compose.yml` | Host-published container port | Default Compose binding is `127.0.0.1:8765:8765`. Container-internal `0.0.0.0` is retained for Docker runtime behavior, but host exposure must stay loopback-only by default. |
 | Update manifest validation | Canonical | `core/services/update.py` | `/app/update/check` | URL/content-type/size/SemVer, channel selection, supported manifest-shape, optional signed-manifest unwrapping, and optional declared metadata shape validation. |
 | Manual update staging endpoint | Canonical | `core/api/routes/update.py`, `core/services/update_stage.py` | `POST /app/update/stage` | Session-authenticated and write-gated; runs trusted staging only when user clicks Update. |
 | Manifest authenticity primitives | Bridge groundwork | `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`, `scripts/sign_manifest.py`, release mirror workflow | Manifest metadata | Ed25519 verification and embedded signatures exist; production public key `bus-core-prod-ed25519-2026-04-25` is pinned, but client enforcement remains off and unsigned compatibility remains available. |
@@ -76,6 +77,7 @@ Core trust is not only about preventing compromise. It is also about preserving 
 
 - Intended session contract: `GET /session/token` is the only bootstrap surface, it sets the `bus_session` cookie, and non-public routes remain cookie-authenticated even when `BUS_DEV=1`.
 - Intended dev-route contract: `/dev/*` returns `404` whenever `BUS_DEV!=1`; when `BUS_DEV=1`, those routes are available but still require a valid session cookie.
+- Docker/host exposure contract: BUS Core is local-first software. Docker Compose defaults to loopback-only publishing, and the default session model is for local loopback use, not multi-user LAN/public hosting. Non-loopback deployment requires explicit operator action, a separate advanced/unsafe override, and stronger network/access controls.
 
 This is the core trust boundary as implemented today: local runtime first, bounded optional network calls, and a single supported bootstrap route. Remaining auth ambiguity must stay documented plainly because it affects operator trust even when the app still functions.
 
@@ -85,10 +87,9 @@ This is the core trust boundary as implemented today: local runtime first, bound
 | Route family | Status | Route-local guard pattern |
 | --- | --- | --- |
 | Items, vendors/contacts, recipes, system state, canonical manufacture | Canonical | Explicit token deps; writes also use write gate and owner commit. |
+| Ledger, finance, config, update check/stage, and app-log routes | Canonical | Explicit token deps on sensitive reads; explicit token + `require_writes` on sensitive mutations. Owner commit was not added where the existing domain policy did not already require it. |
 | `/app/db/*`, `/settings/*`, `/plans*`, `/plugins*`, `/probe`, `/capabilities`, `/logs`, local path ops | Canonical | Protected router applies token dependency; many writes also require write gate. |
-| `ledger_api` canonical mutations and reads (`/app/purchase`, `/app/stock/in`, `/app/stock/out`, `/app/ledger/history`, etc.) | Drifted | Route-local token/write deps are absent in module code; protection relies on global middleware. |
-| `finance_api` mutations and reads | Drifted | Route-local token/write deps are absent in module code; protection relies on global middleware. |
-| `config GET`, `update GET`, `logs_api GET`, transaction stubs | Drifted | Route-local token deps are absent; global middleware still protects non-public paths. |
+| Transaction stubs and older direct routes not yet consolidated into domain routers | Drifted | Global middleware still protects non-public paths, but route-local dependency coverage is not yet uniform across the whole app. |
 
 ## Sensitive write operations
 
@@ -102,9 +103,9 @@ This is the core trust boundary as implemented today: local runtime first, bound
 | Vendor/contact writes | Canonical | `/app/vendors*`, `/app/contacts*` | Explicit token + write access + owner commit | Shared-table mutation surface. |
 | Recipe writes | Canonical | `/app/recipes*` mutations | Explicit token + `require_writes` + owner commit | Also appends journal entries. |
 | Manufacturing run | Canonical | `POST /app/manufacture` | Explicit token + `require_writes` + owner commit | Writes manufacturing run + journals. |
-| Ledger mutations | Drifted | `/app/purchase`, `/app/stock/in`, `/app/stock/out`, `/app/consume`, `/app/adjust` | No route-local auth/write deps in module | Still behind global middleware; route-local pattern differs from other write domains. |
-| Finance mutations | Drifted | `/app/finance/expense`, `/app/finance/refund` | No route-local auth/write deps in module | Same mismatch as ledger routes. |
-| Config and policy writes | Canonical | `/app/config`, `/policy`, `/settings/google`, `/settings/reader`, `/plans*`, `/plugins/{pid}/enable` | Usually protected router + `require_writes` | Owner commit is not universal across these admin writes. |
+| Ledger mutations | Canonical | `/app/purchase`, `/app/stock/in`, `/app/stock/out`, `/app/consume`, `/app/adjust` | Explicit token + `require_writes` | Owner commit is not currently part of this domain policy. |
+| Finance mutations | Canonical | `/app/finance/expense`, `/app/finance/refund` | Explicit token + `require_writes` | Owner commit is not currently part of this domain policy. |
+| Config and policy writes | Canonical | `/app/config`, `/policy`, `/settings/google`, `/settings/reader`, `/plans*`, `/plugins/{pid}/enable` | `/app/config` has explicit token + `require_writes`; other admin routes are protected router + write gate where applicable | Owner commit is not universal across these admin writes. |
 | Open local path / restart server | Canonical | `/open/local`, `/server/restart` | Protected router + `require_writes` | Performs OS-visible side effects. |
 
 ## Adapters and integrations
@@ -149,10 +150,11 @@ This is the core trust boundary as implemented today: local runtime first, bound
 ## Evidence-backed findings
 
 - Narrowed drift: `core.api.http` now owns validator authority, but runtime token state still spans `AppState.tokens`, global `SESSION_TOKEN`, and a token file.
-- Drifted: `ledger_api` and `finance_api` rely on global middleware rather than the explicit route-local auth/write pattern used by other write domains.
-- Drifted: CORS is configured with `allow_origins=["*"]` and `allow_methods=["*"]` on the local server.
+- Canonical: scoped ledger, finance, config, update-check, and app-log routes now carry explicit route-local token dependencies, and sensitive mutations carry explicit write-gate dependencies.
+- Canonical: browser CORS is restricted to explicit loopback origins (`http://127.0.0.1:8765`, `http://localhost:8765`) with explicit methods/headers; wildcard CORS is not part of the default local-first runtime.
 - Drifted: `core/services/capabilities/registry.py` injects a `license` block with `PolyForm-Noncommercial-1.0.0`, which conflicts with the repo-wide AGPL labeling elsewhere.
 - Canonical: legacy alternate `/session/token` surfaces (`app.py`, `tgc/http.py`) were removed; `core/api/http.py` is the only supported bootstrap route.
+- Canonical: `docker-compose.yml` publishes the BUS Core port to `127.0.0.1` by default so Docker mode follows the local-first loopback trust model; bare `8765:8765` publishing is reserved for explicitly documented unsafe/advanced LAN overrides.
 - Canonical: backup import/export paths enforce password-based decryption, exports-root path confinement, maintenance mode, and journal archiving during restore.
 - Canonical: update manifest fetch blocks localhost and literal private/loopback/link-local/unspecified IP hosts, rejects redirects, caps response size, validates allowed channel selection, and validates supported manifest shapes.
 - Canonical bridge groundwork: manifest authenticity support exists with Ed25519 canonical JSON verification, envelope support, backward-compatible embedded top-level signatures, and a pinned production public key. Release publication signs manifests before upload, but Core does not yet require signed manifests.
@@ -168,5 +170,5 @@ The current security posture is therefore trustworthy in some important local-fi
 ## Freeze Notes
 
 - Refresh on: token/session flow changes, route-guard changes, provider integration changes, restore/export changes, manifest-signing changes, or policy enforcement changes.
-- Fastest invalidators: consolidating token authority, moving ledger/finance to explicit route-local guards, changing secrets storage, or altering update validation behavior.
+- Fastest invalidators: consolidating token authority, adding new sensitive routes without route-local guards, publishing Docker defaults beyond loopback, reintroducing wildcard/default-open CORS, changing secrets storage, or altering update validation behavior.
 - Check alongside: `02_API_AND_UI_CONTRACT_MAP.md` for route ownership and `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for update-path release validation details.

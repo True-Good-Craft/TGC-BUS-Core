@@ -40,7 +40,7 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 | Windows version metadata file | Canonical | `scripts/build_core.ps1` | `scripts/_win_version_info.txt` |
 | Bundled UI/license assets | Canonical | `BUS-Core.spec` | Embedded in PyInstaller artifact |
 | Docker image | Canonical | `Dockerfile`, `.github/workflows/publish-image.yml` | GHCR tags `latest` and `:<sha>` |
-| Container runtime | Canonical | `docker-compose.yml` | Exposes `8765`, persists `/data/app.db` |
+| Container runtime | Canonical | `docker-compose.yml` | Publishes `127.0.0.1:8765:8765` by default, persists `/data/app.db` |
 
 ## Observed Release Flow
 
@@ -55,6 +55,12 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 9. The signed manifest is uploaded in place to R2 as `manifest/core/stable.json`. Lighthouse serves/proxies that manifest, but Lighthouse does not own signing authority; the GitHub Actions release workflow does.
 10. `.github/workflows/publish-image.yml` remains a separate container-publish workflow and does not govern Windows release/update version authority.
 11. `scripts/build_core.ps1` prints manual `signtool` commands for signing and signature verification, but the repo does not automate those steps.
+
+## Docker Deployment Boundary
+
+BUS Core is local-first software. The default Docker Compose runtime publishes the app to host loopback only with `127.0.0.1:8765:8765`; the container-internal Uvicorn bind remains `0.0.0.0` so Docker networking works. BUS Core is not safe for LAN or public exposure by default because `/session/token` is a local bootstrap surface and the default session model is for local loopback use, not multi-user network hosting.
+
+Any non-loopback deployment requires explicit operator action, a clearly named override such as `docker-compose.lan.yml`, and stronger access controls around the host, network, reverse proxy, and session bootstrap path. Bare default host publishing such as `8765:8765` is not permitted in `docker-compose.yml`.
 
 This flow is trustworthy to the extent that version authority is singular and machine-checked. It is not yet a cryptographically verified end-to-end updater, and the docs should not imply otherwise.
 

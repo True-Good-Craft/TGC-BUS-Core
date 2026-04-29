@@ -16,9 +16,11 @@ from core.appdb.engine import get_session
 from core.appdb.models import CashEvent, Item, ItemMovement
 from core.appdb.models_recipes import ManufacturingRun
 from core.api.utils.quantity_guard import reject_legacy_qty_keys
+from core.config.writes import require_writes
 from core.metrics.metric import default_unit_for, uom_multiplier
 from core.metrics.metric import normalize_quantity_to_base_int
 from core.services.stock_mutation import perform_stock_in_base
+from tgc.security import require_token_ctx
 
 
 router = APIRouter(prefix="/finance", tags=["finance"])
@@ -122,7 +124,12 @@ class ExpenseIn(BaseModel):
 
 
 @router.post("/expense")
-def finance_expense(body: ExpenseIn, db: Session = Depends(get_session)):
+def finance_expense(
+    body: ExpenseIn,
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+):
     ce = CashEvent(
         kind="expense",
         category=body.category,
@@ -155,7 +162,12 @@ class RefundIn(BaseModel):
 
 
 @router.post("/refund")
-def finance_refund(raw: dict = Body(...), db: Session = Depends(get_session)):
+def finance_refund(
+    raw: dict = Body(...),
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+):
     reject_legacy_qty_keys(raw)
     body = RefundIn(**raw)
 
@@ -239,6 +251,7 @@ def finance_profit(
     from_: str = Query(..., alias="from"),
     to: str = Query(..., alias="to"),
     db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
 ):
     # Params are YYYY-MM-DD. Bounds: [from 00:00:00, to_next_day 00:00:00) (exclusive upper).
     from_dt, to_dt = _parse_window(from_, to)
@@ -303,6 +316,7 @@ def finance_summary(
     from_: str = Query(..., alias="from"),
     to: str = Query(..., alias="to"),
     db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
 ):
     window, error = _parse_window_read(from_, to)
     if error is not None:
@@ -408,6 +422,7 @@ def finance_transactions(
     to: str = Query(..., alias="to"),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
 ):
     window, error = _parse_window_read(from_, to)
     if error is not None:

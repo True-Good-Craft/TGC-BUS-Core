@@ -158,12 +158,16 @@ See [`SOT.md`](SOT.md) for the canonical Source of Truth and system architecture
 ## Run with Docker
 
 ```bash
-docker pull ghcr.io/true-good-craft/tgc-bus-core:latest
+docker compose up --build
 
-docker run -p 8765:8765 ghcr.io/true-good-craft/tgc-bus-core:latest
+# or, without Compose:
+docker pull ghcr.io/true-good-craft/tgc-bus-core:latest
+docker run -p 127.0.0.1:8765:8765 ghcr.io/true-good-craft/tgc-bus-core:latest
 ```
 
-(Docker is optional. Native Windows builds are supported.)
+Docker is optional. Native Windows builds are supported.
+
+Docker Compose defaults to loopback-only host publishing: `127.0.0.1:8765:8765`. BUS Core is local-first software; it is not safe for LAN or public exposure by default. The default session model is intended for local loopback use, not multi-user network hosting. Any non-loopback Docker deployment requires explicit operator action, a clearly separated override, and stronger access controls around the host, network, and `/session/token` bootstrap surface.
 
 
 
@@ -269,7 +273,7 @@ BUS Core runs locally and does not require network access for normal use.
 - BUS Core does not overwrite the running EXE. After successful staging, the launcher can hand off on next start (after DB ownership lock) using configured verified launch policy.
 - Channel support exists in Core config for `stable`, `test`, `partner-3dque`, `lts-1.1`, and `security-hotfix`, but current release automation publishes the stable manifest lane only.
 - BUS Core has DB/app ownership locking to prevent two live owners of the same DB/app root.
-- Docker is a separate deployment lane. Current GHCR images are tagged `latest` and commit SHA only; there are no SemVer image tags, image signatures, SBOM/provenance artifacts, image scans, or formal Docker update policy yet.
+- Docker is a separate deployment lane. Docker Compose publishes the app to host loopback only by default; the container-internal Uvicorn bind remains `0.0.0.0` so Docker networking works. Current GHCR images are tagged `latest` and commit SHA only; there are no SemVer image tags, image signatures, SBOM/provenance artifacts, image scans, or formal Docker update policy yet.
 - Builds remain reproducible from source.
 
 Note: Windows Defender or SmartScreen warnings may appear for new releases, especially when a binary is unsigned or has not yet built reputation.

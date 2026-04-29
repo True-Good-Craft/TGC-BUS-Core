@@ -1,26 +1,30 @@
 # Copyright (C) 2025 BUS Core Authors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-from fastapi import APIRouter, Depends, Body, HTTPException, Request
 from typing import Dict, Any
 
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import ValidationError
 
 from core.config.writes import require_writes
 from core.config.manager import load_config, save_config
 from core.config.update_policy import UpdatePolicyError
+from tgc.security import require_token_ctx
 
 router = APIRouter()
 
+
 @router.get("/config")
-def get_config() -> Dict[str, Any]:
+def get_config(_token: None = Depends(require_token_ctx)) -> Dict[str, Any]:
     return load_config().model_dump()
+
 
 @router.post("/config")
 def update_config(
     request: Request,
     payload: Dict[str, Any] = Body(...),
-    _writes: None = Depends(require_writes)
+    _token: None = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     try:
         save_config(payload)

@@ -4,7 +4,7 @@
 - Primary authority basis: Mounted routes in `core/api/http.py`, `core/api/routes/*`, `core/reader/api.py`, `core/organizer/api.py`, and SPA usage in `core/ui/app.js`, `core/ui/js/**/*`.
 - Best use: Contract checking, route inventory, UI/backend coherence review, wrapper/drift detection.
 - Refresh triggers: Route additions/removals, router remounting, screen changes, payload shape changes, legacy-wrapper cleanup.
-- Highest-risk drift areas: Missing backup endpoints, stub transaction endpoints used by the UI, `/app/logs` vs `/logs` naming collision, and mixed route-level guard patterns.
+- Highest-risk drift areas: Missing backup endpoints, stub transaction endpoints used by the UI, `/app/logs` vs `/logs` naming collision, and any future route-level guard drift.
 - Key dependent files / modules: `core/api/http.py`, `core/api/routes/items.py`, `core/api/routes/recipes.py`, `core/api/routes/manufacturing.py`, `core/api/routes/ledger_api.py`, `core/api/routes/finance_api.py`, `core/ui/app.js`, `core/ui/js/cards/*`.
 
 ## Top Contract Drift Risks
@@ -15,7 +15,7 @@ This map exists to keep authority boundaries explicit. Canonical, supported, sec
 - Drifted: `core/ui/js/cards/home_donuts.js` uses `/app/transactions/summary` and `/app/transactions`, but both endpoints are explicit stubs.
 - Canonical: `/session/token` authority is only `core/api/http.py`; legacy alternate runtime surfaces that previously conflicted here were removed.
 - Drifted: `/app/logs` is the UI event-feed endpoint, while `/logs` is the text runtime log tail; similar names, different contracts.
-- Drifted: Some mounted `/app/*` mutations rely on global middleware rather than route-local auth/write dependencies; see `04_SECURITY_TRUST_AND_OPERATIONS.md`.
+- Guard posture: Scoped ledger, finance, config, update-check, and app-log routes now declare route-local token dependencies, and their sensitive mutations declare route-local write gates; see `04_SECURITY_TRUST_AND_OPERATIONS.md`.
 
 Silent contract drift is a stability risk. The purpose of this document is not to enlarge the declared surface, but to keep the live supported surface explicit and reviewable.
 
@@ -40,9 +40,9 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 
 | Method | Path | Status | Guard note | Purpose | Primary handler |
 | --- | --- | --- | --- | --- | --- |
-| `GET` | `/app/config` | Canonical | Route-local token/write deps absent; protected by global middleware | Read runtime UI/update/launcher config. | `core/api/routes/config.py` |
-| `POST` | `/app/config` | Canonical | `require_writes`; route-local token dep absent | Write runtime UI/update/launcher config. | `core/api/routes/config.py` |
-| `GET` | `/app/update/check` | Canonical | Route-local token/write deps absent | One-shot update check. | `core/api/routes/update.py` |
+| `GET` | `/app/config` | Canonical | Explicit token dep | Read runtime UI/update/launcher config. | `core/api/routes/config.py` |
+| `POST` | `/app/config` | Canonical | Explicit token + `require_writes` | Write runtime UI/update/launcher config. | `core/api/routes/config.py` |
+| `GET` | `/app/update/check` | Canonical | Explicit token dep | One-shot update check. | `core/api/routes/update.py` |
 | `GET` | `/app/system/state` | Canonical | Explicit token dep | Return bus mode, first-run, counts, build/schema status. | `core/api/routes/system_state.py` |
 | `POST` | `/app/system/start-fresh` | Canonical | Explicit token + `require_writes` | Switch demo -> prod and initialize fresh prod DB. | `core/api/routes/system_state.py` |
 | `POST` | `/app/db/export` | Canonical | Protected router + `require_writes` | Create encrypted DB export. | `core/api/http.py` |
@@ -81,16 +81,16 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | Method | Path | Status | Guard note | Purpose | Primary handler |
 | --- | --- | --- | --- | --- | --- |
 | `POST` | `/app/manufacture` | Canonical | Explicit token + `require_writes` + owner commit | Canonical manufacturing run. | `core/api/routes/manufacturing.py` |
-| `POST` | `/app/purchase` | Canonical | Route-local auth/write deps absent | Canonical purchase/stock-in mutation. | `core/api/routes/ledger_api.py` |
-| `POST` | `/app/stock/in` | Canonical | Route-local auth/write deps absent | Canonical stock-in mutation. | `core/api/routes/ledger_api.py` |
-| `POST` | `/app/stock/out` | Canonical | Route-local auth/write deps absent | Canonical stock-out mutation. | `core/api/routes/ledger_api.py` |
-| `GET` | `/app/ledger/history` | Canonical | Route-local token dep absent | Canonical movement history. | `core/api/routes/ledger_api.py` |
-| `POST` | `/app/finance/expense` | Canonical | Route-local auth/write deps absent | Record expense cash event. | `core/api/routes/finance_api.py` |
-| `POST` | `/app/finance/refund` | Canonical | Route-local auth/write deps absent | Record refund and optional restock. | `core/api/routes/finance_api.py` |
-| `GET` | `/app/finance/profit` | Canonical | Route-local token dep absent | Profit snapshot. | `core/api/routes/finance_api.py` |
-| `GET` | `/app/finance/summary` | Canonical | Route-local token dep absent | Finance KPI summary. | `core/api/routes/finance_api.py` |
-| `GET` | `/app/finance/transactions` | Canonical | Route-local token dep absent | Mixed transaction feed. | `core/api/routes/finance_api.py` |
-| `GET` | `/app/logs` | Canonical | Route-local token dep absent | Inventory/ledger event feed used by UI logs page. | `core/api/routes/logs_api.py` |
+| `POST` | `/app/purchase` | Canonical | Explicit token + `require_writes` | Canonical purchase/stock-in mutation. | `core/api/routes/ledger_api.py` |
+| `POST` | `/app/stock/in` | Canonical | Explicit token + `require_writes` | Canonical stock-in mutation. | `core/api/routes/ledger_api.py` |
+| `POST` | `/app/stock/out` | Canonical | Explicit token + `require_writes` | Canonical stock-out mutation. | `core/api/routes/ledger_api.py` |
+| `GET` | `/app/ledger/history` | Canonical | Explicit token dep | Canonical movement history. | `core/api/routes/ledger_api.py` |
+| `POST` | `/app/finance/expense` | Canonical | Explicit token + `require_writes` | Record expense cash event. | `core/api/routes/finance_api.py` |
+| `POST` | `/app/finance/refund` | Canonical | Explicit token + `require_writes` | Record refund and optional restock. | `core/api/routes/finance_api.py` |
+| `GET` | `/app/finance/profit` | Canonical | Explicit token dep | Profit snapshot. | `core/api/routes/finance_api.py` |
+| `GET` | `/app/finance/summary` | Canonical | Explicit token dep | Finance KPI summary. | `core/api/routes/finance_api.py` |
+| `GET` | `/app/finance/transactions` | Canonical | Explicit token dep | Mixed transaction feed. | `core/api/routes/finance_api.py` |
+| `GET` | `/app/logs` | Canonical | Explicit token dep | Inventory/ledger event feed used by UI logs page. | `core/api/routes/logs_api.py` |
 
 ## Drifted or non-canonical `/app/*` surfaces
 
@@ -245,4 +245,3 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 - Refresh on: mounted route changes, wrapper removals, screen rewrites, payload-key changes, or guard-model changes that affect contract assumptions.
 - Fastest invalidators: deleting legacy wrappers, implementing real home transactions, adding/removing `/app/*` routes, or replacing the SPA router.
 - Check alongside: `04_SECURITY_TRUST_AND_OPERATIONS.md` for guard/enforcement truth and `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for update-check contract details.
-

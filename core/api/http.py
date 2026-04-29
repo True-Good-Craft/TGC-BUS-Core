@@ -861,8 +861,8 @@ async def session_guard(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=["http://127.0.0.1:8765", "http://localhost:8765"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Accept", "Content-Type"],
 )
 

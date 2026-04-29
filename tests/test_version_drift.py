@@ -78,14 +78,14 @@ def test_release_mirror_reads_canonical_version_and_checks_tag_match():
     assert "does not match core/version.py VERSION" in workflow, (
         "release-mirror workflow must hard-fail when the release tag does not match the canonical VERSION."
     )
-    assert '--arg version "${{ env.CANONICAL_VERSION }}"' in workflow, (
+    assert '--arg version "$CANONICAL_VERSION"' in workflow, (
         "release-mirror manifest latest.version must come from the canonical VERSION, not from tag parsing."
     )
-    assert 'EXPECTED_ASSET_NAME=TGC-BUS-Core-${CANONICAL_VERSION}.zip' in workflow, (
+    assert 'EXPECTED_ASSET_NAME=BUS-Core-${CANONICAL_VERSION}.zip' in workflow, (
         "release-mirror workflow must target the canonical public ZIP artifact name."
     )
-    assert 'startswith("TGC-BUS-Core-")' in workflow and 'endswith(".zip")' in workflow, (
-        "release-mirror workflow history selection must only include canonical TGC-BUS-Core ZIP assets."
+    assert 'startswith("BUS-Core-")' in workflow and 'endswith(".zip")' in workflow, (
+        "release-mirror workflow history selection must only include canonical BUS-Core ZIP assets."
     )
     assert 'EXPECTED_ASSET_NAME=BUS-Core-${CANONICAL_VERSION}.exe' not in workflow, (
         "release-mirror workflow must not expect the stale BUS-Core EXE public asset name."
@@ -113,4 +113,3 @@ def test_release_check_validates_current_canonical_chain():
     assert "BUS-Core.exe" in script and "BUS-Core-{0}.exe" in script, (
         "scripts/release-check.ps1 must assert the real current build artifact names."
     )
-

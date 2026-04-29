@@ -3,7 +3,7 @@ services:
     build: .
     container_name: bus-core
     ports:
-      - "8765:8765"
+      - "127.0.0.1:8765:8765"
     environment:
       - BUS_DEV=0
       - BUS_DB=/data/app.db

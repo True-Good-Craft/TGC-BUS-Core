@@ -21,8 +21,10 @@ from core.appdb.engine import get_session
 from core.appdb.ledger import InsufficientStock
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.paths import resolve_db_path
+from core.config.writes import require_writes
 from core.metrics.metric import UNIT_MULTIPLIER, _norm_unit, default_unit_for, from_base, normalize_quantity_to_base_int
 from core.services.stock_mutation import perform_purchase_base, perform_stock_in_base, perform_stock_out_base
+from tgc.security import require_token_ctx
 
 router = APIRouter(prefix="/ledger", tags=["ledger"])
 public_router = APIRouter(tags=["ledger"])
@@ -54,7 +56,7 @@ def _has_items_qty_stored() -> bool:
 
 
 @router.get("/health")
-def health():
+def health(_token: None = Depends(require_token_ctx)):
     if not _has_items_qty_stored():
         return {"desync": True, "problems": [{"reason": "items.qty_stored missing"}]}
     return {"desync": False, "note": "Using items.qty_stored for on-hand checks"}
@@ -140,7 +142,12 @@ def _to_base_qty_for_item(db: Session, item_id: int, quantity_decimal: str, uom:
 
 
 @public_router.post("/purchase")
-def canonical_purchase(raw: dict = Body(...), db: Session = Depends(get_session)):
+def canonical_purchase(
+    raw: dict = Body(...),
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+):
     reject_legacy_qty_keys(raw)
     body = PurchaseCanonicalIn(**raw)
     qty_base = _to_base_qty_for_item(db, body.item_id, body.quantity_decimal, body.uom)
@@ -166,7 +173,12 @@ def canonical_purchase(raw: dict = Body(...), db: Session = Depends(get_session)
 
 
 @router.post("/purchase")
-def purchase_wrapper(raw: dict = Body(...), db: Session = Depends(get_session)):
+def purchase_wrapper(
+    raw: dict = Body(...),
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+):
     payload = dict(raw)
     qty = payload.pop("qty", None)
     if qty is not None:
@@ -179,7 +191,12 @@ def purchase_wrapper(raw: dict = Body(...), db: Session = Depends(get_session)):
 
 @router.post("/consume")
 @public_router.post("/consume")
-def consume(body: ConsumeIn, db: Session = Depends(get_session)):
+def consume(
+    body: ConsumeIn,
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+):
     try:
         result = perform_stock_out_base(
             db,
@@ -200,7 +217,12 @@ def consume(body: ConsumeIn, db: Session = Depends(get_session)):
 
 @router.post("/adjust")
 @public_router.post("/adjust")
-def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
+def adjust_stock(
+    body: AdjustmentInput,
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+):
     try:
         if body.qty_change > 0:
             perform_stock_in_base(
@@ -230,7 +252,12 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
 
 
 @public_router.post("/stock/out")
-def canonical_stock_out(raw: dict = Body(...), db: Session = Depends(get_session)):
+def canonical_stock_out(
+    raw: dict = Body(...),
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+):
     reject_legacy_qty_keys(raw)
     body = StockOutCanonicalIn(**raw)
     qty_base = _to_base_qty_for_item(db, body.item_id, body.quantity_decimal, body.uom)
@@ -263,7 +290,12 @@ def canonical_stock_out(raw: dict = Body(...), db: Session = Depends(get_session
 
 
 @router.post("/stock/out")
-def stock_out_wrapper(raw: dict = Body(...), db: Session = Depends(get_session)):
+def stock_out_wrapper(
+    raw: dict = Body(...),
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+):
     payload = dict(raw)
     qty = payload.pop("qty", None)
     if qty is not None:
@@ -276,7 +308,11 @@ def stock_out_wrapper(raw: dict = Body(...), db: Session = Depends(get_session))
 
 @router.get("/valuation")
 @public_router.get("/valuation")
-def valuation(item_id: Optional[int] = None, db: Session = Depends(get_session)):
+def valuation(
+    item_id: Optional[int] = None,
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+):
     if item_id is not None:
         total = (
             db.query(func.coalesce(func.sum(ItemBatch.qty_remaining * ItemBatch.unit_cost_cents), 0))
@@ -308,6 +344,7 @@ def canonical_history(
     limit: int = 100,
     include_base: bool = Query(False),
     db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
 ):
     q = db.query(ItemMovement)
     if item_id is not None:
@@ -353,13 +390,18 @@ def canonical_history(
 
 @router.get("/movements")
 @public_router.get("/movements")
-def movements_wrapper(item_id: Optional[int] = None, limit: int = 100, db: Session = Depends(get_session)):
+def movements_wrapper(
+    item_id: Optional[int] = None,
+    limit: int = 100,
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+):
     body = canonical_history(item_id=item_id, limit=limit, db=db)
     return JSONResponse(content=body, headers={"X-BUS-Deprecation": "/app/ledger/history"})
 
 
 @router.get("/debug/db")
-def ledger_debug(item_id: int | None = None):
+def ledger_debug(item_id: int | None = None, _token: None = Depends(require_token_ctx)):
     require_dev()
     path = resolve_db_path()
     with sqlite3.connect(path) as con:
@@ -378,7 +420,12 @@ def ledger_debug(item_id: int | None = None):
 
 
 @public_router.post("/stock/in")
-def canonical_stock_in(raw: dict = Body(...), db: Session = Depends(get_session)):
+def canonical_stock_in(
+    raw: dict = Body(...),
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+):
     reject_legacy_qty_keys(raw)
     body = StockInCanonicalIn(**raw)
     qty_base = _to_base_qty_for_item(db, body.item_id, body.quantity_decimal, body.uom)
@@ -400,7 +447,12 @@ def canonical_stock_in(raw: dict = Body(...), db: Session = Depends(get_session)
 
 @router.post("/stock_in")
 @public_router.post("/stock_in")
-def stock_in_wrapper(raw: dict = Body(...), db: Session = Depends(get_session)):
+def stock_in_wrapper(
+    raw: dict = Body(...),
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+):
     payload = dict(raw)
     if "qty" in payload:
         payload["quantity_decimal"] = str(payload.pop("qty"))

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
 from core.appdb.models import Item, ItemMovement
+from tgc.security import require_token_ctx
 
 router = APIRouter(prefix="/app", tags=["logs"])
 public_router = APIRouter(prefix="/app", tags=["logs"])
@@ -28,6 +29,7 @@ def list_logs(
     cursor_id: int | None = Query(None, description="Return rows with id < cursor_id"),
     item_id: int | None = None,
     db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
 ):
     """Return stock-change events from the ledger (item_movements), newest first."""
 
