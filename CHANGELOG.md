@@ -12,6 +12,7 @@
 ## [Unreleased]
 
 ### Added
+- Added update-staging signature-enforcement tests covering unsigned, trusted signed, bad-signature, unknown-key, explicit unsigned opt-out, and unchanged read-only update-check behavior.
 - Added a focused CORS loopback policy test that source-checks the FastAPI middleware configuration and verifies allowed loopback, rejected untrusted-origin, no-wildcard, and same-origin unaffected behavior.
 - Added a Docker loopback binding governance test that fails if default Compose publishing regresses to bare `8765:8765` and allows LAN exposure only in explicitly named, documented unsafe/advanced override files.
 - Added route-guard consistency regression coverage for scoped ledger, finance, config, update, and app-log routes, including source-level mutation/read guard checks plus anonymous and writes-disabled API checks.
@@ -32,6 +33,8 @@
 - Added a narrow `verified_ready` promotion helper that writes `verified_ready` only when `hash_verified`, `extracted`, and `exe_verified` all agree on version/channel/hash/path data and the cached ZIP, extracted version directory, and extracted EXE still exist inside the confined update-cache roots.
 
 ### Changed
+- Required signed manifests for the default `/app/update/stage` service path while leaving read-only `/app/update/check` unsigned-manifest compatibility unchanged.
+- Bumped `INTERNAL_VERSION` from `1.1.0.3` to `1.1.0.4` for update-staging signed-manifest enforcement without changing public `VERSION`.
 - Restricted default FastAPI CORS from wildcard origins/methods to explicit loopback origins and explicit methods/headers, aligning browser-origin policy with BUS Core's local-first trust model.
 - Bumped `INTERNAL_VERSION` from `1.1.0.2` to `1.1.0.3` for CORS loopback restriction without changing public `VERSION`.
 - Hardened Docker Compose default exposure to publish BUS Core on host loopback only (`127.0.0.1:8765:8765`) while preserving the container-internal Uvicorn bind, and updated runtime/security/release docs to state LAN/public exposure is unsafe by default.
@@ -51,7 +54,7 @@
 - Updated `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` release-flow documentation to reflect that manual `workflow_dispatch` backfills validate `release_tag` as strict `vX.Y.Z` and derive manifest versioning from that requested tag instead of from the checked-out tooling ref.
 - Bumped `INTERNAL_VERSION` from `1.0.4.1` to `1.0.4.2` for the secure-update foundation governance/signing-pipeline alignment pass without changing public `VERSION`.
 - Documented that the release mirror now signs generated `stable.json` into `stable.signed.json` with `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`, verifies backward-compatible `latest.version` / `latest.download.url` plus Ed25519 signature metadata, verifies against Core's pinned public key policy, and publishes the signed manifest in place as `manifest/core/stable.json`.
-- Clarified secure-update limits: client-side signed-manifest enforcement remains off, unsigned manifest compatibility remains available, internal helpers now support hash-verified ZIP download, safe extraction, EXE Authenticode/publisher/thumbprint verification, and conservative `verified_ready` promotion inside the local update cache, but there is still no handoff launch and no update UI button.
+- Clarified secure-update limits: read-only update-check unsigned compatibility remains available, manual update staging now requires trusted signed manifests, internal helpers support hash-verified ZIP download, safe extraction, EXE Authenticode/publisher/thumbprint verification, and conservative `verified_ready` promotion inside the local update cache, but there is still no forced restart or auto-apply behavior.
 - Added launcher-level DB ownership preflight so duplicate native launches are rejected before migrations, server bind, or browser open while retaining the app-level startup guard for server-only entrypoints.
 - Bumped `INTERNAL_VERSION` from `1.0.4.0` to `1.0.4.1` for the DB ownership/single-instance launcher hardening without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.0.3.2` to `1.0.3.3` for the final pre-release update-hardening governance pass without changing public `VERSION`.

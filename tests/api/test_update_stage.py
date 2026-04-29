@@ -34,6 +34,19 @@ def test_update_check_contract_unchanged(bus_client):
     }
 
 
+def test_update_stage_service_requires_signed_manifest_by_default(monkeypatch: pytest.MonkeyPatch):
+    from core.api.routes import update as update_routes
+
+    monkeypatch.setattr(update_routes, "active_manifest_public_keys", lambda: {"test-key": b"x" * 32})
+
+    update_service = update_routes.get_update_service()
+    stage_service = update_routes.get_update_stage_service()
+
+    assert update_service._require_signed_manifest is False
+    assert stage_service._update_service._require_signed_manifest is True
+    assert stage_service._update_service._trusted_manifest_public_keys == {"test-key": b"x" * 32}
+
+
 def test_update_stage_endpoint_returns_update_not_available(bus_client, monkeypatch: pytest.MonkeyPatch):
     from core.api.routes import update as update_routes
 

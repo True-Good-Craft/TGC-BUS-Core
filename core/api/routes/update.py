@@ -20,8 +20,15 @@ def get_update_service() -> UpdateService:
     return UpdateService(trusted_manifest_public_keys=active_manifest_public_keys())
 
 
+def get_update_stage_update_service() -> UpdateService:
+    return UpdateService(
+        trusted_manifest_public_keys=active_manifest_public_keys(),
+        require_signed_manifest=True,
+    )
+
+
 def get_update_stage_service() -> UpdateStageService:
-    return UpdateStageService(update_service=get_update_service())
+    return UpdateStageService(update_service=get_update_stage_update_service())
 
 
 def _result_payload(result: UpdateResult) -> dict[str, object | None]:
