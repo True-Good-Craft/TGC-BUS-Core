@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Manufacturing Runs & History Card
 
-import { ensureToken } from '../api.js';
+import { apiGetJson, ensureToken } from '../api.js';
 import { RecipesAPI } from '../api/recipes.js';
 import * as canonical from '../api/canonical.js';
 import { fromBaseQty, fmtQty, dimensionForUnit } from '../lib/units.js';
+import { formatOnHandDisplay } from '../lib/item-display.js';
 
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -23,6 +24,8 @@ function el(tag, attrs = {}, children = []) {
 let _state = {
   recipes: [],
   selectedRecipe: null,
+  items: [],
+  itemById: new Map(),
 };
 
 const recipeNameCache = (window._recipeNameCache = window._recipeNameCache || Object.create(null));
@@ -47,6 +50,33 @@ function scaleQuantityDecimal(value, factor) {
   const qty = decimalToNumber(value);
   if (!Number.isFinite(qty)) return '0';
   return toDecimalString(String(qty * factor));
+}
+
+async function refreshItemStockMap() {
+  const items = await apiGetJson('/app/items');
+  _state.items = Array.isArray(items) ? items : [];
+  _state.itemById = new Map(_state.items.map((item) => [String(item?.id), item]));
+  return _state.itemById;
+}
+
+function itemForStock(recipeItem) {
+  const id = recipeItem?.item_id ?? recipeItem?.item?.id;
+  if (id != null && _state.itemById?.has(String(id))) {
+    return _state.itemById.get(String(id));
+  }
+  return recipeItem?.item || null;
+}
+
+function outputItemForStock(recipe) {
+  const id = recipe?.output_item_id ?? recipe?.output_item?.id;
+  if (id != null && _state.itemById?.has(String(id))) {
+    return _state.itemById.get(String(id));
+  }
+  return recipe?.output_item || null;
+}
+
+function stockText(item) {
+  return formatOnHandDisplay(item, { fallback: 'Unknown', allowLegacyFallbacks: false });
 }
 
 function formatManufactureError(err) {
@@ -76,7 +106,7 @@ function _runConfirmText({ recipeName, outputQty, adhoc }) {
 
 export async function mountManufacturing() {
   await ensureToken();
-  _state = { recipes: [], selectedRecipe: null };
+  _state = { recipes: [], selectedRecipe: null, items: [], itemById: new Map() };
   const container = document.querySelector('[data-tab-panel="manufacturing"]');
   if (!container) return;
 
@@ -95,14 +125,17 @@ export async function mountManufacturing() {
 }
 
 export function unmountManufacturing() {
-  _state = { recipes: [], selectedRecipe: null };
+  _state = { recipes: [], selectedRecipe: null, items: [], itemById: new Map() };
   const container = document.querySelector('[data-tab-panel="manufacturing"]');
   if (container) container.innerHTML = '';
 }
 
 async function renderNewRunForm(parent) {
   try {
-    const list = await RecipesAPI.list();
+    const [list] = await Promise.all([
+      RecipesAPI.list(),
+      refreshItemStockMap().catch(() => new Map()),
+    ]);
     _state.recipes = (list || []).filter((r) => !r.archived);
   } catch {
     parent.append(el('div', { class: 'error' }, 'Failed to load recipes.'));
@@ -208,8 +241,8 @@ async function renderNewRunForm(parent) {
 
         (fullRecipe.items || []).forEach((ri) => {
           const row = el('tr', { class: 'mfg-projection-row' });
-          const item = ri.item || {};
-          const stock = item.stock_on_hand_display?.value ?? '—';
+          const item = itemForStock(ri);
+          const stock = stockText(item);
           const scaledChange = scaleQuantityDecimal(ri.quantity_decimal || '0', factor);
           const change = fmtHumanQty(`-${scaledChange}`, ri.uom || ri.item?.uom);
           row.append(
@@ -223,10 +256,11 @@ async function renderNewRunForm(parent) {
 
         if (fullRecipe.output_item_id) {
           const row = el('tr', { class: 'mfg-projection-row' });
+          const outputItem = outputItemForStock(fullRecipe);
           row.append(
             el('td', { text: fullRecipe.output_item?.name || `Item #${fullRecipe.output_item_id}` }),
             el('td', { class: 'mfg-output-cell', text: 'Output' }),
-            el('td', { class: 'mfg-col-right', text: '—' }),
+            el('td', { class: 'mfg-col-right', text: stockText(outputItem) }),
             el('td', { class: 'mfg-col-right mfg-output-cell', text: fmtHumanQty(toDecimalString(qtyInput.value || fullRecipe.quantity_decimal || '1'), fullRecipe.uom || fullRecipe.output_item?.uom) }),
           );
           tbody.append(row);
@@ -239,8 +273,8 @@ async function renderNewRunForm(parent) {
 
       (fullRecipe.items || []).forEach((ri) => {
         const row = el('tr', { class: 'mfg-projection-row' });
-        const item = ri.item || {};
-        const stock = item.stock_on_hand_display?.value ?? '—';
+        const item = itemForStock(ri);
+        const stock = stockText(item);
         const change = fmtHumanQty(`-${ri.quantity_decimal || '0'}`, ri.uom || ri.item?.uom);
         row.append(
           el('td', { text: ri.item?.name || `Item #${ri.item_id}` }),
@@ -306,6 +340,7 @@ async function renderNewRunForm(parent) {
       await canonical.manufactureRecipe(payload);
 
       setStatus('Run Complete!', 'success');
+      await refreshItemStockMap().catch(() => new Map());
       await updateProjection();
       await loadRecentRuns30d();
       runBtn.textContent = 'Run Production';
