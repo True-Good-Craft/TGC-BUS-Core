@@ -43,17 +43,26 @@ def _load_plugin(plugin_id: str) -> PluginV2:
     raise RuntimeError(f"plugin_not_found:{plugin_id}:{last_exc}")
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_request(argv: list[str] | None) -> tuple[str, str, Dict[str, Any]]:
+    payload = json.loads(sys.stdin.read() or "{}")
+    plugin_id = payload.get("plugin_id")
+    fn = payload.get("fn")
+    if isinstance(plugin_id, str) and isinstance(fn, str):
+        return plugin_id, fn, payload
+
     parser = argparse.ArgumentParser(description="Sandbox runner")
     parser.add_argument("--plugin", required=True)
     parser.add_argument("--fn", required=True)
     args = parser.parse_args(argv)
+    return args.plugin, args.fn, payload
 
-    payload = json.loads(sys.stdin.read() or "{}")
-    plugin = _load_plugin(args.plugin)
+
+def main(argv: list[str] | None = None) -> int:
+    plugin_id, fn, payload = _parse_request(argv)
+    plugin = _load_plugin(plugin_id)
     input_data: Dict[str, Any] = payload.get("input") or {}
     limits = payload.get("limits") or {}
-    proposal = plugin.plan_transform(args.fn, input_data, limits=limits)
+    proposal = plugin.plan_transform(fn, input_data, limits=limits)
     output = {"proposal": proposal}
     sys.stdout.write(json.dumps(output))
     return 0
