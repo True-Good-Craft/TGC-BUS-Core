@@ -11,6 +11,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Bumped `VERSION` from `1.1.0` to `1.1.1` and reset `INTERNAL_VERSION` from `1.1.0.14` to `1.1.1.0` for the next governed update cut.
+
 ### Fixed
 - Removed import-time diagnostic prints from runtime modules and narrowed item price-decimal fallback handling without changing API contracts.
 - Remediated documented empty exception handlers with narrow catches, safe type-only journal logging, controlled secret-delete failures, and explicit non-fatal intent comments.
