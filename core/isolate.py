@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-import json, os, subprocess, sys, tempfile, time, pathlib, shlex
+import json, os, subprocess, sys, tempfile
 
 _WINDOWS_HIDE = 0x08000000 if os.name == "nt" else 0
 

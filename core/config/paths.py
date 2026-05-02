@@ -22,7 +22,7 @@ from pathlib import Path
 
 from sqlalchemy.engine import URL
 
-from core.appdb.paths import app_db_path, app_root_dir, resolve_db_path, ui_dir
+from core.appdb.paths import app_root_dir, resolve_db_path, ui_dir
 
 BUS_ROOT: Path = app_root_dir()
 APP_DB: Path = Path(resolve_db_path())

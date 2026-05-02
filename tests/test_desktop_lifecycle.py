@@ -4,7 +4,6 @@
 import pytest
 from fastapi.testclient import TestClient
 from core.api.http import app, build_app
-import os
 
 @pytest.fixture
 def client():

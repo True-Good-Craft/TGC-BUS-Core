@@ -12,6 +12,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Removed confirmed unused imports across core modules, scripts, plugins, and tests without changing runtime behavior.
 - Shaped remaining import preview, import commit, and transform simulation responses to suppress raw exception/debug/path detail, and set CI workflow permissions to explicit read-only contents access.
 - Hardened Organizer duplicate scanning and rename planning so start paths, quarantine destinations, walked files, and generated names must resolve under configured local filesystem roots before filesystem access.
 - Reduced exception-detail exposure in protected plan commit/export, restore commit, and dev diagnostic responses by returning controlled error codes instead of raw exception strings.
@@ -50,6 +51,7 @@
 - Added a narrow `verified_ready` promotion helper that writes `verified_ready` only when `hash_verified`, `extracted`, and `exe_verified` all agree on version/channel/hash/path data and the cached ZIP, extracted version directory, and extracted EXE still exist inside the confined update-cache roots.
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.0.11` to `1.1.0.12` for the unused-import cleanup pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.10` to `1.1.0.11` for the remaining information-exposure and CI workflow-permissions hardening pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.9` to `1.1.0.10` for the Organizer path-injection hardening pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.8` to `1.1.0.9` for the information-exposure hardening pass without changing public `VERSION`.

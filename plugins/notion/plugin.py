@@ -3,7 +3,7 @@ from __future__ import annotations
 import os, json, ssl, socket
 from urllib import request, error
 from urllib.parse import urlparse
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 
 from core.contracts.plugin_v2 import PluginV2
 from core.services.conn_broker import ConnectionBroker, ClientHandle

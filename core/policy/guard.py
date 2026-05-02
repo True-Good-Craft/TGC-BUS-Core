@@ -21,7 +21,6 @@ import os
 
 from fastapi import HTTPException, Request
 
-from core.api.security import _calc_default_allow_writes
 from core.config.writes import require_writes
 
 from .model import Role

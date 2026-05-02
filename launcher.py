@@ -21,7 +21,6 @@ from typing import Any, Callable
 
 # --- 1. Dependency Guard ---
 try:
-    import requests
     import uvicorn
     from PIL import Image
     from core.appdata.paths import resolve_db_path

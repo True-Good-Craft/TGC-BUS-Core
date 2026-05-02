@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from core.appdb.ledger import InsufficientStock, add_batch, fifo_consume
+from core.appdb.ledger import add_batch, fifo_consume
 from core.appdb.models import CashEvent, Item
 from core.journal.inventory import append_inventory
 

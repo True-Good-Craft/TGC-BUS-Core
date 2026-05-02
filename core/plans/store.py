@@ -23,7 +23,7 @@ from typing import Optional
 
 from core.config.paths import APP_DIR
 
-from .model import Action, Plan, PlanStatus
+from .model import Plan
 
 DB_FILE = APP_DIR / "plans.db"
 

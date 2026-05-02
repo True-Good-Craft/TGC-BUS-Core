@@ -3,7 +3,6 @@
 
 # core/appdb/migrations/2025_12_01_ledger_batches.py
 from contextlib import contextmanager
-from typing import Set
 import sqlite3, os, time
 
 from core.appdb.paths import resolve_db_path

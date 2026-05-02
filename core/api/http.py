@@ -47,7 +47,6 @@ from fastapi import (
     Body,
     Depends,
     File,
-    Header,
     HTTPException,
     Query,
     Request,

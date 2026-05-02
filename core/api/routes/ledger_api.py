@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-import json
 import logging
 import os
 import sqlite3
 import sys
-from decimal import Decimal, InvalidOperation
-from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -18,7 +16,6 @@ from sqlalchemy.orm import Session
 from core.api.utils.devguard import require_dev
 from core.api.utils.quantity_guard import reject_legacy_qty_keys
 from core.appdb.engine import get_session
-from core.appdb.ledger import InsufficientStock
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.paths import resolve_db_path
 from core.config.writes import require_writes
