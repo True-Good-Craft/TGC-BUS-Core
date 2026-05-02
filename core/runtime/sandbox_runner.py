@@ -19,7 +19,6 @@
 
 from __future__ import annotations
 
-import argparse
 import importlib
 import json
 import sys
@@ -43,22 +42,30 @@ def _load_plugin(plugin_id: str) -> PluginV2:
     raise RuntimeError(f"plugin_not_found:{plugin_id}:{last_exc}")
 
 
-def _parse_request(argv: list[str] | None) -> tuple[str, str, Dict[str, Any]]:
-    payload = json.loads(sys.stdin.read() or "{}")
-    plugin_id = payload.get("plugin_id")
-    fn = payload.get("fn")
-    if isinstance(plugin_id, str) and isinstance(fn, str):
-        return plugin_id, fn, payload
+def _parse_request() -> tuple[str, str, Dict[str, Any]]:
+    try:
+        request = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as exc:
+        raise ValueError("sandbox_invalid_request") from exc
+    if not isinstance(request, dict):
+        raise ValueError("sandbox_invalid_request")
 
-    parser = argparse.ArgumentParser(description="Sandbox runner")
-    parser.add_argument("--plugin", required=True)
-    parser.add_argument("--fn", required=True)
-    args = parser.parse_args(argv)
-    return args.plugin, args.fn, payload
+    plugin_id = request.get("plugin_id")
+    fn = request.get("fn")
+    payload = request.get("payload")
+    if not isinstance(plugin_id, str) or not isinstance(fn, str) or not isinstance(payload, dict):
+        raise ValueError("sandbox_invalid_request")
+    return plugin_id, fn, payload
 
 
 def main(argv: list[str] | None = None) -> int:
-    plugin_id, fn, payload = _parse_request(argv)
+    del argv
+    try:
+        plugin_id, fn, payload = _parse_request()
+    except ValueError as exc:
+        sys.stderr.write(str(exc))
+        return 2
+
     plugin = _load_plugin(plugin_id)
     input_data: Dict[str, Any] = payload.get("input") or {}
     limits = payload.get("limits") or {}

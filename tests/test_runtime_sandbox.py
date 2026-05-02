@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import subprocess
+import sys
 
 import pytest
 
@@ -55,8 +56,7 @@ def test_run_transform_never_places_user_strings_in_subprocess_argv(
     stdin_payload = json.loads(captured["input"].decode("utf-8"))
     assert stdin_payload["plugin_id"] == plugin_id
     assert stdin_payload["fn"] == fn
-    assert stdin_payload["input"] == {"value": 1}
-    assert stdin_payload["limits"] == {"rows": 5}
+    assert stdin_payload["payload"] == {"input": {"value": 1}, "limits": {"rows": 5}}
 
 
 def test_sandbox_runner_executes_transform_from_stdin_request(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -66,8 +66,7 @@ def test_sandbox_runner_executes_transform_from_stdin_request(monkeypatch: pytes
             {
                 "plugin_id": "trusted_plugin",
                 "fn": "normalize",
-                "input": {"value": 7},
-                "limits": {"rows": 1},
+                "payload": {"input": {"value": 7}, "limits": {"rows": 1}},
             }
         )
     )
@@ -88,6 +87,44 @@ def test_sandbox_runner_executes_transform_from_stdin_request(monkeypatch: pytes
             "limits": {"rows": 1},
         }
     }
+
+
+def test_sandbox_runner_rejects_malformed_stdin_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    stdin = io.StringIO("{not-json")
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    monkeypatch.setattr("sys.stdin", stdin)
+    monkeypatch.setattr("sys.stdout", stdout)
+    monkeypatch.setattr("sys.stderr", stderr)
+
+    exit_code = sandbox_runner.main([])
+
+    assert exit_code == 2
+    assert stdout.getvalue() == ""
+    assert stderr.getvalue() == "sandbox_invalid_request"
+
+
+@pytest.mark.parametrize(
+    ("requested", "expected"),
+    [
+        (0, 0.5),
+        (999, 30.0),
+    ],
+)
+def test_run_transform_clamps_timeout_bounds(monkeypatch: pytest.MonkeyPatch, requested: float, expected: float) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_run(*args, **kwargs):
+        captured["timeout"] = kwargs["timeout"]
+        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout=b'{"proposal": {}}', stderr=b"")
+
+    monkeypatch.setattr("core.runtime.sandbox.subprocess.run", _fake_run)
+
+    result = sandbox.run_transform("trusted_plugin", "normalize", {"input": {}, "limits": {}}, timeout=requested)
+
+    assert result == {"proposal": {}}
+    assert captured["timeout"] == expected
 
 
 def test_run_transform_rejects_non_numeric_timeout() -> None:

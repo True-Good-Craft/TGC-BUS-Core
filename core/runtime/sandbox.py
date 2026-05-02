@@ -63,8 +63,10 @@ def run_transform(plugin_id: str, fn: str, payload: Dict[str, Any], *, timeout: 
         sandbox_payload = {
             "plugin_id": plugin_id,
             "fn": fn,
-            "input": payload.get("input") or {},
-            "limits": payload.get("limits") or {},
+            "payload": {
+                "input": payload.get("input") or {},
+                "limits": payload.get("limits") or {},
+            },
         }
         try:
             proc = subprocess.run(  # nosec B603 - argv is fixed by _sandbox_command()
