@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 import pytest
 
@@ -88,6 +89,116 @@ def test_restore_commit_response_suppresses_dev_debug_info(bus_client, monkeypat
     assert response.json() == {"detail": {"error": "commit_failed"}}
     assert "secret" not in response.text
     assert "RuntimeError" not in response.text
+
+
+def test_import_preview_success_response_suppresses_debug_fields(bus_client, monkeypatch):
+    client = bus_client["client"]
+    api_http = bus_client["api_http"]
+
+    monkeypatch.setattr(
+        api_http,
+        "_import_preview",
+        lambda *_args, **_kwargs: {
+            "ok": True,
+            "table_counts": {
+                "items": 4,
+                r"C:\Users\someone\secret.db": 9,
+            },
+            "schema_version": 7,
+            "info": "raw_exception_detail",
+            "traceback": "Traceback (most recent call last)",
+            "path": "/home/user/.ssh/id_rsa",
+        },
+    )
+
+    response = client.post("/app/db/import/preview", json={"path": "backup.db.gcm", "password": "pw"})
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body == {"ok": True, "table_counts": {"items": 4, "detail_suppressed": 9}, "schema_version": 7}
+    assert "raw_exception_detail" not in response.text
+    assert "Traceback" not in response.text
+    assert "secret.db" not in response.text
+    assert ".ssh" not in response.text
+
+
+def test_import_commit_success_response_suppresses_debug_fields(bus_client, monkeypatch):
+    client = bus_client["client"]
+    api_http = bus_client["api_http"]
+
+    monkeypatch.setattr(
+        api_http,
+        "_import_commit",
+        lambda *args, **kwargs: {
+            "ok": True,
+            "replaced": True,
+            "restart_required": True,
+            "info": r"Traceback (most recent call last): C:\Users\someone\secret.db",
+            "path": "/home/user/.ssh/id_rsa",
+        },
+    )
+    monkeypatch.setattr(api_http, "stop_indexer", lambda timeout=10.0: None)
+    monkeypatch.setattr(api_http, "start_indexer", lambda: None)
+
+    response = client.post("/app/db/import/commit", json={"path": "backup.db.gcm", "password": "pw"})
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "replaced": True, "restart_required": True}
+    assert "Traceback" not in response.text
+    assert "secret.db" not in response.text
+    assert ".ssh" not in response.text
+
+
+def test_exec_transform_sanitizes_proposal_and_policy_details(bus_client, monkeypatch):
+    client = bus_client["client"]
+    api_http = bus_client["api_http"]
+
+    class FakeCore:
+        def transform(self, **_kwargs):
+            return {
+                "proposal": {
+                    "ok": True,
+                    "message": "safe public value",
+                    "error": "raw_exception_detail",
+                    "traceback": "Traceback (most recent call last)",
+                    "nested": {
+                        "info": r"C:\Users\someone\secret.db",
+                        "items": ["alpha", "/home/user/.ssh/id_rsa"],
+                    },
+                },
+                "policy": api_http.PolicyDecision(
+                    decision="allow",
+                    reasons=("allowed", r"Traceback (most recent call last): C:\Users\someone\secret.db"),
+                    version="test",
+                ),
+            }
+
+    monkeypatch.setattr(api_http, "CORE", FakeCore())
+
+    response = client.post(
+        "/execTransform",
+        json={"plugin": "p", "fn": "normalize", "idempotency_key": "k", "input": {}, "limits": {}},
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["proposal"]["message"] == "safe public value"
+    assert body["proposal"]["error"] == "detail_suppressed"
+    assert body["proposal"]["traceback"] == "detail_suppressed"
+    assert body["proposal"]["nested"]["info"] == "detail_suppressed"
+    assert body["proposal"]["nested"]["items"] == ["alpha", "detail_suppressed"]
+    assert body["policy"] == {"decision": "allow", "reasons": ["allowed", "policy_detail_suppressed"]}
+    assert "Traceback" not in response.text
+    assert "raw_exception_detail" not in response.text
+    assert "secret.db" not in response.text
+    assert ".ssh" not in response.text
+
+
+def test_ci_workflow_declares_read_only_permissions() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert re.search(r"(?m)^permissions:\n\s+contents: read$", workflow)
+    assert "write-all" not in workflow
 
 
 @pytest.mark.parametrize("bus_client", ["0"], indirect=True)

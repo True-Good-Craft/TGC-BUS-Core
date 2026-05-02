@@ -27,6 +27,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import subprocess
@@ -903,6 +904,99 @@ IMPORT_ERROR_CODES = {
     "incompatible_schema",
 }
 
+SENSITIVE_RESPONSE_KEYS = {
+    "debug",
+    "detail",
+    "engine_url",
+    "error",
+    "exception",
+    "info",
+    "path",
+    "raw",
+    "stack",
+    "trace",
+    "traceback",
+}
+
+SENSITIVE_RESPONSE_RE = re.compile(
+    r"Traceback \(most recent call last\)|raw_exception_detail|[A-Za-z]:[\\/]|\\\\|/home/|/Users/|/\.ssh/|\.db\b",
+    re.IGNORECASE,
+)
+
+
+def _safe_string(value: Any, fallback: str = "detail_suppressed") -> str:
+    text = str(value)
+    return fallback if SENSITIVE_RESPONSE_RE.search(text) else text
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_import_preview_response(result: Dict[str, Any]) -> Dict[str, Any]:
+    counts = result.get("table_counts")
+    safe_counts: Dict[str, int] = {}
+    if isinstance(counts, dict):
+        for name, count in counts.items():
+            safe_counts[_safe_string(name)] = _safe_int(count)
+    schema_version = result.get("schema_version")
+    return {
+        "ok": True,
+        "table_counts": safe_counts,
+        "schema_version": schema_version if isinstance(schema_version, int) or schema_version is None else None,
+    }
+
+
+def _safe_import_commit_response(result: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "ok": True,
+        "replaced": bool(result.get("replaced")),
+        "restart_required": bool(result.get("restart_required")),
+    }
+
+
+def _is_sensitive_response_key(key: Any) -> bool:
+    normalized = str(key).strip().lower()
+    return normalized in SENSITIVE_RESPONSE_KEYS or any(part in normalized for part in SENSITIVE_RESPONSE_KEYS)
+
+
+def _safe_public_json(value: Any, *, depth: int = 0) -> Any:
+    if depth > 6:
+        return "detail_suppressed"
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return _safe_string(value)
+    if isinstance(value, list):
+        return [_safe_public_json(item, depth=depth + 1) for item in value[:100]]
+    if isinstance(value, dict):
+        safe: Dict[str, Any] = {}
+        for raw_key, raw_value in list(value.items())[:100]:
+            if _is_sensitive_response_key(raw_key):
+                safe[str(raw_key)] = "detail_suppressed"
+                continue
+            safe[str(raw_key)] = _safe_public_json(raw_value, depth=depth + 1)
+        return safe
+    return _safe_string(value)
+
+
+def _safe_transform_proposal(proposal: Any) -> Dict[str, Any]:
+    if proposal is None:
+        return {}
+    if not isinstance(proposal, dict):
+        return {"value": _safe_public_json(proposal)}
+    safe = _safe_public_json(proposal)
+    return safe if isinstance(safe, dict) else {}
+
+
+def _safe_policy_reasons(reasons: Any) -> List[str]:
+    if not isinstance(reasons, list):
+        return []
+    return [_safe_string(reason, "policy_detail_suppressed") for reason in reasons[:50]]
+
 
 def _safe_action_result(result: Any) -> Dict[str, Any]:
     if not isinstance(result, dict):
@@ -972,7 +1066,7 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
         if err in IMPORT_ERROR_CODES:
             raise HTTPException(status_code=400, detail={"error": err})
         raise HTTPException(status_code=400, detail={"error": "preview_failed"})
-    return res
+    return _safe_import_preview_response(res)
 
 
 @protected.post("/app/db/import/commit")
@@ -1030,7 +1124,7 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
             if dev and res.get("info"):
                 _log(f"debug info suppressed from response: {res.get('info')}")
             raise HTTPException(status_code=400, detail=detail)
-        return res
+        return _safe_import_commit_response(res)
     finally:
         app.state.maintenance = False
         try:
@@ -2138,15 +2232,15 @@ def exec_transform(
     proposal = outcome.get("proposal")
     policy = outcome.get("policy")
     if isinstance(policy, PolicyDecision):
-        policy_block = {"decision": policy.decision, "reasons": list(policy.reasons)}
+        policy_block = {"decision": _safe_string(policy.decision, "deny"), "reasons": _safe_policy_reasons(list(policy.reasons))}
     elif isinstance(policy, dict):
         policy_block = {
-            "decision": str(policy.get("decision", "deny")),
-            "reasons": list(policy.get("reasons", [])),
+            "decision": _safe_string(policy.get("decision", "deny"), "deny"),
+            "reasons": _safe_policy_reasons(policy.get("reasons", [])),
         }
     else:
         policy_block = {"decision": "deny", "reasons": ["unknown_policy"]}
-    return _with_run_id({"proposal": proposal, "policy": policy_block})
+    return _with_run_id({"proposal": _safe_transform_proposal(proposal), "policy": policy_block})
 
 
 @protected.post("/policy.simulate")
