@@ -279,8 +279,8 @@ def create_item(
     if payload.get("price_decimal") is not None:
         try:
             price_val = float(payload.get("price_decimal") or 0)
-        except Exception:
-            price_val = price_val
+        except (TypeError, ValueError):  # Compatibility fallback: retain raw price when decimal parsing fails.
+            pass
 
     # Fallback upsert path used by the UI when adjusting non-existing items:
     item_id = payload.get("id")
@@ -369,8 +369,8 @@ def update_item(
     if payload.get("price_decimal") is not None:
         try:
             price_val = float(payload.get("price_decimal") or 0)
-        except Exception:
-            price_val = price_val
+        except (TypeError, ValueError):  # Compatibility fallback: retain raw price when decimal parsing fails.
+            pass
 
     for f in ("name", "sku", "notes", "vendor_id"):
         if f in payload:

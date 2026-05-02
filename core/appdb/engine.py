@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import re
+import logging
 from pathlib import Path
 from typing import Generator, Optional
 
@@ -14,6 +15,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
 from core.appdata.paths import resolve_db_path, legacy_repo_db, resolve_bus_mode  # SoT helpers
+
+logger = logging.getLogger(__name__)
 
 # --- Path & URL -------------------------------------------------------------
 
@@ -40,7 +43,7 @@ if not env_db and runtime_mode == "prod":
         pass
 
 DB_PATH: Path = target_path
-print(f"[db] BUS_DB ({source}) -> {DB_PATH}")
+logger.debug("BUS_DB source=%s", source)
 
 
 def _sqlite_url(p: Path) -> str:

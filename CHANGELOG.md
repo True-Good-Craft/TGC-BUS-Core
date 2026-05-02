@@ -12,6 +12,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Removed import-time diagnostic prints from runtime modules and narrowed item price-decimal fallback handling without changing API contracts.
 - Remediated documented empty exception handlers with narrow catches, safe type-only journal logging, controlled secret-delete failures, and explicit non-fatal intent comments.
 - Removed confirmed unused imports across core modules, scripts, plugins, and tests without changing runtime behavior.
 - Shaped remaining import preview, import commit, and transform simulation responses to suppress raw exception/debug/path detail, and set CI workflow permissions to explicit read-only contents access.
@@ -53,6 +54,7 @@
 - Added a narrow `verified_ready` promotion helper that writes `verified_ready` only when `hash_verified`, `extracted`, and `exe_verified` all agree on version/channel/hash/path data and the cached ZIP, extracted version directory, and extracted EXE still exist inside the confined update-cache roots.
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.0.13` to `1.1.0.14` for the bounded reliability cleanup pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.12` to `1.1.0.13` for the empty-except remediation and governance pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.11` to `1.1.0.12` for the unused-import cleanup pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.10` to `1.1.0.11` for the remaining information-exposure and CI workflow-permissions hardening pass without changing public `VERSION`.

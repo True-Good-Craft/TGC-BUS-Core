@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import tempfile
@@ -55,6 +56,8 @@ from core.config.paths import (
 from core.platform.winfile import robust_replace, wait_for_exclusive
 from core.utils.pathsafe import PathSafetyError, resolve_path_under_roots
 
+logger = logging.getLogger(__name__)
+
 # Ensure required dirs exist (idempotent)
 for _p in (APP_DIR, DATA_DIR, JOURNAL_DIR, EXPORTS_DIR, BUS_ROOT):
     _p.mkdir(parents=True, exist_ok=True)
@@ -67,14 +70,7 @@ try:
 except Exception:
     BUS_ROOT = APP_DIR
 
-# Optional: trace once at import (helps Docker users debug)
-try:
-    print(
-        f"[export-paths] APP_DIR={APP_DIR} BUS_ROOT={BUS_ROOT} "
-        f"DATA_DIR={DATA_DIR} EXPORTS_DIR={EXPORTS_DIR}"
-    )
-except Exception:  # Optional startup trace; export path setup remains authoritative.
-    pass
+logger.debug("export paths initialized")
 
 
 def _connect_readonly(db_path: Path):
