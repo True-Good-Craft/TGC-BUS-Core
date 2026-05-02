@@ -1,7 +1,7 @@
 # Bandit Remediation Audit Log
 
 Date: 2026-04-23
-Last documentation correction: 2026-04-24
+Last documentation correction: 2026-05-02
 
 ## Entries
 
@@ -11,6 +11,7 @@ Last documentation correction: 2026-04-24
 | `core/api/http.py` | B608 | NARROW SUPPRESSION (EXACT-LINE RETAINED) | Removed inline `# nosec B608` for stale-check, re-ran Bandit on file, observed B608 at the same query line, then restored suppression on that exact line only | Query values remain parameterized with DB-API placeholders; scanner still flags dynamic placeholder assembly. |
 | `core/ledger/health.py` | B608 | TRUE FIX | Replaced dynamic column interpolation with two static query variants (`qty` / `qty_stored`) | Removes string-formatted SQL while preserving existing runtime behavior and schema compatibility. |
 | `core/utils/export.py` | B608 | NARROW SUPPRESSION | Added inline `# nosec B608` on table-count query | Table identifier comes from fixed internal dictionary keys only. |
+| `core/runtime/sandbox.py`, `core/runtime/sandbox_runner.py`, `core/ui/js/router.js`, `core/ui/js/cards/admin.js`, `core/api/http.py`, `core/utils/export.py`, `core/utils/pathsafe.py` | CodeQL hardening pass | TRUE FIX | Fixed sandbox argv to BUS Core-owned runner args with stdin JSON payloads, removed legacy router dynamic dispatch, replaced admin preview `innerHTML` metadata rendering with text-safe DOM construction, and constrained import/local/plugin paths to explicit allowed roots | Hardening addresses the recorded command-construction, DOM-XSS, and path-injection boundary issues; GitHub CodeQL re-scan after push/PR remains the confirmation source. |
 | `core/reader/ids.py`, `core/reader/api.py`, `core/plans/commit.py`, `tests/test_reader_rid_security.py` | B324 | TRUE FIX + COMPATIBILITY HARDENING | Replaced active RID signature generation with hardened v2 generation (`local:v2:<sig32>:<payload>`), retained strict legacy read compatibility (`local:<sig10>:<payload>`), enforced strict fail-closed RID parsing/decoding/path checks, and tightened commit RID authority for present RID fields | Resolves integrity-relevant RID boundary weakness via real hardening without suppression/workarounds while preserving standing product compatibility for valid legacy values. |
 | `plugins/notion/plugin.py` | B310 | TRUE FIX + NARROW SUPPRESSION | Added strict URL allowlist check (`https://api.notion.com`) and inline `# nosec B310` at `urlopen` | Runtime path now enforces scheme/host policy before network open; scanner warning is retained as documented suppression due generic `urlopen` rule. |
 

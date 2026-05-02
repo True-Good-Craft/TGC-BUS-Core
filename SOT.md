@@ -82,6 +82,8 @@
 
 * Security hardening that changes boundary behavior must be mirrored into `CHANGELOG.md`, `SOT.md`, and affected governance/security docs to prevent policy drift.
 
+* Current hardening posture also treats sandbox command construction, admin preview DOM rendering, and import/local path resolution as boundary-sensitive surfaces: sandbox subprocess argv must remain BUS Core-owned and fixed, untrusted preview metadata must render as text, and user-influenced filesystem paths must resolve under explicit allowed roots before use.
+
 * `scripts/validate_change_trace.py` is the hard traceability guard: if code/control surfaces change, both `CHANGELOG.md` and `core/version.py` MUST be in the same diff, and `INTERNAL_VERSION` MUST be bumped for meaningful repo changes.
 
 * `.github/workflows/security-audit.yml` is the canonical security-tooling workflow. It runs Bandit against `core`, `tgc`, `scripts`, and `launcher.py`; Medium/High findings fail CI while Low findings remain visible advisory output. It also runs `pip-audit` against `requirements.txt` in advisory mode until BUS Core has a fully pinned/locked audit input.
