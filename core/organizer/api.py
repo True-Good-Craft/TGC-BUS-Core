@@ -21,8 +21,9 @@
 
 from __future__ import annotations
 
-import os
+import ntpath
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -34,6 +35,7 @@ from core.plans.model import Action, ActionKind, Plan
 from core.plans.store import save_plan
 from core.reader.ids import to_rid
 from core.settings.reader_state import get_allowed_local_roots
+from core.utils.pathsafe import PathSafetyError, resolve_path_under_roots
 
 router = APIRouter(prefix="/organizer", tags=["organizer"])
 
@@ -47,42 +49,79 @@ class RenameBody(BaseModel):
     start_path: str
 
 
-def _allowed(path: str, roots: Optional[List[str]] = None) -> bool:
-    abs_path = os.path.normcase(os.path.abspath(path))
-    for root in roots or get_allowed_local_roots():
-        abs_root = os.path.normcase(os.path.abspath(root))
-        try:
-            if os.path.commonpath([abs_path, abs_root]) == abs_root:
-                return True
-        except ValueError:
-            # Different drive letters on Windows raise ValueError.
-            continue
-    return False
+def _path_error(exc: PathSafetyError) -> HTTPException:
+    status_code = 400 if exc.code in {"path_empty", "path_invalid"} else 403
+    return HTTPException(status_code=status_code, detail=exc.code)
 
 
-def _maybe_to_rid(path: str, roots: List[str]) -> Optional[str]:
+def _allowed_roots() -> List[Path]:
+    return [Path(root) for root in get_allowed_local_roots() if isinstance(root, str) and root.strip()]
+
+
+def _resolve_organizer_path(path_value: str, roots: List[Path]) -> tuple[Path, Path]:
     try:
-        return to_rid(path, roots)
+        resolved = resolve_path_under_roots(path_value, roots)
+    except PathSafetyError as exc:
+        raise _path_error(exc) from exc
+    for root in roots:
+        resolved_root = root.resolve(strict=False)
+        try:
+            resolved.relative_to(resolved_root)
+        except ValueError:
+            continue
+        return resolved, resolved_root
+    raise HTTPException(status_code=403, detail="path_out_of_roots")
+
+
+def _require_directory(path_value: str, roots: List[Path]) -> tuple[Path, Path]:
+    resolved, approved_root = _resolve_organizer_path(path_value, roots)
+    if not resolved.exists():
+        raise HTTPException(status_code=404, detail="start_path_not_found")
+    if not resolved.is_dir():
+        raise HTTPException(status_code=400, detail="start_path_not_directory")
+    return resolved, approved_root
+
+
+def _resolve_generated_path(path: Path, approved_root: Path) -> Path:
+    try:
+        return resolve_path_under_roots(path, [approved_root])
+    except PathSafetyError as exc:
+        raise _path_error(exc) from exc
+
+
+def _resolve_child_filename(parent: Path, filename: str) -> Path:
+    raw = str(filename or "")
+    if not raw or "\x00" in raw or "/" in raw or "\\" in raw or ":" in raw or raw in {".", ".."}:
+        raise HTTPException(status_code=400, detail="filename_invalid")
+    drive, _tail = ntpath.splitdrive(raw)
+    if drive:
+        raise HTTPException(status_code=400, detail="filename_invalid")
+    try:
+        resolved = resolve_path_under_roots(raw, [parent])
+    except PathSafetyError as exc:
+        raise _path_error(exc) from exc
+    if resolved.parent != parent.resolve(strict=False):
+        raise HTTPException(status_code=403, detail="path_out_of_roots")
+    return resolved
+
+
+def _maybe_to_rid(path: Path, roots: List[str]) -> Optional[str]:
+    try:
+        return to_rid(str(path), roots)
     except Exception:
         return None
 
 
 @router.post("/duplicates/plan")
 def duplicates_plan(body: DupBody):
-    start = os.path.normpath(body.start_path)
-    if not os.path.exists(start):
-        raise HTTPException(status_code=404, detail="start_path does not exist")
-    if not os.path.isdir(start):
-        raise HTTPException(status_code=400, detail="start_path must be a directory")
-    roots = get_allowed_local_roots()
-    if not _allowed(start, roots):
-        raise HTTPException(status_code=400, detail="start_path not under allowed local roots")
-    quarantine_dir = body.quarantine_dir or os.path.join(
-        os.path.expanduser("~"), "Documents", "Quarantine", "Duplicates"
-    )
-    if not _allowed(quarantine_dir, roots):
-        raise HTTPException(status_code=400, detail="quarantine_dir not under allowed local roots")
-    os.makedirs(quarantine_dir, exist_ok=True)
+    roots = _allowed_roots()
+    start, approved_root = _require_directory(body.start_path, roots)
+    root_strings = [str(root) for root in roots]
+    if body.quarantine_dir:
+        quarantine_dir = _resolve_organizer_path(body.quarantine_dir, [approved_root])[0]
+    else:
+        quarantine_dir = _resolve_generated_path(start / "Quarantine" / "Duplicates", approved_root)
+    quarantine_dir.mkdir(parents=True, exist_ok=True)
 
     duplicates = find_duplicates(start)
     actions: List[Action] = []
@@ -92,24 +131,25 @@ def duplicates_plan(body: DupBody):
         for path in group:
             if path == keeper:
                 continue
-            name = os.path.basename(path)
-            destination = os.path.join(quarantine_dir, name)
-            base, ext = os.path.splitext(name)
+            name = path.name
+            destination = _resolve_child_filename(quarantine_dir, name)
+            base = Path(name).stem
+            ext = Path(name).suffix
             suffix = 1
-            while os.path.exists(destination):
-                destination = os.path.join(quarantine_dir, f"{base}-dup{suffix}{ext}")
+            while destination.exists():
+                destination = _resolve_child_filename(quarantine_dir, f"{base}-dup{suffix}{ext}")
                 suffix += 1
             action = Action(
                 id=f"dup-{digest[:8]}-{counter}",
                 kind=ActionKind.MOVE,
-                src_id=_maybe_to_rid(path, roots),
-                dst_parent_id=_maybe_to_rid(os.path.dirname(destination), roots),
-                dst_name=os.path.basename(destination),
+                src_id=_maybe_to_rid(path, root_strings),
+                dst_parent_id=_maybe_to_rid(destination.parent, root_strings),
+                dst_name=destination.name,
                 meta={
-                    "src_path": path,
-                    "dst_path": destination,
-                    "dst_parent_path": os.path.dirname(destination),
-                    "dst_name": os.path.basename(destination),
+                    "src_path": str(path),
+                    "dst_path": str(destination),
+                    "dst_parent_path": str(destination.parent),
+                    "dst_name": destination.name,
                 },
             )
             actions.append(action)
@@ -118,8 +158,8 @@ def duplicates_plan(body: DupBody):
     plan = Plan(
         id=f"org-dup-{int(datetime.utcnow().timestamp())}",
         source="organizer",
-        title=f"Organizer: Duplicates from {start}",
-        note=f"Move duplicates to {quarantine_dir}",
+        title=f"Organizer: Duplicates from {start.name}",
+        note="Move duplicates to the approved quarantine folder",
         actions=actions,
     )
     save_plan(plan)
@@ -128,48 +168,51 @@ def duplicates_plan(body: DupBody):
 
 @router.post("/rename/plan")
 def rename_plan(body: RenameBody):
-    start = os.path.normpath(body.start_path)
-    if not os.path.exists(start):
-        raise HTTPException(status_code=404, detail="start_path does not exist")
-    if not os.path.isdir(start):
-        raise HTTPException(status_code=400, detail="start_path must be a directory")
-    roots = get_allowed_local_roots()
-    if not _allowed(start, roots):
-        raise HTTPException(status_code=400, detail="start_path not under allowed local roots")
+    roots = _allowed_roots()
+    start, approved_root = _require_directory(body.start_path, roots)
+    root_strings = [str(root) for root in roots]
     actions: List[Action] = []
     counter = 1
-    for dirpath, _, filenames in os.walk(start):
-        for filename in filenames:
-            current_path = os.path.join(dirpath, filename)
-            normalized_name = normalize_filename(filename)
-            if normalized_name == filename:
-                continue
-            destination_path = os.path.join(dirpath, normalized_name)
-            # Skip if another file already occupies the destination name.
-            if os.path.exists(destination_path) and os.path.normcase(destination_path) != os.path.normcase(
-                current_path
-            ):
-                continue
-            action = Action(
-                id=f"rn-{counter}",
-                kind=ActionKind.RENAME,
-                src_id=_maybe_to_rid(current_path, roots),
-                dst_parent_id=_maybe_to_rid(dirpath, roots),
-                dst_name=normalized_name,
-                meta={
-                    "src_path": current_path,
-                    "dst_path": destination_path,
-                    "dst_parent_path": dirpath,
-                    "dst_name": normalized_name,
-                },
-            )
-            actions.append(action)
-            counter += 1
+    for current_path in start.rglob("*"):
+        current_path = _resolve_generated_path(current_path, approved_root)
+        try:
+            current_path.relative_to(start)
+        except ValueError:
+            continue
+        if not current_path.is_file():
+            continue
+        filename = current_path.name
+        normalized_name = normalize_filename(filename)
+        if normalized_name == filename:
+            continue
+        destination_path = _resolve_child_filename(current_path.parent, normalized_name)
+        try:
+            destination_path.relative_to(start)
+        except ValueError as exc:
+            raise HTTPException(status_code=403, detail="path_out_of_roots") from exc
+        # Skip if another file already occupies the destination name.
+        if destination_path.exists() and destination_path != current_path:
+            continue
+        action = Action(
+            id=f"rn-{counter}",
+            kind=ActionKind.RENAME,
+            src_id=_maybe_to_rid(current_path, root_strings),
+            dst_parent_id=_maybe_to_rid(current_path.parent, root_strings),
+            dst_name=normalized_name,
+            meta={
+                "src_path": str(current_path),
+                "dst_path": str(destination_path),
+                "dst_parent_path": str(current_path.parent),
+                "dst_name": normalized_name,
+            },
+        )
+        actions.append(action)
+        counter += 1
 
     plan = Plan(
         id=f"org-rn-{int(datetime.utcnow().timestamp())}",
         source="organizer",
-        title=f"Organizer: Rename normalize under {start}",
+        title=f"Organizer: Rename normalize under {start.name}",
         note="Conservative normalization of filenames",
         actions=actions,
     )

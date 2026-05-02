@@ -12,6 +12,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Hardened Organizer duplicate scanning and rename planning so start paths, quarantine destinations, walked files, and generated names must resolve under configured local filesystem roots before filesystem access.
 - Reduced exception-detail exposure in protected plan commit/export, restore commit, and dev diagnostic responses by returning controlled error codes instead of raw exception strings.
 - Tightened the shared safe-path helper so untrusted input rejects `~`, traversal segments, UNC/device prefixes, and drive-relative forms before concrete path construction, while keeping explicit allowed-root containment as the final authority check.
 - Hardened sandbox transform execution so subprocess argv is fixed to BUS Core-owned arguments only and dynamic transform data is passed through stdin JSON with controlled malformed-request handling.
@@ -48,6 +49,7 @@
 - Added a narrow `verified_ready` promotion helper that writes `verified_ready` only when `hash_verified`, `extracted`, and `exe_verified` all agree on version/channel/hash/path data and the cached ZIP, extracted version directory, and extracted EXE still exist inside the confined update-cache roots.
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.0.9` to `1.1.0.10` for the Organizer path-injection hardening pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.8` to `1.1.0.9` for the information-exposure hardening pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.7` to `1.1.0.8` for the shared path-sanitizer follow-up hardening pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.6` to `1.1.0.7` for the pre-PR security hardening governance/docs pass without changing public `VERSION`.
@@ -126,6 +128,7 @@
 - Aligned release/update documentation and README wording with actual behavior: Lighthouse remains the default manifest URL, checksum metadata may be published, and the app does not verify checksum, signature, publisher, or artifact size before surfacing `download_url`.
 
 ### Tests
+- Added focused Organizer path-safety coverage for valid in-root planning, traversal/start-path rejection, drive/UNC/device/null-byte rejection, malicious normalized-name rejection, and source guard checks.
 - Added focused coverage for protected response sanitization and dev diagnostic route gating.
 - Extended path-safety regression coverage for drive-relative, UNC/device, double-slash, tilde, and valid absolute in-root path handling.
 - Added focused regression coverage for sandbox command construction, legacy router dispatch, admin preview rendering, and path traversal/outside-root rejection.

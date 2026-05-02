@@ -22,8 +22,8 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Iterator, List
 
 
@@ -31,30 +31,32 @@ from typing import Dict, Iterator, List
 class FileInfo:
     """Snapshot of a file encountered during a walk."""
 
-    path: str
+    path: Path
     size: int
     mtime: float
 
 
-def iter_files(root: str) -> Iterator[FileInfo]:
+def iter_files(root: Path) -> Iterator[FileInfo]:
     """Yield files under ``root`` along with metadata."""
 
-    for dirpath, _, filenames in os.walk(root):
-        for name in filenames:
-            full_path = os.path.join(dirpath, name)
-            try:
-                stat = os.stat(full_path)
-            except OSError:
-                # File may disappear or be inaccessible; skip best-effort.
+    safe_root = root.resolve(strict=False)
+    for candidate in safe_root.rglob("*"):
+        try:
+            resolved = candidate.resolve(strict=False)
+            resolved.relative_to(safe_root)
+            if not resolved.is_file():
                 continue
-            yield FileInfo(full_path, stat.st_size, stat.st_mtime)
+            stat = resolved.stat()
+        except (OSError, ValueError):
+            continue
+        yield FileInfo(resolved, stat.st_size, stat.st_mtime)
 
 
-def sha256_of(path: str, bufsize: int = 1024 * 1024) -> str:
+def sha256_of(path: Path, bufsize: int = 1024 * 1024) -> str:
     """Return SHA-256 digest for ``path`` using buffered reads."""
 
     digest = hashlib.sha256()
-    with open(path, "rb") as handle:
+    with path.open("rb") as handle:
         while True:
             chunk = handle.read(bufsize)
             if not chunk:
@@ -63,22 +65,24 @@ def sha256_of(path: str, bufsize: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
-def find_duplicates(start_root: str) -> Dict[str, List[str]]:
+def find_duplicates(start_root: Path) -> Dict[str, List[Path]]:
     """Return mapping of sha256 digest -> duplicate file paths."""
 
-    size_buckets: Dict[int, List[str]] = {}
-    for info in iter_files(start_root):
+    safe_root = start_root.resolve(strict=False)
+    size_buckets: Dict[int, List[Path]] = {}
+    for info in iter_files(safe_root):
         size_buckets.setdefault(info.size, []).append(info.path)
 
-    duplicates: Dict[str, List[str]] = {}
+    duplicates: Dict[str, List[Path]] = {}
     for paths in size_buckets.values():
         if len(paths) < 2:
             continue
-        digest_groups: Dict[str, List[str]] = {}
+        digest_groups: Dict[str, List[Path]] = {}
         for path in paths:
             try:
+                path.resolve(strict=False).relative_to(safe_root)
                 digest = sha256_of(path)
-            except (OSError, IOError):
+            except (OSError, IOError, ValueError):
                 continue
             digest_groups.setdefault(digest, []).append(path)
         for digest, group in digest_groups.items():
@@ -87,19 +91,19 @@ def find_duplicates(start_root: str) -> Dict[str, List[str]]:
     return duplicates
 
 
-def pick_keeper(paths: List[str]) -> str:
+def pick_keeper(paths: List[Path]) -> Path:
     """Pick the file to keep among duplicates.
 
     The oldest modification time wins; ties fall back to shortest path length.
     Missing files are treated as newest so healthy files win.
     """
 
-    ranked: List[tuple[float, int, str]] = []
+    ranked: List[tuple[float, int, Path]] = []
     for path in paths:
         try:
-            mtime = os.stat(path).st_mtime
+            mtime = path.stat().st_mtime
         except OSError:
             mtime = float("inf")
-        ranked.append((mtime, len(path), path))
+        ranked.append((mtime, len(str(path)), path))
     ranked.sort()
-    return ranked[0][2] if ranked else ""
+    return ranked[0][2] if ranked else Path()
