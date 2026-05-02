@@ -53,6 +53,7 @@ from core.config.paths import (
     EXPORTS_DIR,
 )
 from core.platform.winfile import robust_replace, wait_for_exclusive
+from core.utils.pathsafe import PathSafetyError, resolve_path_under_roots
 
 # Ensure required dirs exist (idempotent)
 for _p in (APP_DIR, DATA_DIR, JOURNAL_DIR, EXPORTS_DIR, BUS_ROOT):
@@ -117,6 +118,13 @@ def _safe_under(root: Path, target: Path) -> bool:
     return Path(common) == root_resolved
 
 
+def _resolve_export_path(path: str | Path) -> Path:
+    try:
+        return resolve_path_under_roots(path, [EXPORTS_DIR])
+    except PathSafetyError as exc:
+        raise PermissionError("path_out_of_roots") from exc
+
+
 def _retry_unlink(p: Path, attempts: int = 10, delay: float = 0.1):
     for _ in range(attempts):
         try:
@@ -146,7 +154,7 @@ def list_exports() -> list[dict[str, object]]:
 
 
 def stage_uploaded_backup(upload_name: str, data: bytes) -> Dict[str, object]:
-    safe_name = Path(upload_name or "upload.db.gcm").name
+    safe_name = Path((upload_name or "upload.db.gcm").replace("\\", "/")).name
     ts = time.strftime("%Y%m%d-%H%M%S", time.localtime())
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
     target = EXPORTS_DIR / f"upload-{ts}-{safe_name}"
@@ -221,7 +229,7 @@ def _load_and_decrypt(path: Path, password: str) -> tuple[bytes, ContainerHeader
 
 def import_preview(path: str, password: str) -> Dict[str, object]:
     try:
-        plaintext, header = _load_and_decrypt(Path(path), password)
+        plaintext, header = _load_and_decrypt(_resolve_export_path(path), password)
     except (PermissionError, FileNotFoundError, ValueError) as exc:
         msg = str(exc)
         if msg not in {
@@ -287,7 +295,8 @@ def import_commit(
             pass
 
     try:
-        plaintext, header = _load_and_decrypt(Path(path), password)
+        resolved_source = _resolve_export_path(path)
+        plaintext, header = _load_and_decrypt(resolved_source, password)
     except (PermissionError, FileNotFoundError, ValueError) as exc:
         msg = str(exc)
         if msg not in {
@@ -357,7 +366,7 @@ def import_commit(
         audit_entry = {
             "ts": int(time.time()),
             "action": "import",
-            "src": str(Path(path).resolve()),
+            "src": str(resolved_source),
             "manifest": {"version": header.version},
         }
         try:

@@ -124,6 +124,7 @@ from core.appdb.models import Base
 from core.appdb.paths import ui_dir
 from core.appdata.paths import db_path_for_mode, resolve_bus_mode
 from core.runtime.instance_lock import acquire_db_owner_lock
+from core.utils.pathsafe import PathSafetyError, resolve_path_under_roots
 
 if os.name == "nt":  # pragma: no cover - windows specific
     from core.broker.pipes import NamedPipeServer
@@ -733,10 +734,9 @@ def _resolve_plugin_ui_path(plugin_id: str, resource: str) -> Path | None:
             continue
         if not ui_root_resolved.exists() or not ui_root_resolved.is_dir():
             continue
-        candidate = (ui_root_resolved / safe_resource).resolve(strict=False)
         try:
-            candidate.relative_to(ui_root_resolved)
-        except ValueError:
+            candidate = resolve_path_under_roots(safe_resource, [ui_root_resolved])
+        except PathSafetyError:
             continue
         if candidate.exists() and candidate.is_file():
             return candidate
@@ -1444,14 +1444,30 @@ def _decode_local_id(local_id: str) -> str:
 def _allowed_local_path(path: str) -> bool:
     """Return True if the path is within the configured local roots."""
 
+    try:
+        _resolve_allowed_local_path(path)
+    except HTTPException:
+        return False
+    return True
+
+
+def _configured_local_roots() -> list[Path]:
     broker = _broker()
     try:
         settings = broker._catalog._providers["local_fs"]._settings()  # type: ignore[attr-defined]
-        roots = [os.path.abspath(p) for p in settings.get("local_roots", [])]
+        return [Path(p) for p in settings.get("local_roots", []) if isinstance(p, str) and p.strip()]
     except Exception:
-        roots = []
-    ap = os.path.abspath(path)
-    return any(os.path.commonpath([ap, root]) == root for root in roots)
+        return []
+
+
+def _resolve_allowed_local_path(path: str) -> Path:
+    try:
+        return resolve_path_under_roots(path, _configured_local_roots())
+    except PathSafetyError as exc:
+        if exc.code == "path_empty":
+            raise HTTPException(status_code=400, detail="bad_local_path") from exc
+        raise HTTPException(status_code=403, detail="path_not_allowed") from exc
+
 
 
 def _list_windows_drives() -> List[Dict[str, Any]]:
@@ -2153,12 +2169,15 @@ def local_available_drives() -> Dict[str, Any]:
 
 @protected.get("/local/validate_path", response_model=None)
 def local_validate_path(path: str = Query(..., min_length=1)) -> Dict[str, Any]:
-    abs_path = os.path.abspath(path)
-    if not os.path.exists(abs_path):
-        return {"ok": False, "reason": "not_found", "path": abs_path}
-    if not os.path.isdir(abs_path):
-        return {"ok": False, "reason": "not_directory", "path": abs_path}
-    return {"ok": True, "path": abs_path}
+    try:
+        resolved_path = _resolve_allowed_local_path(path)
+    except HTTPException:
+        return {"ok": False, "reason": "path_not_allowed"}
+    if not resolved_path.exists():
+        return {"ok": False, "reason": "not_found", "path": str(resolved_path)}
+    if not resolved_path.is_dir():
+        return {"ok": False, "reason": "not_directory", "path": str(resolved_path)}
+    return {"ok": True, "path": str(resolved_path)}
 
 
 @protected.post("/open/local", response_model=None)
@@ -2171,18 +2190,17 @@ def open_local(
     if not item_id or not isinstance(item_id, str) or not item_id.startswith("local:"):
         raise HTTPException(status_code=400, detail="missing_local_id")
 
-    path = _decode_local_id(item_id)
-    if not _allowed_local_path(path):
-        raise HTTPException(status_code=403, detail="path_not_allowed")
+    resolved_path = _resolve_allowed_local_path(_decode_local_id(item_id))
+    resolved_path_str = str(resolved_path)
 
     try:
         if os.name == "nt":
-            if os.path.isfile(path):
-                subprocess.Popen(["explorer", "/select,", path])
+            if resolved_path.is_file():
+                subprocess.Popen(["explorer", "/select,", resolved_path_str])
             else:
-                os.startfile(path)  # type: ignore[attr-defined]
+                os.startfile(resolved_path_str)  # type: ignore[attr-defined]
         else:
-            subprocess.Popen(["xdg-open", path])
+            subprocess.Popen(["xdg-open", resolved_path_str])
     except Exception as exc:  # pragma: no cover - platform specific
         raise HTTPException(status_code=500, detail="open_failed") from exc
 
