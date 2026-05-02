@@ -281,7 +281,7 @@ def register_broker(broker) -> None:
     if _log and hasattr(_log, "info"):
         try:
             _log.info("registered", service=SERVICE_ID, version=VERSION)
-        except Exception:
+        except Exception:  # Optional plugin logger; reader broker still registers without it.
             pass
 
 def probe(timeout_s: float = 0.9) -> Dict[str, Any]:

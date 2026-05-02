@@ -92,7 +92,7 @@ class CatalogManager:
         pr = self._providers.get(st["source"])
         try:
             pr.stream_close(st["cursor"])
-        except Exception:
+        except Exception:  # Best-effort cleanup; provider stream may already be closed.
             pass
         return {"ok": True}
 
@@ -129,7 +129,7 @@ class CatalogManager:
                         h.update(chunk)
                 fp = {"sha256": h.hexdigest()}
                 clean["fingerprint"] = {**clean.get("fingerprint", {}), **fp}
-            except Exception:
+            except Exception:  # Optional fingerprint metadata; catalog item remains usable without it.
                 pass
         return clean
 

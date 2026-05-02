@@ -41,7 +41,7 @@ def _load_file() -> Dict[str, Any]:
     if _CFG_FILE.exists():
         try:
             return json.loads(_CFG_FILE.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception:  # Compatibility fallback: missing/corrupt reader config uses defaults.
             pass
     return dict(_STATE)
 

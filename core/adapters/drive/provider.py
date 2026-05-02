@@ -92,7 +92,7 @@ class GoogleDriveProvider:
                 self._cached_refresh = rt
                 self._expires_at = self._now() + max(300, min(ttl, 3600))
                 return tok
-        except Exception:
+        except Exception:  # Optional external auth fallback; caller treats this as a cache miss.
             pass
         return None
 

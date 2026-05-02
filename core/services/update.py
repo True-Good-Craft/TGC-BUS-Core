@@ -141,7 +141,7 @@ class UpdateService:
                     if callable(stream_method):
                         with stream_method("GET", url) as response:
                             return _read_manifest_response(response)
-            except TypeError:
+            except TypeError:  # Compatibility fallback: older httpx stubs may not accept Client timeout options.
                 pass
 
         stream_fn = getattr(httpx, "stream", None)
@@ -222,7 +222,7 @@ def _read_manifest_response(response: Any) -> Any:
         try:
             if int(content_length) > MAX_MANIFEST_BYTES:
                 raise UpdateCheckError("manifest_too_large", "Manifest exceeds maximum size.")
-        except ValueError:
+        except ValueError:  # Compatibility fallback: malformed Content-Length is checked by streaming limit.
             pass
 
     total_bytes = 0

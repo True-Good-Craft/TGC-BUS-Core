@@ -73,7 +73,7 @@ try:
         f"[export-paths] APP_DIR={APP_DIR} BUS_ROOT={BUS_ROOT} "
         f"DATA_DIR={DATA_DIR} EXPORTS_DIR={EXPORTS_DIR}"
     )
-except Exception:
+except Exception:  # Optional startup trace; export path setup remains authoritative.
     pass
 
 
@@ -291,7 +291,7 @@ def import_commit(
             return
         try:
             log_func(msg)
-        except Exception:
+        except Exception:  # Best-effort log hook; import commit result remains authoritative.
             pass
 
     try:

@@ -65,7 +65,7 @@ print(json.dumps({'ok':res.ok,'data':res.data,'notes':res.notes}))
     finally:
         try:
             os.unlink(payload_path)
-        except Exception:
+        except Exception:  # Best-effort cleanup; temp payload file may already be gone.
             pass
 
     return rc, stdout, stderr

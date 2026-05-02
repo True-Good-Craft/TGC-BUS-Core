@@ -53,7 +53,7 @@ class InstanceLock:
         if existing is not None and _same_token_or_pid(existing, self.metadata):
             try:
                 self.path.unlink()
-            except FileNotFoundError:
+            except FileNotFoundError:  # Best-effort cleanup; lock file may already be gone.
                 pass
         self.owned = False
 
@@ -176,7 +176,7 @@ def acquire_db_owner_lock(
                     inherited = InstanceLock(lock_path, existing, owned=False)
                     _OWNED_LOCKS[cache_key] = inherited
                     return inherited
-        except Exception:
+        except Exception:  # Compatibility fallback: inherited lock env may be stale or unreadable.
             pass
 
     metadata = LockMetadata(
@@ -199,7 +199,7 @@ def acquire_db_owner_lock(
                 os.environ[LOCK_ENV_TOKEN] = metadata.token or ""
                 os.environ[LOCK_ENV_DB] = str(target_db)
             return lock
-        except FileExistsError:
+        except FileExistsError:  # Expected fallback: lock contention is resolved by reading the owner.
             pass
 
         try:

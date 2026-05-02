@@ -64,7 +64,7 @@ class Broker:
         if p and hasattr(p, "clear_cache"):
             try:
                 p.clear_cache()
-            except Exception:
+            except Exception:  # Cache invalidation is best-effort; provider may not support clearing.
                 pass
 
 

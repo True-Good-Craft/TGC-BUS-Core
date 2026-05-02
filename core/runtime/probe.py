@@ -70,7 +70,7 @@ def probe_services(broker: ConnectionBroker, services: List[str]) -> Dict[str, d
                         "detail": "probe_exception",
                         "error": str(exc),
                     }
-        except concurrent.futures.TimeoutError:
+        except concurrent.futures.TimeoutError:  # Expected fallback: missing result becomes probe_timeout below.
             pass
     for fut, svc in futs.items():
         if svc not in results:

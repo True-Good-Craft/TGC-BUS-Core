@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from functools import wraps
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -22,6 +23,8 @@ from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.models_recipes import Recipe, RecipeItem
 from core.metrics.metric import default_unit_for, normalize_quantity_to_base_int, uom_multiplier
 from core.money import round_half_up_cents
+
+logger = logging.getLogger(__name__)
 
 
 def transactional(func: Callable):
@@ -304,8 +307,8 @@ def execute_run_txn(
                 "per_out_cents": per_output_cents,
             },
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("manufacturing_cost_metric_log_failed class=%s", type(exc).__name__)
 
     session.add(
         ItemMovement(

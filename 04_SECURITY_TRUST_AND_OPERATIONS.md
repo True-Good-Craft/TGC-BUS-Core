@@ -23,6 +23,15 @@ Core trust is not only about preventing compromise. It is also about preserving 
 - Restore/import preview metadata in the admin UI is now rendered with DOM text nodes rather than dynamic `innerHTML`, so path/schema/count values are treated as text and not markup.
 - Local open/validate, import/export preview/commit, and plugin UI asset paths now resolve through explicit allowed roots before filesystem access or OS-open behavior.
 
+## Swallowed Exception Policy
+
+- Empty `except: pass` and `except Exception: pass` handlers are not allowed by default.
+- Swallowed exceptions are allowed only for best-effort cleanup, optional platform/UI behavior, cache invalidation, telemetry-free journal side effects, config/tracker cleanup, or migration/compatibility fallbacks.
+- Each swallowed exception must use a narrow exception type where practical, and must include safe type-only logging or an explanatory comment that states why failure is intentionally non-fatal.
+- API responses must not return raw exception details from swallowed or remediated exception paths.
+- Logs must not include secrets, tokens, raw DB URLs, passwords, or full sensitive paths from these handlers.
+- Security, auth, write, restore, and update failures must not be silently ignored unless the failure is explicitly non-critical cleanup or an already-missing resource condition.
+
 | Concern | Status | Enforced by | Scope | Notes |
 | --- | --- | --- | --- | --- |
 | Session gate for non-public routes | Canonical | `session_guard` middleware | Broad route surface | Main route-entry auth barrier. |

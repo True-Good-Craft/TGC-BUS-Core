@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 import uuid
 from decimal import Decimal, ROUND_HALF_UP
@@ -11,6 +12,8 @@ from sqlalchemy.orm import Session
 from core.appdb.ledger import add_batch, fifo_consume
 from core.appdb.models import CashEvent, Item
 from core.journal.inventory import append_inventory
+
+logger = logging.getLogger(__name__)
 
 
 def _require_qty_base(qty_base: int) -> int:
@@ -28,8 +31,8 @@ def _append_inventory_journal(entry: dict[str, Any]) -> None:
         if "qty" not in payload and "qty_change" in payload:
             payload["qty"] = payload["qty_change"]
         append_inventory(payload)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("inventory_journal_append_failed class=%s", type(exc).__name__)
 
 
 def perform_stock_in_base(

@@ -307,7 +307,7 @@ def create_item(
         if item_type is not None:
             try:
                 setattr(it, "item_type", item_type)
-            except Exception:
+            except AttributeError:  # Compatibility fallback: older Item models may not expose item_type.
                 pass
         if not getattr(it, "name", None):
             it.name = f"Item {item_id}"
@@ -328,7 +328,7 @@ def create_item(
         if item_type is not None:
             try:
                 setattr(it, "item_type", item_type)
-            except Exception:
+            except AttributeError:  # Compatibility fallback: older Item models may not expose item_type.
                 pass
         db.add(it)
 
@@ -374,10 +374,7 @@ def update_item(
 
     for f in ("name", "sku", "notes", "vendor_id"):
         if f in payload:
-            try:
-                setattr(it, f, payload[f])
-            except Exception:
-                pass
+            setattr(it, f, payload[f])
     if ("price" in payload) or ("price_decimal" in payload) or ("is_product" in payload):
         if price_val is not None:
             it.price = price_val
@@ -392,7 +389,7 @@ def update_item(
     if item_type is not None:
         try:
             setattr(it, "item_type", item_type)
-        except Exception:
+        except AttributeError:  # Compatibility fallback: older Item models may not expose item_type.
             pass
 
     payload = {**payload, "uom": uom}

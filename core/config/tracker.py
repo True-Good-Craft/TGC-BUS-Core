@@ -122,7 +122,7 @@ def clear_secrets() -> Dict:
         try:
             p.unlink(missing_ok=True)
             removed.append(str(p))
-        except Exception:
+        except OSError:  # Config cleanup is best-effort; locked files remain for later cleanup.
             pass
     return {"removed": removed}
 
@@ -132,7 +132,7 @@ def clear_saved_data(keep_settings: bool = True) -> Dict:
     try:
         _session_token_path().unlink(missing_ok=True)
         removed.append(str(_session_token_path()))
-    except Exception:
+    except OSError:  # Config cleanup is best-effort; missing or locked token files are non-fatal.
         pass
     ld = _logs_dir()
     if ld.exists():
@@ -140,7 +140,7 @@ def clear_saved_data(keep_settings: bool = True) -> Dict:
             try:
                 f.unlink()
                 removed.append(str(f))
-            except Exception:
+            except OSError:  # Config cleanup is best-effort; locked log files remain in place.
                 pass
     dd = _data_dir()
     if dd.exists():
@@ -148,7 +148,7 @@ def clear_saved_data(keep_settings: bool = True) -> Dict:
             try:
                 f.unlink()
                 removed.append(str(f))
-            except Exception:
+            except OSError:  # Config cleanup is best-effort; locked data files remain in place.
                 pass
     return {"removed": removed}
 

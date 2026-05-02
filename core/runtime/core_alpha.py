@@ -100,7 +100,7 @@ class CoreAlpha:
             if configured and hasattr(plugin, "register_broker"):
                 try:
                     plugin.register_broker(self.broker)
-                except Exception:
+                except Exception:  # Optional plugin broker hook; plugin still loads without broker registration.
                     pass
         self._plugins = plugins
         try:
@@ -111,9 +111,9 @@ class CoreAlpha:
                 if callable(register_fn):
                     try:
                         register_fn(self.broker)
-                    except Exception:
+                    except Exception:  # Optional plugin broker hook; one plugin must not block others.
                         continue
-        except Exception:
+        except Exception:  # Compatibility fallback: plugin loader may be unavailable in minimal runtimes.
             pass
         registry.emit_manifest_async()
 

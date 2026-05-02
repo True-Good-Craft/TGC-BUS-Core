@@ -169,7 +169,7 @@ def _http_fetch_artifact(url: str, timeout_s: float) -> bytes:
                 if callable(stream_method):
                     with stream_method("GET", url) as response:
                         return _read_artifact_response(response)
-        except TypeError:
+        except TypeError:  # Compatibility fallback: older httpx stubs may not accept Client timeout options.
             pass
 
     stream_fn = getattr(httpx, "stream", None)
@@ -229,5 +229,5 @@ def _utc_now_iso() -> str:
 def _cleanup_file(path: Path) -> None:
     try:
         path.unlink(missing_ok=True)
-    except Exception:
+    except Exception:  # Best-effort cleanup; partial artifact may already be absent.
         pass

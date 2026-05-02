@@ -288,7 +288,7 @@ def _ensure_path_within_root(path: Path, root: Path, *, code: str, message: str)
 def _cleanup_dir(path: Path) -> None:
     try:
         shutil.rmtree(path, ignore_errors=True)
-    except Exception:
+    except Exception:  # Best-effort cleanup; rmtree already uses ignore_errors for partial removal.
         pass
 
 

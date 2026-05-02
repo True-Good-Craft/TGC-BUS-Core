@@ -66,7 +66,7 @@ def apply():
                         uom = 'ea'
                     stored = int(round(qty)) if uom == 'ea' else int(round(qty * 100))
                     cur.execute("UPDATE items SET uom=?, qty_stored=? WHERE id=?", (uom, stored, _id))
-            except sqlite3.OperationalError:
+            except sqlite3.OperationalError:  # Compatibility fallback: legacy qty columns may be absent.
                 pass
 
         # Manufacturing schema

@@ -217,8 +217,8 @@ async def _execute_manufacture(body: ManufacturingRunRequest, db: Session):
                     "output_qty_base": int(output_qty_base),
                 }
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("manufacturing_journal_append_failed class=%s", type(exc).__name__)
         return {
             "ok": True,
             "status": "completed",

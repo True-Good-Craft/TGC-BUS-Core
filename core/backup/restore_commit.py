@@ -65,7 +65,7 @@ def close_all_db_handles(dispose_call: Optional[Callable[[], None]] = None) -> N
     if dispose_call:
         try:
             dispose_call()
-        except Exception:
+        except Exception:  # Best-effort cleanup; restore retry logic remains authoritative.
             pass
 
     try:
@@ -75,12 +75,12 @@ def close_all_db_handles(dispose_call: Optional[Callable[[], None]] = None) -> N
                 if isinstance(obj, _sqlite3.Connection):
                     try:
                         obj.close()
-                    except Exception:
+                    except Exception:  # Best-effort cleanup; sqlite handle may already be closed.
                         pass
-            except Exception:
+            except Exception:  # Best-effort GC inspection; non-connection objects are ignored.
                 pass
         _gc.collect()
-    except Exception:
+    except Exception:  # Best-effort cleanup; Windows replacement retry remains authoritative.
         pass
 
     time.sleep(0.35)
@@ -92,7 +92,7 @@ def cleanup_sidecars(db_path: Path) -> None:
             sidecar = db_path.with_suffix(db_path.suffix + suffix)
             if sidecar.exists():
                 sidecar.unlink()
-        except Exception:
+        except Exception:  # Best-effort cleanup; sidecar may already be absent or locked for retry.
             pass
 
 
@@ -178,7 +178,7 @@ def archive_journals(journal_dir: Path, ts: str) -> Tuple[int, int]:
     try:
         (journal_dir / "inventory.jsonl").touch(exist_ok=True)
         (journal_dir / "manufacturing.jsonl").touch(exist_ok=True)
-    except Exception:
+    except Exception:  # Best-effort journal reset; archive counts still report prior errors.
         pass
 
     return (archived, errors)

@@ -12,6 +12,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Remediated documented empty exception handlers with narrow catches, safe type-only journal logging, controlled secret-delete failures, and explicit non-fatal intent comments.
 - Removed confirmed unused imports across core modules, scripts, plugins, and tests without changing runtime behavior.
 - Shaped remaining import preview, import commit, and transform simulation responses to suppress raw exception/debug/path detail, and set CI workflow permissions to explicit read-only contents access.
 - Hardened Organizer duplicate scanning and rename planning so start paths, quarantine destinations, walked files, and generated names must resolve under configured local filesystem roots before filesystem access.
@@ -27,6 +28,7 @@
 - Added in-form vendor creation flow that returns to the item form and selects the newly created vendor.
 
 ### Added
+- Added a swallowed-exception governance policy and source guard test that rejects undocumented empty exception handlers.
 - Added `.github/workflows/security-audit.yml` with Bandit source scanning, Medium/High Bandit CI failure, Low-severity advisory reporting, and advisory `pip-audit` evidence against `requirements.txt`.
 - Added tracked governance summary for the completed security hardening pass: route-local guard consistency, Docker loopback default, loopback-only CORS, signed-manifest update staging, active security-audit workflow, and the local post-hardening OWASP 2025 reassessment. The OWASP report itself remains a local ignored report and is not release evidence on its own.
 - Added explicit remaining-work framing for security governance: structured security audit events, dependency lockfile / blocking dependency audit, backup/restore safeguards, fallback secrets hardening, plugin/provider trust boundaries, and no LAN/public/multi-user hosting claim.
@@ -51,6 +53,7 @@
 - Added a narrow `verified_ready` promotion helper that writes `verified_ready` only when `hash_verified`, `extracted`, and `exe_verified` all agree on version/channel/hash/path data and the cached ZIP, extracted version directory, and extracted EXE still exist inside the confined update-cache roots.
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.0.12` to `1.1.0.13` for the empty-except remediation and governance pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.11` to `1.1.0.12` for the unused-import cleanup pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.10` to `1.1.0.11` for the remaining information-exposure and CI workflow-permissions hardening pass without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.9` to `1.1.0.10` for the Organizer path-injection hardening pass without changing public `VERSION`.

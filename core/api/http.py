@@ -232,7 +232,7 @@ async def _unhandled_exc_handler(request: Request, exc: Exception):
             f'[error] req="{getattr(request.state, "req_id", "-")}" '
             f'path="{request.url.path}" class="{exc.__class__.__name__}"'
         )
-    except Exception:
+    except Exception:  # Non-fatal: error logging must not mask the controlled API response.
         pass
     return JSONResponse(status_code=500, content=error_envelope("internal_error"))
 
@@ -489,7 +489,7 @@ def _health_details_payload() -> Dict[str, Any]:
         rid = None
     try:
         rid = rid or RUN_ID
-    except NameError:
+    except NameError:  # Compatibility fallback: RUN_ID may be absent during partial module bootstrap.
         pass
     rid = str(rid or uuid.uuid4())
 
@@ -521,7 +521,7 @@ def _persist_session_token(token: str) -> str:
     try:
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
         TOKEN_FILE.write_text(token, encoding="utf-8")
-    except Exception:
+    except Exception:  # Non-fatal fallback: token remains valid in runtime memory if file persistence fails.
         pass
     return token
 
@@ -602,7 +602,7 @@ def log(msg: str) -> None:
     line = msg.rstrip()
     try:
         print(line, flush=True)
-    except Exception:
+    except Exception:  # Optional console output; file logging remains authoritative.
         pass
     path = LOG_FILE or (LOGS / "core.log")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -650,7 +650,7 @@ def stop_indexer(timeout: float = 10.0) -> bool:
     if task and not task.done() and loop and loop.is_running():
         try:
             loop.call_soon_threadsafe(task.cancel)
-        except Exception:
+        except Exception:  # Best-effort cancellation; shutdown waits on the authoritative idle signal.
             pass
     _dispose_index_handles()
     deadline = time.time() + max(timeout, 0)
@@ -1098,11 +1098,11 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
         try:
             if eng is not None and hasattr(eng, "dispose"):
                 eng.dispose()
-        except Exception:
+        except Exception:  # Best-effort cleanup; engine disposal may already be complete.
             pass
         try:
             dispose_engine()
-        except Exception:
+        except Exception:  # Best-effort restart; restore/import result is already finalized.
             pass
 
     try:
@@ -1129,12 +1129,12 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
         try:
             start_fn = getattr(app.state, "start_indexer", None) or start_indexer
             start_fn()
-        except Exception:
+        except Exception:  # Best-effort restart; restore/import result is already finalized.
             pass
         try:
             if lock is not None and lock.locked():
                 lock.release()
-        except Exception:
+        except Exception:  # Best-effort cleanup; lock may already be released by the owner.
             pass
 
 
@@ -1176,7 +1176,7 @@ def _db_conn() -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     try:
         con.execute("PRAGMA journal_mode=WAL")
-    except sqlite3.DatabaseError:
+    except sqlite3.DatabaseError:  # Optional SQLite tuning; foreign-key enforcement remains required.
         pass
     con.execute("PRAGMA foreign_keys=ON")
     return con
@@ -1304,7 +1304,7 @@ def dev_ping_plugin():
                     if handle:
                         try:
                             win32file.CloseHandle(handle)
-                        except Exception:
+                        except Exception:  # Best-effort cleanup; Windows handle may already be closed.
                             pass
         server.stop()
 
@@ -1324,7 +1324,7 @@ def _load_index_state() -> Dict[str, Any]:
                 if not isinstance(data.get("local"), dict):
                     data["local"] = {}
                 return data
-    except Exception:
+    except Exception:  # Non-fatal fallback: missing/corrupt index state starts from an empty state.
         pass
     return {"drive": {}, "local": {}}
 
@@ -1465,7 +1465,7 @@ def _catalog_background_scan(broker, source: str, scope: str, label: str) -> boo
         if stream_id:
             try:
                 broker.catalog_close(stream_id)
-            except Exception:
+            except Exception:  # Best-effort cleanup; catalog stream may already be closed.
                 pass
 
 
@@ -1633,10 +1633,10 @@ def _list_windows_drives() -> List[Dict[str, Any]]:
                     256,
                 )
                 label = label_buf.value if ok else ""
-            except Exception:
+            except Exception:  # Optional Windows volume metadata; continue with an empty label.
                 label = ""
             drives.append({"path": root, "label": label, "type": dtype})
-    except Exception:
+    except Exception:  # Optional Windows drive enumeration; POSIX mounts and configured roots still work.
         pass
     return drives
 
@@ -1772,8 +1772,10 @@ def settings_google_delete(
     for key in ("client_id", "client_secret", "oauth_refresh"):
         try:
             Secrets.delete("google_drive", key)
-        except SecretError:
-            continue
+        except SecretError as exc:
+            if str(exc) == "Secret not found":
+                continue
+            raise HTTPException(status_code=500, detail="secret_delete_error") from exc
 
     log("settings.google cleared")
     return {"ok": True}
@@ -1990,15 +1992,16 @@ def oauth_google_revoke(_ctx=Depends(require_token_ctx)):
                 data={"token": token},
                 timeout=5,
             )
-        except Exception:
+        except Exception:  # Best-effort remote revoke; local credential deletion still runs.
             pass
         try:
             Secrets.delete("google_drive", "oauth_refresh")
-        except SecretError:
-            pass
+        except SecretError as exc:
+            if str(exc) != "Secret not found":
+                raise HTTPException(status_code=500, detail="secret_delete_error") from exc
     try:
         get_broker().clear_provider_cache("google_drive")
-    except Exception:
+    except Exception:  # Cache invalidation is best-effort after credential deletion.
         pass
     response = JSONResponse({"ok": True})
     response.headers["Cache-Control"] = "no-store"
@@ -2192,8 +2195,8 @@ def probe(
                     ["catalog.list", "catalog.search"],
                     probe_result,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("registry_probe_update_failed class=%s", type(exc).__name__)
     payload = {
         "bootstrap": core.bootstrap,
         "results": results,
@@ -2370,7 +2373,7 @@ async def _start_indexer_event() -> None:
 async def _stop_indexer_event() -> None:
     try:
         app.state.stop_indexer()
-    except Exception:
+    except Exception:  # Best-effort shutdown; indexer may already be stopped.
         pass
 
 

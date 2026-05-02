@@ -171,7 +171,7 @@ class CapabilityRegistry:
         def _writer() -> None:
             try:
                 self._atomic_write(MANIFEST_PATH, json.dumps(out, indent=2))
-            except Exception:
+            except Exception:  # Non-fatal async cache write; caller already receives the manifest payload.
                 pass
 
         t = threading.Thread(target=_writer, daemon=True)

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import json
+import logging
 import os
 import sys
 from datetime import datetime
@@ -20,6 +21,7 @@ from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
+logger = logging.getLogger(__name__)
 
 
 def _journals_dir() -> Path:
@@ -39,8 +41,8 @@ def _append_recipe_journal(entry: dict) -> None:
         p = _journals_dir() / "recipes.jsonl"
         with open(p, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, separators=(",", ":")) + "\n")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("recipe_journal_append_failed class=%s", type(exc).__name__)
 
 
 class RecipeItemIn(BaseModel):

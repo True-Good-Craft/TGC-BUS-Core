@@ -83,7 +83,7 @@ def _load_or_create_master_key() -> bytes:
         try:
             # also copy to OS keyring as backup (non-fatal)
             keyring.set_password(_app_id(), "master_key_backup", key.decode("utf-8"))
-        except KeyringError:
+        except KeyringError:  # Optional keyring backup; encrypted file key remains authoritative.
             pass
     return key
 
@@ -151,7 +151,7 @@ class Secrets:
                 val = keyring.get_password(_app_id(), ns)
                 if val is not None:
                     return val
-            except KeyringError:
+            except KeyringError:  # Compatibility fallback: OS keyring unavailable; use encrypted file store.
                 pass
         # Fallback
         return _file_get(plugin_id, key)
@@ -166,7 +166,7 @@ class Secrets:
             try:
                 keyring.set_password(_app_id(), ns, value)
                 return
-            except KeyringError:
+            except KeyringError:  # Compatibility fallback: OS keyring unavailable; use encrypted file store.
                 pass
         # Fallback
         _file_set(plugin_id, key, value)
@@ -179,7 +179,7 @@ class Secrets:
             try:
                 keyring.delete_password(_app_id(), ns)
                 ok = True
-            except KeyringError:
+            except KeyringError:  # Compatibility fallback: secret may already be absent from keyring.
                 pass
         # Update fallback store
         try:
@@ -194,7 +194,7 @@ class Secrets:
                     enc = f.encrypt(json.dumps(data, separators=(",", ":")).encode("utf-8"))
                     _save_store_bytes(enc)
                     ok = True
-        except Exception:
-            pass
+        except Exception as exc:
+            raise SecretError("Secret delete failed") from exc
         if not ok:
             raise SecretError("Secret not found")

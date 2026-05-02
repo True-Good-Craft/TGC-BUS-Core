@@ -527,6 +527,8 @@
 * 
 **Diagnostic Instrumentation Policy:** Temporary diagnostic instrumentation (e.g., debug prints, route dumps) MUST NOT exist in production code. Debug-only tracking variables must be removed before merge.
 
+* **Swallowed Exception Policy:** Empty `except: pass` handlers are not allowed by default. Intentional non-fatal handlers are limited to best-effort cleanup, optional platform/UI behavior, cache invalidation, telemetry-free journal side effects, config/tracker cleanup, and migration/compatibility fallbacks; each must use a narrow exception type where practical plus safe type-only logging or an explanatory comment. Raw exception details, sensitive paths, secrets, tokens, passwords, and DB URLs must not be returned to clients or logged from these paths. Security/auth/write/restore/update failures must fail closed or return controlled errors unless the failure is explicitly non-critical cleanup or an already-missing resource condition.
+
 
 
 ---

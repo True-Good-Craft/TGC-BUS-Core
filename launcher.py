@@ -41,7 +41,7 @@ except ImportError as e:
     print("!"*60)
     try:
         input("Press Enter to exit...")
-    except EOFError:
+    except EOFError:  # Optional console prompt; dependency failure exit remains authoritative.
         pass
     sys.exit(1)
 
@@ -73,7 +73,7 @@ def _startup_log(message: str) -> None:
     logger.info(message)
     try:
         _write_launcher_log(message)
-    except Exception:
+    except Exception:  # Best-effort launcher log; startup continues if log path is unavailable.
         pass
 
 
@@ -99,7 +99,7 @@ def _show_tray_failure_message(exc: Exception, log_path: Path) -> None:
             f"Details were written to:\n{log_path}"
         )
         ctypes.windll.user32.MessageBoxW(0, message, "TGC BUS Core Startup Error", 0x10)
-    except Exception:
+    except Exception:  # Optional Windows UI notification; tray startup failure still exits.
         pass
 
 
@@ -135,7 +135,7 @@ def hide_console():
             hwnd = ctypes.windll.kernel32.GetConsoleWindow()
             if hwnd:
                 ctypes.windll.user32.ShowWindow(hwnd, 0) # SW_HIDE
-        except Exception:
+        except Exception:  # Optional Windows console control; hidden mode remains best-effort.
             pass
 
 def show_console():
@@ -146,7 +146,7 @@ def show_console():
             if hwnd:
                 ctypes.windll.user32.ShowWindow(hwnd, 5) # SW_SHOW
                 ctypes.windll.user32.SetForegroundWindow(hwnd)
-        except Exception:
+        except Exception:  # Optional Windows console control; showing console remains best-effort.
             pass
 
 # --- 3. Browser Helper ---
@@ -313,7 +313,7 @@ def _exit_already_running(exc: InstanceOwnershipError) -> None:
     print(user_message)
     try:
         _write_launcher_log(log_message)
-    except Exception:
+    except Exception:  # Best-effort launcher log; already-running exit remains authoritative.
         pass
     sys.exit(2)
 
