@@ -28,6 +28,36 @@ function fmtTs(ts) {
   }
 }
 
+function buildPreviewRow(label, value) {
+  const row = document.createElement('div');
+  const strong = document.createElement('strong');
+  strong.textContent = `${label}:`;
+  row.append(strong, ` ${value}`);
+  return row;
+}
+
+function renderPreview(previewBox, path, schemaVersion, counts) {
+  const title = document.createElement('div');
+  title.className = 'admin-preview-title';
+  title.textContent = 'Table counts:';
+
+  const list = document.createElement('ul');
+  list.className = 'admin-preview-list';
+
+  for (const [key, value] of Object.entries(counts || {})) {
+    const item = document.createElement('li');
+    item.textContent = `${key}: ${value}`;
+    list.appendChild(item);
+  }
+
+  previewBox.replaceChildren(
+    buildPreviewRow('Path', path),
+    buildPreviewRow('Schema version', schemaVersion ?? 'unknown'),
+    title,
+    list,
+  );
+}
+
 export function mountAdmin(container) {
   if (!container) return;
 
@@ -138,14 +168,7 @@ export function mountAdmin(container) {
       lastPreviewPath = path;
       restoreStatus.textContent = 'Preview ok';
       const counts = res.table_counts || {};
-      previewBox.innerHTML = `
-        <div><strong>Path:</strong> ${path}</div>
-        <div><strong>Schema version:</strong> ${res.schema_version ?? 'unknown'}</div>
-        <div class="admin-preview-title">Table counts:</div>
-        <ul class="admin-preview-list">
-          ${Object.entries(counts).map(([k, v]) => `<li>${k}: ${v}</li>`).join('')}
-        </ul>
-      `;
+      renderPreview(previewBox, path, res.schema_version, counts);
       previewBox.classList.remove('hidden');
     } catch (err) {
       console.error('preview failed', err);
