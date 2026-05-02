@@ -42,6 +42,10 @@ def test_prod_mode_hides_dev_routes(monkeypatch):
         assert r.status_code == 404
         r = c.get("/dev/writes", headers=headers)
         assert r.status_code == 404
+        r = c.get("/dev/journal/info", headers=headers)
+        assert r.status_code == 404
+        r = c.get("/dev/db/where", headers=headers)
+        assert r.status_code == 404
 
 def test_dev_mode_flow(monkeypatch):
     monkeypatch.setenv("BUS_DEV", "1")
@@ -59,6 +63,10 @@ def test_dev_mode_flow(monkeypatch):
         r = c.get("/dev/paths", headers=headers)
         assert r.status_code == 200
         r = c.get("/dev/writes", headers=headers)
+        assert r.status_code == 200
+        r = c.get("/dev/journal/info", headers=headers)
+        assert r.status_code == 200
+        r = c.get("/dev/db/where", headers=headers)
         assert r.status_code == 200
         r = c.post("/dev/writes", json={"enabled": True}, headers=headers)
         assert r.status_code == 404

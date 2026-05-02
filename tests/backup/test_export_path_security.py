@@ -30,8 +30,11 @@ def modules(tmp_path, monkeypatch):
         "..\\escape.db.gcm",
         "/etc/passwd",
         r"C:\Windows\System32\drivers\etc\hosts",
+        r"C:Windows\System32",
         r"\\server\share\file",
         r"\\?\C:\Windows\bad",
+        "//server/share/file",
+        "~/.ssh/id_rsa",
         "bad\x00name",
     ],
 )

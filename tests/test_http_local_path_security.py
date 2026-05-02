@@ -48,7 +48,6 @@ def test_open_local_uses_resolved_safe_file_path(bus_client, monkeypatch, tmp_pa
     safe_file = allowed_root / "nested" / "file.txt"
     safe_file.parent.mkdir(parents=True)
     safe_file.write_text("ok", encoding="utf-8")
-    raw_path = str(allowed_root / "nested" / ".." / "nested" / "file.txt")
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(api_http, "_broker", lambda: _FakeBroker([str(allowed_root)]))
@@ -59,11 +58,28 @@ def test_open_local_uses_resolved_safe_file_path(bus_client, monkeypatch, tmp_pa
 
     monkeypatch.setattr(api_http.subprocess, "Popen", _fake_popen)
 
-    response = client.post("/open/local", json={"id": _encode_local_id(raw_path)})
+    response = client.post("/open/local", json={"id": _encode_local_id(str(safe_file))})
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
     assert captured["args"] == ["explorer", "/select,", str(safe_file.resolve(strict=False))]
+
+
+def test_open_local_rejects_traversal_path(bus_client, monkeypatch, tmp_path: Path):
+    client = bus_client["client"]
+    api_http = bus_client["api_http"]
+    allowed_root = tmp_path / "allowed"
+    safe_file = allowed_root / "nested" / "file.txt"
+    safe_file.parent.mkdir(parents=True)
+    safe_file.write_text("ok", encoding="utf-8")
+    traversal_path = str(allowed_root / "nested" / ".." / "nested" / "file.txt")
+
+    monkeypatch.setattr(api_http, "_broker", lambda: _FakeBroker([str(allowed_root)]))
+
+    response = client.post("/open/local", json={"id": _encode_local_id(traversal_path)})
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "path_not_allowed"}
 
 
 def test_open_local_rejects_path_outside_root(bus_client, monkeypatch, tmp_path: Path):

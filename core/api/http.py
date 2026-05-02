@@ -904,6 +904,37 @@ IMPORT_ERROR_CODES = {
 }
 
 
+def _safe_action_result(result: Any) -> Dict[str, Any]:
+    if not isinstance(result, dict):
+        return {"status": "error", "error": "action_failed"}
+    safe: Dict[str, Any] = {}
+    if "action_id" in result:
+        safe["action_id"] = result.get("action_id")
+    status = str(result.get("status") or "error")
+    safe["status"] = status
+    if status != "ok" or "error" in result:
+        safe["error"] = "action_failed"
+    return safe
+
+
+def _safe_commit_summary(summary: Any) -> Dict[str, Any]:
+    if not isinstance(summary, dict):
+        return {"ok": False, "results": []}
+    results = summary.get("results")
+    return {
+        "ok": bool(summary.get("ok")),
+        "results": [_safe_action_result(item) for item in results] if isinstance(results, list) else [],
+    }
+
+
+def _safe_plan_dump(plan: Plan) -> Dict[str, Any]:
+    payload = plan.model_dump(mode="json")
+    stats = payload.get("stats")
+    if isinstance(stats, dict) and "last_commit" in stats:
+        stats["last_commit"] = _safe_commit_summary(stats.get("last_commit"))
+    return payload
+
+
 @protected.post("/app/db/export")
 def app_export(req: ExportReq, _writes: None = Depends(require_writes)):
     if not req.password:
@@ -992,10 +1023,12 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
         if not res.get("ok"):
             err = res.get("error", "commit_failed")
             if err in IMPORT_ERROR_CODES:
-                raise HTTPException(status_code=400, detail={"error": err, **({"info": res.get("info")} if dev and res.get("info") else {})})
+                if dev and res.get("info"):
+                    _log(f"debug info suppressed from response: {res.get('info')}")
+                raise HTTPException(status_code=400, detail={"error": err})
             detail = {"error": "commit_failed"}
             if dev and res.get("info"):
-                detail["info"] = res["info"]
+                _log(f"debug info suppressed from response: {res.get('info')}")
             raise HTTPException(status_code=400, detail=detail)
         return res
     finally:
@@ -1013,7 +1046,7 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
 
 
 # --- Debug: journal info (auth required; does NOT require writes on) ---
-@protected.get("/dev/journal/info")
+@protected.get("/dev/journal/info", dependencies=[Depends(require_dev)])
 def journal_info(n: int = 5):
     journal_path = JOURNALS_DIR / "inventory.jsonl"
     exists = journal_path.exists()
@@ -1025,7 +1058,8 @@ def journal_info(n: int = 5):
             with journal_path.open("r", encoding="utf-8") as handle:
                 lines = list(deque(handle, maxlen=max(1, min(int(n), 200))))
         except Exception as exc:
-            lines = [f"__read_error__: {exc}"]
+            log(f"[dev.journal.info] read failed: {type(exc).__name__}")
+            lines = ["__read_error__"]
     return {
         "BUS_ROOT": str(BUS_ROOT),
         "APP_DIR": str(APP_DIR),
@@ -1919,7 +1953,7 @@ def plans_get(plan_id: str) -> Dict[str, Any]:
     plan = get_plan(plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="plan_not_found")
-    return plan.model_dump()
+    return _safe_plan_dump(plan)
 
 
 @protected.post("/plans/{plan_id}/preview")
@@ -1944,12 +1978,13 @@ def plans_commit(
         raise HTTPException(status_code=404, detail="plan_not_found")
     require_owner_commit(request)
     summary = commit_local(plan)
-    status = PlanStatus.COMMITTED if summary.get("ok") else PlanStatus.FAILED
+    safe_summary = _safe_commit_summary(summary)
+    status = PlanStatus.COMMITTED if safe_summary.get("ok") else PlanStatus.FAILED
     stats = dict(plan.stats or {})
-    stats["last_commit"] = summary
+    stats["last_commit"] = safe_summary
     updated = plan.model_copy(update={"status": status, "stats": stats})
     save_plan(updated)
-    return summary
+    return safe_summary
 
 
 @protected.post("/plans/{plan_id}/export")
@@ -1957,7 +1992,7 @@ def plans_export(plan_id: str, _writes: None = Depends(require_writes)) -> Respo
     plan = get_plan(plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="plan_not_found")
-    return JSONResponse(plan.model_dump())
+    return JSONResponse(_safe_plan_dump(plan))
 
 
 @protected.get("/plugins")

@@ -15,8 +15,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
         ("..\\escape.db.gcm", "path_out_of_roots"),
         ("/etc/passwd", "path_out_of_roots"),
         (r"C:\Windows\System32\drivers\etc\hosts", "path_out_of_roots"),
+        (r"C:Windows\System32", "path_out_of_roots"),
         (r"\\server\share\file", "path_out_of_roots"),
         (r"\\?\C:\Windows\bad", "path_out_of_roots"),
+        ("//server/share/file", "path_out_of_roots"),
+        ("~/.ssh/id_rsa", "path_out_of_roots"),
         ("bad\x00name", "path_invalid"),
     ],
 )
@@ -34,6 +37,16 @@ def test_resolve_path_under_roots_accepts_valid_in_root_path(tmp_path: Path) -> 
     nested_file.parent.mkdir(parents=True)
 
     resolved = resolve_path_under_roots("nested/backup.db.gcm", [allowed_root])
+
+    assert resolved == nested_file.resolve(strict=False)
+
+
+def test_resolve_path_under_roots_accepts_valid_absolute_in_root_path(tmp_path: Path) -> None:
+    allowed_root = tmp_path / "exports"
+    nested_file = allowed_root / "nested" / "backup.db.gcm"
+    nested_file.parent.mkdir(parents=True)
+
+    resolved = resolve_path_under_roots(str(nested_file), [allowed_root])
 
     assert resolved == nested_file.resolve(strict=False)
 
