@@ -19,6 +19,9 @@ Core trust is not only about preventing compromise. It is also about preserving 
 - RID/path-token resolution (`core/reader/ids.py`) is treated as part of the local-file trust boundary and now uses compatibility-aware hardening (new-write `local:v2:<sig32>:<payload>`, old-read legacy support).
 - B324 in `core/reader/ids.py` is resolved via real hardening (stronger active RID signature construction and strict fail-closed validation), without suppression-based handling.
 - Commit-path enforcement is tightened so present RID fields are authoritative for resolution and invalid RID values do not silently downgrade to raw-path fallback.
+- Sandbox transform execution is now a fixed-command boundary: subprocess argv is limited to BUS Core-owned runner arguments, while `plugin_id`, `fn`, and transform payload move through stdin JSON only and malformed stdin is rejected in the runner.
+- Restore/import preview metadata in the admin UI is now rendered with DOM text nodes rather than dynamic `innerHTML`, so path/schema/count values are treated as text and not markup.
+- Local open/validate, import/export preview/commit, and plugin UI asset paths now resolve through explicit allowed roots before filesystem access or OS-open behavior.
 
 | Concern | Status | Enforced by | Scope | Notes |
 | --- | --- | --- | --- | --- |
@@ -108,6 +111,13 @@ This is the core trust boundary as implemented today: local runtime first, bound
 | Finance mutations | Canonical | `/app/finance/expense`, `/app/finance/refund` | Explicit token + `require_writes` | Owner commit is not currently part of this domain policy. |
 | Config and policy writes | Canonical | `/app/config`, `/policy`, `/settings/google`, `/settings/reader`, `/plans*`, `/plugins/{pid}/enable` | `/app/config` has explicit token + `require_writes`; other admin routes are protected router + write gate where applicable | Owner commit is not universal across these admin writes. |
 | Open local path / restart server | Canonical | `/open/local`, `/server/restart` | Protected router + `require_writes` | Performs OS-visible side effects. |
+
+### Path and subprocess boundaries
+
+- Sandbox transform subprocess execution is constrained to a fixed BUS Core-owned command (`sys.executable -m core.runtime.sandbox_runner`); dynamic transform fields are not allowed in argv.
+- Import preview/commit accepts only paths that resolve under `EXPORTS_DIR`; staged uploads are written under the same canonical exports root.
+- Local validate/open accepts only paths that resolve under configured `local_fs` roots; resolved safe paths are the only values passed to Explorer, `os.startfile`, or `xdg-open`.
+- Plugin UI asset resolution is constrained to `PLUGIN_UI_BASES/<plugin>/ui` roots and must remain in-root after normalization.
 
 ## Adapters and integrations
 

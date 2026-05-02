@@ -24,11 +24,34 @@ import os
 import subprocess
 import sys
 import tempfile
+import math
 from typing import Any, Dict
 
 
 class SandboxError(RuntimeError):
     ...
+
+
+_MIN_SANDBOX_TIMEOUT_SECONDS = 0.5
+_MAX_SANDBOX_TIMEOUT_SECONDS = 30.0
+_MAX_SANDBOX_STDOUT_BYTES = 1024 * 1024
+_MAX_SANDBOX_ERROR_DETAIL_CHARS = 4096
+
+
+def _coerce_timeout(timeout: float) -> float:
+    try:
+        numeric_timeout = float(timeout)
+    except (TypeError, ValueError) as exc:
+        raise SandboxError("sandbox_invalid_timeout") from exc
+    if not math.isfinite(numeric_timeout):
+        raise SandboxError("sandbox_invalid_timeout")
+    return min(max(numeric_timeout, _MIN_SANDBOX_TIMEOUT_SECONDS), _MAX_SANDBOX_TIMEOUT_SECONDS)
+
+
+def _sandbox_command() -> list[str]:
+    # Keep argv fixed so request or plugin data cannot influence executable selection
+    # or command-line parsing. Dynamic operation data stays in stdin JSON only.
+    return [sys.executable, "-m", "core.runtime.sandbox_runner"]
 
 
 def run_transform(plugin_id: str, fn: str, payload: Dict[str, Any], *, timeout: float = 5.0) -> Dict[str, Any]:
@@ -37,32 +60,34 @@ def run_transform(plugin_id: str, fn: str, payload: Dict[str, Any], *, timeout: 
     with tempfile.TemporaryDirectory(prefix="bus_sandbox_") as tmp:
         env = os.environ.copy()
         env["BUS_SANDBOX_DIR"] = tmp
-        cmd = [
-            sys.executable,
-            "-m",
-            "core.runtime.sandbox_runner",
-            "--plugin",
-            plugin_id,
-            "--fn",
-            fn,
-        ]
+        sandbox_payload = {
+            "plugin_id": plugin_id,
+            "fn": fn,
+            "payload": {
+                "input": payload.get("input") or {},
+                "limits": payload.get("limits") or {},
+            },
+        }
         try:
-            proc = subprocess.run(
-                cmd,
-                input=json.dumps(payload).encode("utf-8"),
+            proc = subprocess.run(  # nosec B603 - argv is fixed by _sandbox_command()
+                _sandbox_command(),
+                input=json.dumps(sandbox_payload).encode("utf-8"),
                 capture_output=True,
-                timeout=max(timeout, 0.5),
+                timeout=_coerce_timeout(timeout),
                 check=False,
+                shell=False,
                 cwd=tmp,
                 env=env,
             )
         except subprocess.TimeoutExpired as exc:
             raise SandboxError(f"sandbox_timeout:{plugin_id}:{fn}") from exc
         if proc.returncode != 0:
-            detail = proc.stderr.decode("utf-8", errors="ignore").strip()
+            detail = proc.stderr.decode("utf-8", errors="ignore").strip()[:_MAX_SANDBOX_ERROR_DETAIL_CHARS]
             raise SandboxError(
                 f"sandbox_error:{plugin_id}:{fn}:{proc.returncode}:{detail}",
             )
+        if len(proc.stdout) > _MAX_SANDBOX_STDOUT_BYTES:
+            raise SandboxError("sandbox_output_too_large")
         stdout = proc.stdout.decode("utf-8")
         try:
             result = json.loads(stdout or "{}")

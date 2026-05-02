@@ -11,6 +11,16 @@
 
 ## [Unreleased]
 
+### Fixed
+- Hardened sandbox transform execution so subprocess argv is fixed to BUS Core-owned arguments only and dynamic transform data is passed through stdin JSON with controlled malformed-request handling.
+- Hardened the legacy compatibility router so route dispatch is allowlisted and prototype-safe, with unknown or malicious-looking routes falling back safely to `/home`.
+- Replaced admin restore/import preview `innerHTML` rendering with text-safe DOM construction so preview metadata is rendered as text rather than reinterpreted as markup.
+- Added shared safe path resolution for import/export, local-open, local-validate, and plugin UI asset paths so user-controlled path values must resolve under explicit allowed roots before filesystem or OS-open use.
+- Fixed Manufacturing stock display so recipe input/output rows show current on-hand inventory values instead of `—`.
+- Aligned Manufacturing stock rendering with Inventory's item display helper.
+- Fixed item-entry workflow so adding a vendor from the item form preserves current item fields.
+- Added in-form vendor creation flow that returns to the item form and selects the newly created vendor.
+
 ### Added
 - Added `.github/workflows/security-audit.yml` with Bandit source scanning, Medium/High Bandit CI failure, Low-severity advisory reporting, and advisory `pip-audit` evidence against `requirements.txt`.
 - Added tracked governance summary for the completed security hardening pass: route-local guard consistency, Docker loopback default, loopback-only CORS, signed-manifest update staging, active security-audit workflow, and the local post-hardening OWASP 2025 reassessment. The OWASP report itself remains a local ignored report and is not release evidence on its own.
@@ -36,6 +46,8 @@
 - Added a narrow `verified_ready` promotion helper that writes `verified_ready` only when `hash_verified`, `extracted`, and `exe_verified` all agree on version/channel/hash/path data and the cached ZIP, extracted version directory, and extracted EXE still exist inside the confined update-cache roots.
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.0.6` to `1.1.0.7` for the pre-PR security hardening governance/docs pass without changing public `VERSION`.
+- Bumped `INTERNAL_VERSION` from `1.1.0.5` to `1.1.0.6` for the Manufacturing/Inventory UI correctness patch without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.0.4` to `1.1.0.5` for security-tooling workflow governance without changing public `VERSION`.
 - Required signed manifests for the default `/app/update/stage` service path while leaving read-only `/app/update/check` unsigned-manifest compatibility unchanged.
 - Bumped `INTERNAL_VERSION` from `1.1.0.3` to `1.1.0.4` for update-staging signed-manifest enforcement without changing public `VERSION`.
@@ -110,6 +122,13 @@
 - Aligned release/update documentation and README wording with actual behavior: Lighthouse remains the default manifest URL, checksum metadata may be published, and the app does not verify checksum, signature, publisher, or artifact size before surfacing `download_url`.
 
 ### Tests
+- Added focused regression coverage for sandbox command construction, legacy router dispatch, admin preview rendering, and path traversal/outside-root rejection.
+- Passed `node --check core/ui/js/cards/manufacturing.js`.
+- Passed `node --check core/ui/js/cards/inventory.js`.
+- Passed `node --check core/ui/js/lib/item-display.js`.
+- Passed `git diff --check -- core/ui/js/lib/item-display.js core/ui/js/cards/inventory.js core/ui/js/cards/manufacturing.js`.
+- Smoke was reported green for this focused UI correctness patch.
+- UI contract audit was not completed: `scripts/ui_contract_audit.ps1` currently fails to parse at line 103, and `scripts/ui_contract_audit.sh` currently fails under bash because CRLF leaves `set: pipefail\r: invalid option name`.
 - Added focused update-policy and manifest-validation coverage for allowed/rejected channels, stable backward compatibility, non-stable channel isolation, invalid metadata rejection, declared metadata retention, and the localhost/private-host error-code contract.
 - Added targeted RID security coverage in `tests/test_reader_rid_security.py` for legacy compatibility, v2 resolution, malformed/tampered rejection, and mixed legacy/v2 commit-reader flows.
 - Added Phase D validation coverage asserting the Home dashboard keeps explicit placeholder disclosure while it still depends on `/app/transactions*` stub routes.

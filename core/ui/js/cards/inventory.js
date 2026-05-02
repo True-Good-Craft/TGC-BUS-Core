@@ -5,6 +5,7 @@ import { apiGetJson, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
 import * as canonical from '../api/canonical.js';
 import { fromBaseQty, fromBaseUnitPrice, fmtQty, fmtMoney } from '../lib/units.js';
 import { unitOptionsList, dimensionForUnit, DIM_DEFAULTS_IMPERIAL, DIM_DEFAULTS_METRIC } from '../lib/units.js';
+import { formatOnHandDisplay } from '../lib/item-display.js';
 
 const UNIT_OPTIONS = {
   length: ['mm', 'cm', 'm'],
@@ -138,41 +139,6 @@ function toast(message, tone = 'ok') {
     el.classList.add('inventory-toast--hide');
     setTimeout(() => el.remove(), 300);
   }, 2000);
-}
-
-function quantityValueOnly(source) {
-  const toNumeric = (value) => {
-    if (value == null || typeof value === 'object') return null;
-    const match = String(value).match(/-?\d+(?:\.\d+)?/);
-    if (!match) return null;
-    const parsed = Number(match[0]);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
-  if (source == null) return null;
-  if (typeof source !== 'object') return toNumeric(source);
-  return toNumeric(source.qty ?? source.quantity ?? source.value);
-}
-
-function formatOnHandDisplay(item) {
-  const stockOnHandValue = quantityValueOnly(item?.stock_on_hand_display);
-  if (stockOnHandValue != null && stockOnHandValue !== '') {
-    return String(stockOnHandValue);
-  }
-  if (item?.quantity_decimal != null) {
-    return String(item.quantity_decimal);
-  }
-  const quantityDisplayValue = quantityValueOnly(item?.quantity_display);
-  if (quantityDisplayValue != null && quantityDisplayValue !== '') {
-    return String(quantityDisplayValue);
-  }
-  const quantityValue = quantityValueOnly(item?.quantity);
-  if (quantityValue != null && quantityValue !== '') {
-    return String(quantityValue);
-  }
-  if (item?.qty != null && item.qty !== '') {
-    return String(item.qty);
-  }
-  return '—';
 }
 
 function renderTable(state) {
@@ -1098,7 +1064,12 @@ export function openItemModal(item = null) {
   vendorEmptyOpt.value = '';
   vendorEmptyOpt.textContent = '—';
   vendorSelect.appendChild(vendorEmptyOpt);
-  vendorInputWrap.appendChild(vendorSelect);
+  const addVendorBtn = document.createElement('button');
+  addVendorBtn.type = 'button';
+  addVendorBtn.className = 'btn small';
+  addVendorBtn.textContent = 'Add Vendor';
+  vendorInputWrap.classList.add('field-input-row');
+  vendorInputWrap.append(vendorSelect, addVendorBtn);
   vendorRow.appendChild(vendorInputWrap);
 
   const typeRow = document.createElement('div');
@@ -1168,13 +1139,17 @@ export function openItemModal(item = null) {
   fName.querySelector('input')?.focus();
   initAddItemFormDefaults();
 
+  let selectedVendorId = item?.vendor_id ? String(item.vendor_id) : '';
+  let vendorOptions = [];
+
   const populateVendors = (vendorsList, selectedId = null) => {
+    vendorOptions = Array.isArray(vendorsList) ? vendorsList : [];
     vendorSelect.textContent = '';
     const baseOpt = document.createElement('option');
     baseOpt.value = '';
     baseOpt.textContent = '—';
     vendorSelect.appendChild(baseOpt);
-    vendorsList.forEach(v => {
+    vendorOptions.forEach(v => {
       const opt = document.createElement('option');
       opt.value = v.id;
       opt.textContent = v.name ?? `#${v.id}`;
@@ -1184,26 +1159,141 @@ export function openItemModal(item = null) {
     createOpt.value = '__create__';
     createOpt.textContent = 'Create new vendor…';
     vendorSelect.appendChild(createOpt);
-    if (selectedId) {
-      vendorSelect.value = String(selectedId);
-    } else if (item?.vendor_id) {
+    const nextSelectedId = selectedId != null ? String(selectedId) : selectedVendorId;
+    const hasOption = (value) => Array.from(vendorSelect.options).some((opt) => opt.value === String(value));
+    if (nextSelectedId && hasOption(nextSelectedId)) {
+      vendorSelect.value = nextSelectedId;
+      selectedVendorId = nextSelectedId;
+    } else if (!nextSelectedId && item?.vendor_id && hasOption(item.vendor_id)) {
       vendorSelect.value = String(item.vendor_id);
+      selectedVendorId = String(item.vendor_id);
+    } else {
+      vendorSelect.value = '';
+      selectedVendorId = '';
     }
+  };
+
+  const selectSavedVendor = async (saved) => {
+    if (!saved?.id || !saved.is_vendor) return;
+    selectedVendorId = String(saved.id);
+    let refreshed = await fetchVendors();
+    if (!Array.isArray(refreshed)) refreshed = [];
+    if (!refreshed.some((v) => String(v?.id) === selectedVendorId)) {
+      refreshed = [...refreshed, saved];
+    }
+    populateVendors(refreshed, selectedVendorId);
   };
 
   const onContactSaved = async (ev) => {
-    const saved = ev.detail;
-    if (!saved?.id || !saved.is_vendor) return;
-    const refreshed = await fetchVendors();
-    if (!Array.isArray(refreshed) || !refreshed.length) return;
-    populateVendors(refreshed, saved.id);
+    await selectSavedVendor(ev.detail);
   };
+
+  function openVendorCreateModal() {
+    const vendorOverlay = document.createElement('div');
+    vendorOverlay.className = 'modal-overlay';
+    const vendorCard = document.createElement('div');
+    vendorCard.className = 'modal-card inventory-modal-card inventory-modal-card--narrow';
+
+    const vendorTitle = document.createElement('div');
+    vendorTitle.className = 'modal-title';
+    vendorTitle.textContent = 'Add Vendor';
+
+    const vendorError = document.createElement('div');
+    vendorError.className = 'error-banner';
+    vendorError.hidden = true;
+
+    const vendorBody = document.createElement('div');
+    vendorBody.className = 'modal-body';
+    const nameRow = inputRow('Name', 'text', '', { required: 'true' });
+    const nameInput = nameRow.querySelector('input');
+    const contactRow = inputRow('Contact', 'text', '');
+    const contactInput = contactRow.querySelector('input');
+
+    const vendorActions = document.createElement('div');
+    vendorActions.className = 'modal-actions';
+    const saveVendorBtn = document.createElement('button');
+    saveVendorBtn.type = 'button';
+    saveVendorBtn.className = 'btn primary';
+    saveVendorBtn.textContent = 'Save Vendor';
+    const cancelVendorBtn = document.createElement('button');
+    cancelVendorBtn.type = 'button';
+    cancelVendorBtn.className = 'btn';
+    cancelVendorBtn.textContent = 'Cancel';
+    vendorActions.append(saveVendorBtn, cancelVendorBtn);
+
+    vendorBody.append(nameRow, contactRow, vendorActions);
+    vendorCard.append(vendorTitle, vendorError, vendorBody);
+    vendorOverlay.appendChild(vendorCard);
+    document.body.appendChild(vendorOverlay);
+    nameInput?.focus();
+
+    const closeVendorModal = () => vendorOverlay.remove();
+    cancelVendorBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      closeVendorModal();
+    });
+    vendorOverlay.addEventListener('click', (ev) => {
+      if (ev.target === vendorOverlay) ev.stopPropagation();
+    }, true);
+    vendorCard.addEventListener('click', (ev) => ev.stopPropagation());
+
+    const saveVendor = async () => {
+      const name = nameInput?.value?.trim() || '';
+      if (!name) {
+        vendorError.textContent = 'Vendor name is required.';
+        vendorError.hidden = false;
+        markInvalid(nameInput);
+        return;
+      }
+      try {
+        vendorError.hidden = true;
+        saveVendorBtn.disabled = true;
+        saveVendorBtn.textContent = 'Saving...';
+        await ensureToken();
+        const saved = await apiPost('/app/contacts', {
+          name,
+          contact: contactInput?.value?.trim() || null,
+          is_vendor: true,
+          is_org: true,
+        });
+        closeVendorModal();
+        await selectSavedVendor(saved);
+      } catch (err) {
+        vendorError.textContent = serverErrorMessage(err) || 'Save vendor failed.';
+        vendorError.hidden = false;
+        saveVendorBtn.disabled = false;
+        saveVendorBtn.textContent = 'Save Vendor';
+      }
+    };
+
+    saveVendorBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      void saveVendor();
+    });
+    vendorOverlay.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        void saveVendor();
+      }
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    });
+  }
+
+  addVendorBtn.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    openVendorCreateModal();
+  });
 
   vendorSelect.addEventListener('change', () => {
     if (vendorSelect.value === '__create__') {
-      window.dispatchEvent(new CustomEvent('open-contacts-modal', { detail: { prefill: { is_vendor: true, is_org: true } } }));
-      vendorSelect.value = '';
+      vendorSelect.value = selectedVendorId || '';
+      openVendorCreateModal();
+      return;
     }
+    selectedVendorId = vendorSelect.value;
   });
 
   function currentDimension() {
@@ -1301,10 +1391,6 @@ export function openItemModal(item = null) {
   // Load vendors (async)
   (async () => {
     const vs = await fetchVendors();
-    if (!vs.length) {
-      vendorSelect.replaceWith(helpLinkToVendors());
-      return;
-    }
     populateVendors(vs);
     window.addEventListener('contacts:saved', onContactSaved);
   })();
@@ -1462,14 +1548,6 @@ export function openItemModal(item = null) {
     wrap.appendChild(input);
     row.append(label, wrap);
     return row;
-  }
-
-  function helpLinkToVendors() {
-    const a = document.createElement('a');
-    a.href = '#/contacts';
-    a.textContent = 'No vendors found. Go to Vendors.';
-    a.className = 'link';
-    return a;
   }
 
   let stockInOverlay = null;
