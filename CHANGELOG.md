@@ -33,6 +33,7 @@
 - Added in-form vendor creation flow that returns to the item form and selects the newly created vendor.
 
 ### Added
+- Added GitHub Sponsors funding metadata and documented BUS Core support links in the README and transparency docs.
 - Added a `/wiki` user-help skeleton for beta/setup/operator guidance and `.github/workflows/publish-wiki.yml` to publish that folder to the GitHub Wiki on `main` pushes touching wiki content.
 - Added a swallowed-exception governance policy and source guard test that rejects undocumented empty exception handlers.
 - Added `.github/workflows/security-audit.yml` with Bandit source scanning, Medium/High Bandit CI failure, Low-severity advisory reporting, and advisory `pip-audit` evidence against `requirements.txt`.

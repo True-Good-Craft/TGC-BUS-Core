@@ -32,6 +32,12 @@ The BUS Core runtime is built for transparency and local control. This document 
 * **Diagnostics**: `logs/` contains per-run append-only logs. `/logs` returns the last 200 lines for local inspection only.
 * **Policy simulator**: `/policy.simulate` offers an explicit alternative to legacy “dry-run” modes.
 
+## Support & Funding
+
+* **GitHub Sponsors**: https://github.com/sponsors/truegoodcraft
+* **BUS Core support page**: https://buscore.ca/support
+* Support links are documentation and repository metadata only; they do not enable telemetry, accounts, or cloud dependencies in the Core runtime.
+
 ## Plugins
 
 * Only configured plugins are exposed on `/plugins` and participate in `/probe`.

@@ -16,6 +16,8 @@ Your data stays on your machine, and the system remains usable offline.
 ![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da.svg)](https://discord.gg/qp3rc5CxdM)
+[![Sponsor](https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-24292f.svg?logo=githubsponsors)](https://github.com/sponsors/truegoodcraft)
+[![Support](https://img.shields.io/badge/Support-BUS%20Core-FF6D00.svg)](https://buscore.ca/support)
 
 
 ---
@@ -251,6 +253,15 @@ BUS Core is built on three principles:
 3. User owns their data and operating continuity
 
 Software for small shops should preserve trust, not manufacture dependency.
+
+---
+
+## Support BUS Core
+
+BUS Core is supported through GitHub Sponsors and the BUS Core support page:
+
+- GitHub Sponsors: https://github.com/sponsors/truegoodcraft
+- BUS Core support: https://buscore.ca/support
 
 ---
 
