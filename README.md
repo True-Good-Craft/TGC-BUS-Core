@@ -17,7 +17,6 @@ Your data stays on your machine, and the system remains usable offline.
 ![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da.svg)](https://discord.gg/qp3rc5CxdM)
 [![Sponsor](https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-24292f.svg?logo=githubsponsors)](https://github.com/sponsors/truegoodcraft)
-[![Support](https://img.shields.io/badge/Support-BUS%20Core-FF6D00.svg)](https://buscore.ca/support)
 
 
 ---
