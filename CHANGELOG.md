@@ -12,6 +12,7 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.0` to `1.1.1.1` for the wiki publishing/docs pass without changing public `VERSION`.
 - Bumped `VERSION` from `1.1.0` to `1.1.1` and reset `INTERNAL_VERSION` from `1.1.0.14` to `1.1.1.0` for the next governed update cut.
 
 ### Fixed
@@ -32,6 +33,7 @@
 - Added in-form vendor creation flow that returns to the item form and selects the newly created vendor.
 
 ### Added
+- Added a `/wiki` user-help skeleton for beta/setup/operator guidance and `.github/workflows/publish-wiki.yml` to publish that folder to the GitHub Wiki on `main` pushes touching wiki content.
 - Added a swallowed-exception governance policy and source guard test that rejects undocumented empty exception handlers.
 - Added `.github/workflows/security-audit.yml` with Bandit source scanning, Medium/High Bandit CI failure, Low-severity advisory reporting, and advisory `pip-audit` evidence against `requirements.txt`.
 - Added tracked governance summary for the completed security hardening pass: route-local guard consistency, Docker loopback default, loopback-only CORS, signed-manifest update staging, active security-audit workflow, and the local post-hardening OWASP 2025 reassessment. The OWASP report itself remains a local ignored report and is not release evidence on its own.

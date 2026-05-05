@@ -1,0 +1,33 @@
+name: Publish Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "wiki/**"
+      - ".github/workflows/publish-wiki.yml"
+
+concurrency:
+  group: publish-wiki
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish-wiki:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # The GitHub Wiki repository must be initialized manually once by creating
+      # a Home page in the GitHub UI before this workflow can publish reliably.
+      # /wiki in the main repo is the editable source folder.
+      # GitHub Wiki is the published user-facing output.
+      - name: Publish wiki
+        uses: Andrew-Chen-Wang/github-wiki-action@v5
+        with:
+          path: wiki
+          strategy: clone
