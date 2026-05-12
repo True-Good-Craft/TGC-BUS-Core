@@ -1956,3 +1956,21 @@ BRANCH: Let-their-be-xfill
 
 - No accounting OAuth, account mapping UI, item import, QuickBooks/Wave integration, double-entry ledger, currency configuration, table, or column change is introduced by this patch.
 
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Patch 1C UI Wiring for Purchase Truth + Finance CSV Export
+DATE: 2026-05-12
+BRANCH: Let-their-be-xfill
+
+### Authority Delta
+
+- Inventory UI now exposes `Record Purchase` as a distinct action beside `Add Batch`; purchases post to `/app/purchase` with canonical `quantity_decimal` and `uom` fields, category, optional notes, and unit cost in cents.
+- Add Batch remains a stock-in-only path and does not create purchase cash truth.
+- Finance UI now exposes generic CSV export through `/app/finance/export.csv?profile=generic` using the currently selected date range.
+
+### Non-Goals / Safety
+
+- No UI-side `qty_base`, unit multiplier, backend business logic, table, or column change is introduced by this patch.
+- No accounting OAuth, QuickBooks/Wave integration, account mapping, or item import is introduced by this patch.
+

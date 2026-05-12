@@ -12,6 +12,9 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.3` to `1.1.1.4` for Patch 1C purchase truth and finance export UI wiring without changing public `VERSION`.
+- Added Inventory UI wiring to record purchases through `/app/purchase` using canonical `quantity_decimal` + `uom` fields, purchase category, and optional notes while keeping Add Batch as a separate stock-in action.
+- Added Finance UI CSV export through `/app/finance/export.csv?profile=generic` using the active date range, with no accounting OAuth, account mapping, item import, or schema changes.
 - Bumped `INTERNAL_VERSION` from `1.1.1.2` to `1.1.1.3` for Patch 1B finance CSV export backend support without changing public `VERSION`.
 - Added read-only `/app/finance/export.csv` for generic CAD finance CSV export using existing cash and legacy inferred purchase truth.
 - Kept the finance export backend-only with no accounting OAuth, account mapping, item import, or schema column/table changes.

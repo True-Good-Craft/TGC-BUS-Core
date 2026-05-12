@@ -61,7 +61,7 @@ export function stockOut({ item_id, quantity_decimal, uom, reason, note, record_
   return apiPost('/app/stock/out', payload);
 }
 
-export function purchase({ item_id, quantity_decimal, uom, unit_cost_cents, source_id } = {}) {
+export function purchase({ item_id, quantity_decimal, uom, unit_cost_cents, source_id, category, notes, created_at } = {}) {
   const payload = {
     item_id: Math.trunc(Number(item_id)),
     quantity_decimal: toDecimalString(quantity_decimal),
@@ -75,6 +75,15 @@ export function purchase({ item_id, quantity_decimal, uom, unit_cost_cents, sour
 
   const sourceId = normalizeOptionalString(source_id);
   if (sourceId !== undefined) payload.source_id = sourceId;
+
+  const normalizedCategory = normalizeOptionalString(category);
+  if (normalizedCategory !== undefined) payload.category = normalizedCategory;
+
+  const normalizedNotes = normalizeOptionalString(notes);
+  if (normalizedNotes !== undefined) payload.notes = normalizedNotes;
+
+  const normalizedCreatedAt = normalizeOptionalString(created_at);
+  if (normalizedCreatedAt !== undefined) payload.created_at = normalizedCreatedAt;
 
   return apiPost('/app/purchase', payload);
 }
