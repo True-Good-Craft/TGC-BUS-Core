@@ -1974,3 +1974,20 @@ BRANCH: Let-their-be-xfill
 - No UI-side `qty_base`, unit multiplier, backend business logic, table, or column change is introduced by this patch.
 - No accounting OAuth, QuickBooks/Wave integration, account mapping, or item import is introduced by this patch.
 
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Patch 1D Test Write-Gate AppData Isolation
+DATE: 2026-05-12
+BRANCH: Let-their-be-xfill
+
+### Authority Delta
+
+- Pytest `bus_client` write-gate setup and teardown now resolve `%LOCALAPPDATA%` to a per-test temporary AppData root before BUS config modules or write-state helpers are loaded.
+- Regression coverage verifies a sentinel real AppData `BUSCore\config.json` remains unchanged while the isolated test config receives `dev.writes_enabled` updates.
+
+### Non-Goals / Safety
+
+- No launcher, Run Core.bat, app startup, runtime write-gate, or persisted config semantics are changed by this patch.
+- Public `VERSION` remains unchanged; only test isolation and governance metadata are updated.
+

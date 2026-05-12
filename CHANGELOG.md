@@ -12,6 +12,9 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.4` to `1.1.1.5` for Patch 1D test write-gate AppData isolation without changing public `VERSION`.
+- Isolated the shared API test client `LOCALAPPDATA` under pytest temp directories so write-gate setup/teardown cannot mutate the user's real `%LOCALAPPDATA%\BUSCore\config.json`.
+- Added regression coverage proving a sentinel real AppData config remains unchanged while the isolated test config receives `dev.writes_enabled` updates.
 - Bumped `INTERNAL_VERSION` from `1.1.1.3` to `1.1.1.4` for Patch 1C purchase truth and finance export UI wiring without changing public `VERSION`.
 - Added Inventory UI wiring to record purchases through `/app/purchase` using canonical `quantity_decimal` + `uom` fields, purchase category, and optional notes while keeping Add Batch as a separate stock-in action.
 - Added Finance UI CSV export through `/app/finance/export.csv?profile=generic` using the active date range, with no accounting OAuth, account mapping, item import, or schema changes.

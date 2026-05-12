@@ -23,14 +23,18 @@ BUS_MODULES_TO_RESET = [
     "core.api.routes.ledger_api",
     "core.api.routes.manufacturing",
     "core.api.routes.vendors",
+    "core.appdata.paths",
     "core.appdb.engine",
     "core.appdb.ledger",
     "core.appdb.models",
     "core.appdb.models_recipes",
     "core.appdb.session",
+    "core.config.manager",
+    "core.config.writes",
     "core.journal.inventory",
     "core.journal.manufacturing",
     "core.manufacturing.service",
+    "core.policy.store",
     "core.services.models",
     "tgc.settings",
     "tgc.state",
@@ -63,6 +67,9 @@ def bus_app_state():
 
 @pytest.fixture()
 def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, bus_db_path, bus_app_state):
+    local_app_data = tmp_path / "LocalAppData"
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+
     bus_dev = None
     marker = request.node.get_closest_marker("bus_dev")
     if marker and marker.args:
@@ -116,6 +123,7 @@ def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.
         "api_http": api_http,
         "recipes": recipes_module,
         "ledger": ledger_module,
+        "local_app_data": local_app_data,
     }
     try:
         yield env
