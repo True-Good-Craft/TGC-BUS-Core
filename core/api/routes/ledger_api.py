@@ -3,6 +3,7 @@ import logging
 import os
 import sqlite3
 import sys
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal, Optional
@@ -73,6 +74,9 @@ class PurchaseCanonicalIn(BaseModel):
     uom: str
     unit_cost_cents: int = Field(ge=0)
     source_id: Optional[str] = None
+    category: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class ConsumeIn(BaseModel):
@@ -161,6 +165,9 @@ def canonical_purchase(
                     "source_id": body.source_id,
                 }
             ],
+            category=body.category,
+            notes=body.notes,
+            created_at=body.created_at,
         )
         db.commit()
         return result

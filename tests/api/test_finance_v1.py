@@ -91,6 +91,61 @@ def test_sale_records_cash_event_and_links_source_id(bus_client):
         db.close()
 
 
+def test_purchase_records_cash_event_and_links_source_id(bus_client):
+    client = bus_client["client"]
+    engine_module = bus_client["engine"]
+    models = bus_client["models"]
+
+    item_id = _create_count_item(client, "PurchaseTruthItem", price=1.00)
+
+    purchase = client.post(
+        "/app/purchase",
+        json={
+            "item_id": item_id,
+            "quantity_decimal": "2",
+            "uom": "ea",
+            "unit_cost_cents": 125,
+            "category": "hardware",
+            "notes": "po truth link",
+        },
+    )
+    assert purchase.status_code == 200, purchase.text
+    payload = purchase.json()
+    source_id = payload.get("source_id")
+    assert source_id
+    assert len(payload.get("batch_ids", [])) == 1
+    assert len(payload.get("cash_event_ids", [])) == 1
+
+    with engine_module.SessionLocal() as db:
+        movements = (
+            db.query(models.ItemMovement)
+            .filter(models.ItemMovement.source_kind == "purchase")
+            .filter(models.ItemMovement.source_id == source_id)
+            .all()
+        )
+        cash_events = (
+            db.query(models.CashEvent)
+            .filter(models.CashEvent.kind == "expense")
+            .filter(models.CashEvent.source_kind == "purchase")
+            .filter(models.CashEvent.source_id == source_id)
+            .all()
+        )
+        item = db.get(models.Item, item_id)
+
+        assert len(movements) == 1
+        movement = movements[0]
+        assert int(movement.qty_change) == 2000
+
+        assert len(cash_events) == 1
+        cash_event = cash_events[0]
+        assert int(cash_event.amount_cents) == -250
+        assert int(cash_event.qty_base) == 2000
+        assert int(cash_event.unit_price_cents) == 125
+        assert int(cash_event.item_id) == int(item_id)
+        assert item is not None
+        assert int(item.qty_stored) == 2000
+
+
 def test_refund_requires_cost_when_restock_true_and_no_related_source_id(bus_client):
     client = bus_client["client"]
     item_id = _create_count_item(client, "RefundItem", price=1.00)

@@ -315,6 +315,9 @@ def _ensure_schema_upgrades(db: Session) -> None:
     db.execute(text("CREATE INDEX IF NOT EXISTS vendors_kind_idx ON vendors(kind)"))
     db.execute(text("CREATE INDEX IF NOT EXISTS vendors_org_idx  ON vendors(organization_id)"))
     db.execute(text("CREATE INDEX IF NOT EXISTS items_item_type_idx ON items(item_type)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_item_movements_source_id ON item_movements(source_id)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_item_movements_source_kind_source_id ON item_movements(source_kind, source_id)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_cash_events_source_kind_source_id ON cash_events(source_kind, source_id)"))
 
     # ---- ensure vendors.name is NOT unique (unified Vendors/Contacts table) ----
     # Drop any unique index on vendors(name), then create a non-unique index.

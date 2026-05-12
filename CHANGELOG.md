@@ -12,6 +12,12 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.2` to `1.1.1.3` for Patch 1B finance CSV export backend support without changing public `VERSION`.
+- Added read-only `/app/finance/export.csv` for generic CAD finance CSV export using existing cash and legacy inferred purchase truth.
+- Kept the finance export backend-only with no accounting OAuth, account mapping, item import, or schema column/table changes.
+- Bumped `INTERNAL_VERSION` from `1.1.1.1` to `1.1.1.2` for Patch 1A purchase truth backend foundation without changing public `VERSION`.
+- Made `/app/purchase` emit cash-backed purchase expense events linked to inventory batches/movements by shared `source_id`, while keeping legacy movement-only purchase history visible as `purchase_inferred`.
+- Added idempotent source-id lookup indexes for purchase transaction deduplication without adding schema columns or tables.
 - Bumped `INTERNAL_VERSION` from `1.1.1.0` to `1.1.1.1` for the wiki publishing/docs pass without changing public `VERSION`.
 - Bumped `VERSION` from `1.1.0` to `1.1.1` and reset `INTERNAL_VERSION` from `1.1.0.14` to `1.1.1.0` for the next governed update cut.
 

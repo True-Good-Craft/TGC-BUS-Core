@@ -70,3 +70,68 @@ def test_finance_transactions_surface_expected_kinds(bus_client):
     assert int(run["cost_inputs_cents"]) == 160
     assert int(run["per_output_cents"]) == 53
     assert run["output_qty_decimal"] == "3"
+
+
+def test_finance_transactions_prefers_cash_backed_purchase_over_inferred_duplicate(bus_client):
+    client = bus_client["client"]
+    models = bus_client["models"]
+    engine_module = bus_client["engine"]
+
+    item_id = _create_item(client, "Cash Backed Purchase Tx")
+    purchase = client.post(
+        "/app/purchase",
+        json={"item_id": item_id, "quantity_decimal": "4", "uom": "ea", "unit_cost_cents": 25},
+    )
+    assert purchase.status_code == 200, purchase.text
+    source_id = purchase.json()["source_id"]
+    created = datetime(2026, 1, 21, 10, 0, 0)
+
+    with engine_module.SessionLocal() as db:
+        db.query(models.ItemMovement).filter(models.ItemMovement.source_id == source_id).update(
+            {"created_at": created}, synchronize_session=False
+        )
+        db.query(models.CashEvent).filter(models.CashEvent.source_id == source_id).update(
+            {"created_at": created}, synchronize_session=False
+        )
+        db.commit()
+
+    res = client.get("/app/finance/transactions?from=2026-01-21&to=2026-01-21&limit=20")
+    assert res.status_code == 200, res.text
+    txs = res.json()["transactions"]
+    source_rows = [row for row in txs if row.get("source_id") == source_id]
+
+    assert [row["kind"] for row in source_rows] == ["purchase"]
+    purchase_tx = source_rows[0]
+    assert int(purchase_tx["amount_cents"]) == -100
+
+
+def test_finance_transactions_keeps_legacy_purchase_inferred_without_cash_event(bus_client):
+    client = bus_client["client"]
+    models = bus_client["models"]
+    engine_module = bus_client["engine"]
+
+    item_id = _create_item(client, "Legacy Inferred Purchase Tx")
+    created = datetime(2026, 1, 22, 10, 0, 0)
+
+    with engine_module.SessionLocal() as db:
+        db.add(
+            models.ItemMovement(
+                item_id=item_id,
+                qty_change=3000,
+                unit_cost_cents=30,
+                source_kind="purchase",
+                source_id="legacy-purchase-only",
+                created_at=created,
+            )
+        )
+        db.commit()
+
+    res = client.get("/app/finance/transactions?from=2026-01-22&to=2026-01-22&limit=20")
+    assert res.status_code == 200, res.text
+    txs = res.json()["transactions"]
+
+    legacy_purchase = next(
+        row for row in txs if row["kind"] == "purchase_inferred" and row.get("source_id") == "legacy-purchase-only"
+    )
+    assert int(legacy_purchase["amount_cents"]) == 90
+    assert legacy_purchase["quantity_decimal"] == "3"

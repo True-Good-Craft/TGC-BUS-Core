@@ -1921,3 +1921,38 @@ EULA viewer and settings layout styles updated to use BUS Core theme tokens:
 --border-color  
 --card-bg
 
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.11.0  
+SESSION_LABEL: Patch 1A Purchase Truth Backend Foundation  
+DATE: 2026-05-12  
+BRANCH: Let-their-be-xfill
+
+### Authority Delta
+
+- `/app/purchase` now records inventory truth (`ItemBatch`, `ItemMovement`, inventory journal) and cash truth (`CashEvent` with `kind="expense"`, `source_kind="purchase"`) under one shared `source_id`.
+- `/app/finance/transactions` surfaces cash-backed purchase expenses as `kind="purchase"` and suppresses matching movement-inferred duplicate rows by `source_id`.
+- Legacy movement-only purchase history remains supported as `kind="purchase_inferred"` when no matching purchase `CashEvent` exists.
+
+### Non-Goals / Safety
+
+- No item import, UI, accounting profile, account mapping, OAuth/API integration, double-entry ledger, table, or column change is introduced by this patch.
+- Schema impact is limited to idempotent source-id lookup indexes used for purchase transaction deduplication.
+
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.11.0  
+SESSION_LABEL: Patch 1B Finance CSV Export Backend  
+DATE: 2026-05-12  
+BRANCH: Let-their-be-xfill
+
+### Authority Delta
+
+- Backend finance CSV export is available at `GET /app/finance/export.csv` for read-only generic bookkeeping export.
+- The only supported export profile is `generic`; exported currency defaults to `CAD`.
+- Export rows are sourced from existing finance truth: `CashEvent` rows plus legacy purchase-inferred `ItemMovement` rows that are not backed by purchase cash events.
+
+### Non-Goals / Safety
+
+- No accounting OAuth, account mapping UI, item import, QuickBooks/Wave integration, double-entry ledger, currency configuration, table, or column change is introduced by this patch.
+

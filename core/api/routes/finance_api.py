@@ -8,8 +8,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import and_, exists, or_
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
@@ -19,11 +20,44 @@ from core.api.utils.quantity_guard import reject_legacy_qty_keys
 from core.config.writes import require_writes
 from core.metrics.metric import default_unit_for, uom_multiplier
 from core.metrics.metric import normalize_quantity_to_base_int
+from core.services.finance_export import (
+    SUPPORTED_EXPORT_PROFILES,
+    InvalidExportDate,
+    finance_export_filename,
+    parse_export_window,
+    stream_finance_export_csv,
+)
 from core.services.stock_mutation import perform_stock_in_base
 from tgc.security import require_token_ctx
 
 
 router = APIRouter(prefix="/finance", tags=["finance"])
+
+
+@router.get("/export.csv")
+def finance_export_csv(
+    from_: Optional[str] = Query(None, alias="from"),
+    to: Optional[str] = Query(None, alias="to"),
+    profile: str = Query("generic"),
+    db: Session = Depends(get_session),
+    _token: None = Depends(require_token_ctx),
+):
+    if profile not in SUPPORTED_EXPORT_PROFILES:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": {"error": "unsupported_export_profile", "profile": profile}},
+        )
+    try:
+        window = parse_export_window(from_, to)
+    except InvalidExportDate:
+        return JSONResponse(status_code=400, content={"detail": {"error": "invalid_date"}})
+
+    filename = finance_export_filename(profile, window)
+    return StreamingResponse(
+        stream_finance_export_csv(db, window),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 def round_half_up_cents(x: Decimal) -> int:
@@ -451,9 +485,10 @@ def finance_transactions(
             elif current_dt is not None and current_dt < existing_dt:
                 sales_created_at_by_source_id[source_id] = current_dt
         elif e.kind in {"refund", "expense"}:
+            transaction_kind = "purchase" if e.kind == "expense" and e.source_kind == "purchase" else e.kind
             transactions.append(
                 {
-                    "kind": e.kind,
+                    "kind": transaction_kind,
                     "id": int(e.id),
                     "created_at": e.created_at.isoformat() if e.created_at else None,
                     "amount_cents": int(e.amount_cents),
@@ -462,6 +497,8 @@ def finance_transactions(
                     "related_source_id": e.related_source_id,
                     "category": e.category,
                     "notes": e.notes,
+                    "qty_base": int(e.qty_base) if e.qty_base is not None else None,
+                    "unit_price_cents": int(e.unit_price_cents) if e.unit_price_cents is not None else None,
                 }
             )
 
@@ -530,6 +567,18 @@ def finance_transactions(
         .filter(ItemMovement.created_at < to_dt)
         .filter(ItemMovement.source_kind == "purchase")
         .filter(ItemMovement.qty_change > 0)
+        .filter(
+            or_(
+                ItemMovement.source_id.is_(None),
+                ~exists().where(
+                    and_(
+                        CashEvent.source_id == ItemMovement.source_id,
+                        CashEvent.source_kind == "purchase",
+                        CashEvent.kind == "expense",
+                    )
+                ),
+            )
+        )
         .all()
     )
     for move in purchases:
