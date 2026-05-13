@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from core.appdb.engine import get_session
 from core.appdb.models import (
     AuthRecoveryCode,
+    AuthRecoveryAttempt,
     AuthRole,
     AuthRolePermission,
     AuthSession,
@@ -28,16 +29,26 @@ from core.appdb.models import (
     AuthUserRole,
 )
 from core.auth.audit import create_audit_event
+from core.auth.dependencies import AuthUserContext, require_permission
 from core.auth.passwords import SCRYPT_SCHEME, hash_password, validate_password_policy, verify_password
-from core.auth.permissions import OWNER_ROLE_KEY, default_role_bundles
-from core.auth.sessions import generate_session_token, hash_session_token
+from core.auth.permissions import OWNER_ROLE_KEY, PERMISSION_USERS_MANAGE, default_role_bundles
+from core.auth.sessions import (
+    AUTH_SESSION_MAX_AGE_DAYS,
+    generate_session_token,
+    hash_session_token,
+    session_is_valid,
+    session_should_touch,
+)
 from core.auth.store import count_auth_users, normalize_username
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 AUTH_SESSION_COOKIE = "bus_auth_session"
-AUTH_SESSION_DAYS = 30
+AUTH_SESSION_DAYS = AUTH_SESSION_MAX_AGE_DAYS
 RECOVERY_CODE_COUNT = 10
+RECOVERY_RATE_LIMIT_MAX_FAILURES = 5
+RECOVERY_RATE_LIMIT_WINDOW_MINUTES = 15
+RECOVERY_GENERIC_ERROR = {"error": "recovery_failed"}
 
 
 class SetupOwnerRequest(BaseModel):
@@ -51,6 +62,16 @@ class SetupOwnerRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class RecoverRequest(BaseModel):
+    username: str
+    recovery_code: str
+    new_password: str
+
+
+class RegenerateRecoveryCodesRequest(BaseModel):
+    user_id: int | None = None
 
 
 def _utcnow() -> datetime:
@@ -106,9 +127,63 @@ def _recovery_code() -> str:
     return "-".join(raw[index : index + 4] for index in range(0, len(raw), 4))
 
 
+def _normalize_recovery_code(code: str) -> str:
+    return str(code or "").strip().upper()
+
+
 def _hash_recovery_code(code: str) -> str:
-    digest = hashlib.sha256(code.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(_normalize_recovery_code(code).encode("utf-8")).hexdigest()
     return f"recovery-sha256-v1${digest}"
+
+
+def _client_key(request: Request) -> str:
+    host = request.client.host if request.client else "unknown"
+    user_agent_hash = _hash_user_agent(request) or "no-agent"
+    return "sha256-v1$" + hashlib.sha256(f"{host}|{user_agent_hash}".encode("utf-8")).hexdigest()
+
+
+def _rate_limit_row(db: Session, username_norm: str, client_key: str) -> AuthRecoveryAttempt:
+    row = db.scalar(
+        select(AuthRecoveryAttempt).where(
+            AuthRecoveryAttempt.username_norm == username_norm,
+            AuthRecoveryAttempt.client_key == client_key,
+        )
+    )
+    if row is None:
+        row = AuthRecoveryAttempt(username_norm=username_norm, client_key=client_key)
+        db.add(row)
+        db.flush()
+    return row
+
+
+def _recovery_locked(row: AuthRecoveryAttempt, now: datetime) -> bool:
+    return row.locked_until is not None and row.locked_until > now
+
+
+def _record_recovery_failure(db: Session, username_norm: str, client_key: str, now: datetime) -> None:
+    row = _rate_limit_row(db, username_norm, client_key)
+    window_start = now - timedelta(minutes=RECOVERY_RATE_LIMIT_WINDOW_MINUTES)
+    if row.first_failed_at is None or row.first_failed_at < window_start:
+        row.first_failed_at = now
+        row.failed_count = 0
+        row.locked_until = None
+    row.failed_count = int(row.failed_count or 0) + 1
+    if row.failed_count >= RECOVERY_RATE_LIMIT_MAX_FAILURES:
+        row.locked_until = now + timedelta(minutes=RECOVERY_RATE_LIMIT_WINDOW_MINUTES)
+
+
+def _clear_recovery_failures(db: Session, username_norm: str, client_key: str) -> None:
+    row = db.scalar(
+        select(AuthRecoveryAttempt).where(
+            AuthRecoveryAttempt.username_norm == username_norm,
+            AuthRecoveryAttempt.client_key == client_key,
+        )
+    )
+    if row is None:
+        return
+    row.failed_count = 0
+    row.first_failed_at = None
+    row.locked_until = None
 
 
 def _seed_system_roles(db: Session) -> dict[str, AuthRole]:
@@ -175,19 +250,14 @@ def _current_session(db: Session, request: Request) -> tuple[AuthSession | None,
     except ValueError:
         return None, None
     now = _utcnow()
-    auth_session = db.scalar(
-        select(AuthSession).where(
-            AuthSession.session_hash == session_hash,
-            AuthSession.revoked_at.is_(None),
-            AuthSession.expires_at > now,
-        )
-    )
-    if auth_session is None:
+    auth_session = db.scalar(select(AuthSession).where(AuthSession.session_hash == session_hash))
+    if not session_is_valid(auth_session, now):
         return None, None
     user = db.get(AuthUser, auth_session.user_id)
     if user is None or not bool(user.is_enabled):
         return None, None
-    auth_session.last_seen_at = now
+    if session_should_touch(auth_session, now):
+        auth_session.last_seen_at = now
     return auth_session, user
 
 
@@ -197,7 +267,8 @@ def _create_session(db: Session, user: AuthUser, request: Request) -> tuple[str,
         session_hash=hash_session_token(token),
         user_id=int(user.id),
         created_at=_utcnow(),
-        expires_at=_utcnow() + timedelta(days=AUTH_SESSION_DAYS),
+        expires_at=_utcnow() + timedelta(days=AUTH_SESSION_MAX_AGE_DAYS),
+        last_seen_at=_utcnow(),
         user_agent_hash=_hash_user_agent(request),
     )
     db.add(auth_session)
@@ -223,7 +294,9 @@ def _auth_state_payload(db: Session, request: Request) -> dict[str, Any]:
             "current_user": None,
         }
 
-    _, user = _current_session(db, request)
+    auth_session, user = _current_session(db, request)
+    if auth_session is not None:
+        db.commit()
     return {
         "mode": "claimed",
         "owner_exists": True,
@@ -240,6 +313,37 @@ def _audit_login_failed(db: Session, request: Request, username_norm: str | None
         request_id=getattr(request.state, "req_id", None),
         detail={"username_norm": username_norm or "", "reason": reason},
     )
+
+
+def _recovery_username_key(username: str) -> tuple[str, bool]:
+    try:
+        return normalize_username(username), True
+    except ValueError:
+        digest = hashlib.sha256(str(username or "").strip().casefold().encode("utf-8")).hexdigest()
+        return f"invalid${digest}", False
+
+
+def _revoke_user_sessions(db: Session, user_id: int) -> int:
+    now = _utcnow()
+    sessions = db.execute(
+        select(AuthSession).where(AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None))
+    ).scalars().all()
+    for auth_session in sessions:
+        auth_session.revoked_at = now
+    return len(sessions)
+
+
+def _new_recovery_codes(db: Session, user_id: int) -> list[str]:
+    recovery_codes = [_recovery_code() for _ in range(RECOVERY_CODE_COUNT)]
+    for code in recovery_codes:
+        db.add(AuthRecoveryCode(user_id=user_id, code_hash=_hash_recovery_code(code)))
+    return recovery_codes
+
+
+def _claimed_actor_id(actor: AuthUserContext) -> int:
+    if actor.mode != "claimed" or actor.user_id is None:
+        raise HTTPException(status_code=409, detail={"error": "claimed_mode_required"})
+    return int(actor.user_id)
 
 
 @router.get("/state")
@@ -350,6 +454,96 @@ def login(
     return {"ok": True, "user": _user_payload(db, user)}
 
 
+@router.post("/recover")
+def recover(
+    payload: RecoverRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_session),
+) -> dict[str, Any]:
+    if count_auth_users(db) == 0:
+        raise HTTPException(status_code=409, detail={"error": "claimed_mode_required"})
+    username_norm, username_valid = _recovery_username_key(payload.username)
+    client_key = _client_key(request)
+    now = _utcnow()
+    rate_row = _rate_limit_row(db, username_norm, client_key)
+    if _recovery_locked(rate_row, now):
+        db.commit()
+        raise HTTPException(status_code=401, detail=RECOVERY_GENERIC_ERROR)
+    _require_valid_password(payload.new_password)
+
+    user = db.scalar(select(AuthUser).where(AuthUser.username_norm == username_norm)) if username_valid else None
+    recovery = None
+    if user is not None and bool(user.is_enabled):
+        recovery = db.scalar(
+            select(AuthRecoveryCode).where(
+                AuthRecoveryCode.user_id == int(user.id),
+                AuthRecoveryCode.code_hash == _hash_recovery_code(payload.recovery_code),
+                AuthRecoveryCode.used_at.is_(None),
+            )
+        )
+    if user is None or not bool(getattr(user, "is_enabled", False)) or recovery is None:
+        _record_recovery_failure(db, username_norm, client_key, now)
+        db.commit()
+        raise HTTPException(status_code=401, detail=RECOVERY_GENERIC_ERROR)
+
+    recovery.used_at = now
+    user.password_hash = hash_password(payload.new_password)
+    user.password_scheme = SCRYPT_SCHEME
+    user.must_change_password = False
+    revoked_count = _revoke_user_sessions(db, int(user.id))
+    _clear_recovery_failures(db, username_norm, client_key)
+    create_audit_event(
+        db,
+        action="auth.recovery_used",
+        actor_user_id=int(user.id),
+        target_type="user",
+        target_id=str(user.id),
+        request_id=getattr(request.state, "req_id", None),
+        detail={"revoked_sessions": revoked_count},
+    )
+    db.commit()
+    _clear_auth_cookie(response, request)
+    return {"ok": True, "login_required": True}
+
+
+@router.post("/recovery-codes/regenerate")
+def regenerate_recovery_codes(
+    payload: RegenerateRecoveryCodesRequest,
+    request: Request,
+    db: Session = Depends(get_session),
+    actor: AuthUserContext = Depends(require_permission(PERMISSION_USERS_MANAGE)),
+) -> dict[str, Any]:
+    if count_auth_users(db) == 0:
+        raise HTTPException(status_code=409, detail={"error": "claimed_mode_required"})
+    actor_user_id = _claimed_actor_id(actor)
+    target_user_id = int(payload.user_id) if payload.user_id is not None else actor_user_id
+    user = db.get(AuthUser, target_user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail={"error": "user_not_found"})
+    now = _utcnow()
+    old_codes = db.execute(
+        select(AuthRecoveryCode).where(
+            AuthRecoveryCode.user_id == target_user_id,
+            AuthRecoveryCode.used_at.is_(None),
+        )
+    ).scalars().all()
+    for code in old_codes:
+        code.used_at = now
+    recovery_codes = _new_recovery_codes(db, target_user_id)
+    create_audit_event(
+        db,
+        action="auth.recovery_codes_regenerated",
+        actor_user_id=actor_user_id,
+        target_type="user",
+        target_id=str(target_user_id),
+        request_id=getattr(request.state, "req_id", None),
+        detail={"invalidated_unused": len(old_codes), "generated": RECOVERY_CODE_COUNT},
+    )
+    db.commit()
+    return {"ok": True, "user_id": target_user_id, "recovery_codes": recovery_codes}
+
+
 @router.post("/logout")
 def logout(request: Request, response: Response, db: Session = Depends(get_session)) -> dict[str, bool]:
     auth_session, user = _current_session(db, request)
@@ -376,9 +570,11 @@ def me(request: Request, db: Session = Depends(get_session)) -> dict[str, Any]:
             "mode": "unclaimed",
             "current_user": None,
         }
-    _, user = _current_session(db, request)
+    auth_session, user = _current_session(db, request)
     if user is None:
         raise HTTPException(status_code=401, detail={"error": "auth_required"})
+    if auth_session is not None:
+        db.commit()
     return {
         "mode": "claimed",
         "current_user": _user_payload(db, user),

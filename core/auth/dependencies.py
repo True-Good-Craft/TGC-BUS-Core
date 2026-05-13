@@ -23,7 +23,7 @@ from core.appdb.models import (
     AuthUserRole,
 )
 from core.auth.permissions import ALL_PERMISSIONS, OWNER_ROLE_KEY
-from core.auth.sessions import hash_session_token
+from core.auth.sessions import hash_session_token, session_is_valid
 from core.auth.store import count_auth_users
 
 _AUTH_MODEL_REGISTRY_ANCHOR = (AuthAuditEvent, AuthRecoveryCode)
@@ -104,9 +104,7 @@ def _valid_session(db: Session, request: Request) -> AuthSession | None:
     session_id = _session_id_from_state(request)
     auth_session = db.get(AuthSession, session_id) if session_id is not None else _session_from_cookie(db, request)
     now = _utcnow()
-    if auth_session is None or auth_session.revoked_at is not None:
-        return None
-    if auth_session.expires_at is None or auth_session.expires_at <= now:
+    if not session_is_valid(auth_session, now):
         return None
     return auth_session
 

@@ -136,6 +136,7 @@ from core.appdb import models_auth as _models_auth  # noqa: E402  # isort:skip
 
 _AUTH_MODEL_EXPORTS = (
     "AuthAuditEvent",
+    "AuthRecoveryAttempt",
     "AuthRecoveryCode",
     "AuthRole",
     "AuthRolePermission",

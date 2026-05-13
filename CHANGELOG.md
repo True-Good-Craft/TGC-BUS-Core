@@ -12,6 +12,11 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.13` to `1.1.1.14` for release-blocker hardening without changing public `VERSION`.
+- Added owner recovery and recovery-code regeneration API behavior: recovery codes remain long-lived until used/regenerated, are stored only as hashes, burn on successful use, revoke existing sessions, require login after reset, write audit events, and use generic recovery failure responses with DB-backed failed-attempt rate limiting.
+- Hardened auth sessions with explicit 12-hour idle timeout, 30-day max age, and throttled `last_seen_at` touch behavior.
+- Updated the Security UI to refresh in-memory auth state after permission/session-sensitive management actions and handle `401`/`403` responses without storing authority in browser storage.
+- Fixed duplicate OpenAPI operation IDs for the logs route and added an OpenAPI schema uniqueness regression test.
 - Bumped `INTERNAL_VERSION` from `1.1.1.12` to `1.1.1.13` for the Phase 7 auth/security hardening and release-readiness audit without changing public `VERSION`.
 - Hardened auth/user-account release readiness with an explicit minimum password length, route-level password-policy errors, expanded cookie/session/permission/owner-invariant/UI-storage tests, and an OS-stable UI contract audit that keeps legacy endpoint and canonical-containment guardrails active with documented allowlists for known compatibility code.
 - Bumped `INTERNAL_VERSION` from `1.1.1.11` to `1.1.1.12` for the Phase 6 claim/login/logout and Security UI pass without changing public `VERSION`.

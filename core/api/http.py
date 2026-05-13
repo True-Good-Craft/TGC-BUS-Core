@@ -417,6 +417,7 @@ PUBLIC_PATHS = {
     "/auth/state",
     "/auth/login",
     "/auth/setup-owner",
+    "/auth/recover",
     "/auth/logout",
     "/auth/me",
 }

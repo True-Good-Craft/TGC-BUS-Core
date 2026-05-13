@@ -157,7 +157,7 @@ function renderUsersSection(root, users, roles, canManage) {
       must_change_password: true,
     });
     form.reset();
-    await refreshSecurity(root);
+    await refreshAfterSecurityMutation(root);
   });
 
   section.addEventListener('click', async (event) => {
@@ -177,10 +177,10 @@ function renderUsersSection(root, users, roles, canManage) {
         if (!newPassword) return;
         await resetPassword(userId, { new_password: newPassword, must_change_password: true, revoke_sessions: true });
       }
-      await refreshSecurity(root);
+      await refreshAfterSecurityMutation(root);
     } catch (error) {
       console.error('user management action failed', error);
-      setSecurityStatus(root, error?.error === 'last_enabled_owner' ? 'The last enabled owner cannot be disabled or stripped.' : 'User action failed.', 'error');
+      handleSecurityError(root, error, error?.error === 'last_enabled_owner' ? 'The last enabled owner cannot be disabled or stripped.' : 'User action failed.');
     } finally {
       button.disabled = false;
     }
@@ -223,10 +223,10 @@ function renderSessionsSection(root, sessions) {
     button.disabled = true;
     try {
       await revokeSession(sessionId);
-      await refreshSecurity(root);
+      await refreshAfterSecurityMutation(root);
     } catch (error) {
       console.error('session revoke failed', error);
-      setSecurityStatus(root, 'Session revoke failed.', 'error');
+      handleSecurityError(root, error, 'Session revoke failed.');
     } finally {
       button.disabled = false;
     }
@@ -267,6 +267,36 @@ function setSecurityStatus(root, message, tone = 'neutral') {
   if (!status) return;
   status.textContent = message || '';
   status.dataset.tone = tone;
+}
+
+async function refreshAuthForSecurity(root) {
+  const options = root.__securityOptions || {};
+  const refresh = options.onAuthRefresh || window.BUS_AUTH?.refresh;
+  if (typeof refresh !== 'function') return options.authState || window.BUS_AUTH?.state || null;
+  const state = await refresh({ render: true });
+  root.__securityOptions = { ...options, authState: state };
+  if (state?.mode === 'claimed' && !state.current_user) options.onLoginRequired?.();
+  return state;
+}
+
+async function refreshAfterSecurityMutation(root) {
+  const state = await refreshAuthForSecurity(root);
+  if (state?.mode === 'claimed' && !state.current_user) return;
+  await refreshSecurity(root);
+}
+
+function handleSecurityError(root, error, fallback) {
+  if (error?.status === 401 || error?.error === 'auth_required') {
+    root.__securityOptions?.onLoginRequired?.();
+    setSecurityStatus(root, 'Login required.', 'error');
+    return;
+  }
+  if (error?.status === 403 || error?.error === 'permission_denied') {
+    refreshAfterSecurityMutation(root).catch((refreshError) => console.warn('auth refresh after permission error failed', refreshError));
+    setSecurityStatus(root, 'Permission denied.', 'error');
+    return;
+  }
+  setSecurityStatus(root, fallback, 'error');
 }
 
 async function refreshSecurity(root) {

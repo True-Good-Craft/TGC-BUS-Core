@@ -109,6 +109,26 @@ class AuthRecoveryCode(Base):
     user = relationship("AuthUser", back_populates="recovery_codes")
 
 
+class AuthRecoveryAttempt(Base):
+    __tablename__ = "auth_recovery_attempts"
+    __table_args__ = (
+        UniqueConstraint("username_norm", "client_key", name="uq_auth_recovery_attempts_user_client"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    username_norm = Column(String, nullable=False, index=True)
+    client_key = Column(String, nullable=False, index=True)
+    failed_count = Column(Integer, nullable=False, default=0, server_default="0")
+    first_failed_at = Column(DateTime, nullable=True)
+    locked_until = Column(DateTime, nullable=True)
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=sa_func.now(),
+        onupdate=sa_func.now(),
+    )
+
+
 class AuthAuditEvent(Base):
     __tablename__ = "auth_audit_events"
 
@@ -126,6 +146,7 @@ class AuthAuditEvent(Base):
 
 __all__ = [
     "AuthAuditEvent",
+    "AuthRecoveryAttempt",
     "AuthRecoveryCode",
     "AuthRole",
     "AuthRolePermission",

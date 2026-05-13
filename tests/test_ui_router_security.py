@@ -89,6 +89,19 @@ def test_app_boot_checks_auth_state_before_protected_mount() -> None:
     assert "#/security" in app_js
 
 
+def test_security_ui_refreshes_auth_state_after_permission_sensitive_actions() -> None:
+    app_js = (REPO_ROOT / "core" / "ui" / "app.js").read_text(encoding="utf-8")
+    security_js = (REPO_ROOT / "core" / "ui" / "js" / "security.js").read_text(encoding="utf-8")
+
+    assert "onAuthRefresh: refreshAuthState" in app_js
+    assert "onLoginRequired: showLoginGate" in app_js
+    assert "refreshAuthForSecurity" in security_js
+    assert "refreshAfterSecurityMutation(root)" in security_js
+    assert security_js.count("await refreshAfterSecurityMutation(root);") >= 3
+    assert "error?.status === 401" in security_js
+    assert "error?.status === 403" in security_js
+
+
 def test_token_helper_accepts_claimed_mode_login_required() -> None:
     token_js = (REPO_ROOT / "core" / "ui" / "js" / "token.js").read_text(encoding="utf-8")
 

@@ -655,6 +655,8 @@ async function showSecurity() {
   if (host) {
     await mountSecurity(host, {
       authState: currentAuthState,
+      onAuthRefresh: refreshAuthState,
+      onLoginRequired: showLoginGate,
       onOpenClaim: openClaimScreen,
     });
   }

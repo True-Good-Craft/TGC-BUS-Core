@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 
 from fastapi.testclient import TestClient
@@ -9,7 +10,12 @@ from sqlalchemy import select
 from core.api.routes.auth import AUTH_SESSION_COOKIE, RECOVERY_CODE_COUNT
 from core.auth.passwords import MIN_PASSWORD_LENGTH
 from core.auth.permissions import OWNER_ROLE_KEY
-from core.auth.sessions import hash_session_token
+from core.auth.sessions import (
+    AUTH_SESSION_IDLE_TIMEOUT_MINUTES,
+    AUTH_SESSION_MAX_AGE_DAYS,
+    AUTH_SESSION_TOUCH_INTERVAL_MINUTES,
+    hash_session_token,
+)
 
 
 def _legacy_session_token(bus_client) -> str:
@@ -383,6 +389,259 @@ def test_claimed_mode_rejects_expired_auth_session(bus_client):
 
     assert response.status_code == 401
     assert response.json() == {"error": "auth_required"}
+
+
+def test_claimed_mode_rejects_auth_session_older_than_max_age(bus_client):
+    setup_client = bus_client["client"]
+    models = bus_client["models"]
+    engine_module = bus_client["engine"]
+    _setup_owner(setup_client)
+    auth_token = _auth_token_from_client(setup_client)
+    with engine_module.SessionLocal() as db:
+        session = db.scalar(select(models.AuthSession).where(models.AuthSession.session_hash == hash_session_token(auth_token)))
+        assert session is not None
+        session.created_at = datetime.utcnow() - timedelta(days=AUTH_SESSION_MAX_AGE_DAYS, minutes=1)
+        session.last_seen_at = datetime.utcnow()
+        session.expires_at = datetime.utcnow() + timedelta(days=1)
+        db.commit()
+
+    response = _auth_only_client(bus_client, auth_token).get("/app/system/state")
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "auth_required"}
+
+
+def test_claimed_mode_rejects_idle_timed_out_auth_session(bus_client):
+    setup_client = bus_client["client"]
+    models = bus_client["models"]
+    engine_module = bus_client["engine"]
+    _setup_owner(setup_client)
+    auth_token = _auth_token_from_client(setup_client)
+    with engine_module.SessionLocal() as db:
+        session = db.scalar(select(models.AuthSession).where(models.AuthSession.session_hash == hash_session_token(auth_token)))
+        assert session is not None
+        session.created_at = datetime.utcnow() - timedelta(minutes=30)
+        session.last_seen_at = datetime.utcnow() - timedelta(minutes=AUTH_SESSION_IDLE_TIMEOUT_MINUTES, seconds=1)
+        session.expires_at = datetime.utcnow() + timedelta(days=1)
+        db.commit()
+
+    response = _auth_only_client(bus_client, auth_token).get("/app/system/state")
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "auth_required"}
+
+
+def test_active_session_touches_last_seen_after_touch_interval(bus_client):
+    setup_client = bus_client["client"]
+    models = bus_client["models"]
+    engine_module = bus_client["engine"]
+    _setup_owner(setup_client)
+    auth_token = _auth_token_from_client(setup_client)
+    original_seen = datetime.utcnow() - timedelta(minutes=AUTH_SESSION_TOUCH_INTERVAL_MINUTES, seconds=1)
+    with engine_module.SessionLocal() as db:
+        session = db.scalar(select(models.AuthSession).where(models.AuthSession.session_hash == hash_session_token(auth_token)))
+        assert session is not None
+        session.last_seen_at = original_seen
+        db.commit()
+
+    response = _auth_only_client(bus_client, auth_token).get("/app/system/state")
+
+    assert response.status_code == 200
+    with engine_module.SessionLocal() as db:
+        session = db.scalar(select(models.AuthSession).where(models.AuthSession.session_hash == hash_session_token(auth_token)))
+        assert session is not None
+        assert session.last_seen_at is not None
+        assert session.last_seen_at > original_seen
+
+
+def test_active_session_does_not_touch_inside_touch_interval(bus_client):
+    setup_client = bus_client["client"]
+    models = bus_client["models"]
+    engine_module = bus_client["engine"]
+    _setup_owner(setup_client)
+    auth_token = _auth_token_from_client(setup_client)
+    original_seen = datetime.utcnow().replace(microsecond=0) - timedelta(minutes=1)
+    with engine_module.SessionLocal() as db:
+        session = db.scalar(select(models.AuthSession).where(models.AuthSession.session_hash == hash_session_token(auth_token)))
+        assert session is not None
+        session.last_seen_at = original_seen
+        db.commit()
+
+    response = _auth_only_client(bus_client, auth_token).get("/app/system/state")
+
+    assert response.status_code == 200
+    with engine_module.SessionLocal() as db:
+        session = db.scalar(select(models.AuthSession).where(models.AuthSession.session_hash == hash_session_token(auth_token)))
+        assert session is not None
+        assert session.last_seen_at == original_seen
+
+
+def test_reauth_login_creates_new_valid_session_after_revocation(bus_client):
+    setup_client = bus_client["client"]
+    models = bus_client["models"]
+    engine_module = bus_client["engine"]
+    _setup_owner(setup_client)
+    old_token = _auth_token_from_client(setup_client)
+    with engine_module.SessionLocal() as db:
+        session = db.scalar(select(models.AuthSession).where(models.AuthSession.session_hash == hash_session_token(old_token)))
+        assert session is not None
+        session.revoked_at = datetime.utcnow()
+        db.commit()
+
+    response = _anonymous_client(bus_client).post(
+        "/auth/login",
+        json={"username": "owner", "password": "correct horse battery staple"},
+    )
+
+    assert response.status_code == 200, response.text
+    new_token = response.cookies.get(AUTH_SESSION_COOKIE)
+    assert new_token and new_token != old_token
+    assert _auth_only_client(bus_client, str(new_token)).get("/app/system/state").status_code == 200
+
+
+def test_recovery_code_resets_password_burns_code_revokes_sessions_and_audits(bus_client):
+    setup_client = bus_client["client"]
+    models = bus_client["models"]
+    engine_module = bus_client["engine"]
+    setup = _setup_owner(setup_client)
+    old_token = _auth_token_from_client(setup_client)
+    recovery_code = setup["recovery_codes"][0]
+
+    response = _anonymous_client(bus_client).post(
+        "/auth/recover",
+        json={"username": "OWNER", "recovery_code": recovery_code, "new_password": "new secure password"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ok": True, "login_required": True}
+    assert "recovery_codes" not in response.text
+    assert response.cookies.get(AUTH_SESSION_COOKIE) is None
+    assert _auth_only_client(bus_client, old_token).get("/app/system/state").status_code == 401
+    assert _anonymous_client(bus_client).post(
+        "/auth/login",
+        json={"username": "owner", "password": "correct horse battery staple"},
+    ).status_code == 401
+    assert _anonymous_client(bus_client).post(
+        "/auth/login",
+        json={"username": "owner", "password": "new secure password"},
+    ).status_code == 200
+
+    with engine_module.SessionLocal() as db:
+        user = db.scalar(select(models.AuthUser).where(models.AuthUser.username_norm == "owner"))
+        assert user is not None
+        used_code = db.scalar(
+            select(models.AuthRecoveryCode).where(
+                models.AuthRecoveryCode.user_id == user.id,
+                models.AuthRecoveryCode.used_at.is_not(None),
+            )
+        )
+        assert used_code is not None
+        assert recovery_code not in used_code.code_hash
+        old_session = db.scalar(select(models.AuthSession).where(models.AuthSession.session_hash == hash_session_token(old_token)))
+        assert old_session is not None
+        assert old_session.revoked_at is not None
+        event = db.scalar(select(models.AuthAuditEvent).where(models.AuthAuditEvent.action == "auth.recovery_used"))
+        assert event is not None
+        detail = json.loads(event.detail_json or "{}")
+        assert "recovery" not in event.detail_json
+        assert "code" not in event.detail_json
+        assert detail["revoked_sessions"] >= 1
+
+
+def test_used_recovery_code_cannot_be_reused_and_failures_are_generic(bus_client):
+    setup_client = bus_client["client"]
+    setup = _setup_owner(setup_client)
+    code = setup["recovery_codes"][0]
+    recover_client = _anonymous_client(bus_client)
+    assert recover_client.post(
+        "/auth/recover",
+        json={"username": "owner", "recovery_code": code, "new_password": "first new password"},
+    ).status_code == 200
+
+    reused = recover_client.post(
+        "/auth/recover",
+        json={"username": "owner", "recovery_code": code, "new_password": "second new password"},
+    )
+    wrong_user = recover_client.post(
+        "/auth/recover",
+        json={"username": "not-owner", "recovery_code": code, "new_password": "second new password"},
+    )
+    wrong_code = recover_client.post(
+        "/auth/recover",
+        json={"username": "owner", "recovery_code": "WRONG-CODE", "new_password": "second new password"},
+    )
+
+    assert reused.status_code == 401
+    assert reused.json() == {"detail": {"error": "recovery_failed"}}
+    assert wrong_user.status_code == 401
+    assert wrong_user.json() == reused.json()
+    assert wrong_code.status_code == 401
+    assert wrong_code.json() == reused.json()
+
+
+def test_recovery_rate_limit_blocks_repeated_failures_with_generic_response(bus_client):
+    _setup_owner(bus_client["client"])
+    client = _anonymous_client(bus_client)
+    generic_body = {"detail": {"error": "recovery_failed"}}
+    for index in range(5):
+        response = client.post(
+            "/auth/recover",
+            json={"username": "owner", "recovery_code": f"WRONG-{index}", "new_password": "new secure password"},
+        )
+        assert response.status_code == 401
+        assert response.json() == generic_body
+
+    locked = client.post(
+        "/auth/recover",
+        json={"username": "owner", "recovery_code": "ALSO-WRONG", "new_password": "new secure password"},
+    )
+
+    assert locked.status_code == 401
+    assert locked.json() == generic_body
+
+
+def test_recovery_code_regeneration_invalidates_old_unused_codes_and_audits(bus_client):
+    setup_client = bus_client["client"]
+    models = bus_client["models"]
+    engine_module = bus_client["engine"]
+    setup = _setup_owner(setup_client)
+    old_code = setup["recovery_codes"][1]
+
+    response = setup_client.post("/auth/recovery-codes/regenerate", json={})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["ok"] is True
+    assert len(payload["recovery_codes"]) == RECOVERY_CODE_COUNT
+    assert old_code not in payload["recovery_codes"]
+    assert "code_hash" not in response.text
+
+    audit_response = setup_client.get("/app/audit")
+    assert audit_response.status_code == 200, audit_response.text
+    assert old_code not in audit_response.text
+    assert payload["recovery_codes"][0] not in audit_response.text
+    assert "code_hash" not in audit_response.text
+
+    old_recovery = _anonymous_client(bus_client).post(
+        "/auth/recover",
+        json={"username": "owner", "recovery_code": old_code, "new_password": "new secure password"},
+    )
+    assert old_recovery.status_code == 401
+    assert old_recovery.json() == {"detail": {"error": "recovery_failed"}}
+
+    new_recovery = _anonymous_client(bus_client).post(
+        "/auth/recover",
+        json={"username": "owner", "recovery_code": payload["recovery_codes"][0], "new_password": "new secure password"},
+    )
+    assert new_recovery.status_code == 200, new_recovery.text
+
+    with engine_module.SessionLocal() as db:
+        event = db.scalar(
+            select(models.AuthAuditEvent).where(models.AuthAuditEvent.action == "auth.recovery_codes_regenerated")
+        )
+        assert event is not None
+        assert "recovery_codes" not in (event.detail_json or "")
+        assert "code_hash" not in (event.detail_json or "")
 
 
 def test_unclaimed_session_token_behavior_remains_unchanged(bus_client):

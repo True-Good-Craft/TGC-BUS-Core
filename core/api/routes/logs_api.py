@@ -24,8 +24,8 @@ def _to_iso(dt: datetime | None) -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@router.get("/logs")
-@public_router.get("/logs")
+@router.get("/logs", operation_id="list_app_logs")
+@public_router.get("/logs", operation_id="list_public_app_logs")
 def list_logs(
     limit: int = Query(200, ge=10, le=1000),
     cursor_id: int | None = Query(None, description="Return rows with id < cursor_id"),
