@@ -37,6 +37,8 @@ def test_auth_client_does_not_use_localstorage_for_authority() -> None:
     for name in (
         "getAuthState",
         "setupOwner",
+        "recoverAccount",
+        "regenerateRecoveryCodes",
         "login",
         "logout",
         "getMe",
@@ -78,6 +80,41 @@ def test_recovery_codes_are_rendered_once_without_storage() -> None:
     assert "onContinue?.();" in auth_ui_js
     assert "localStorage" not in auth_ui_js
     assert "sessionStorage" not in auth_ui_js
+
+
+def test_login_screen_includes_recovery_entry_point_and_generic_recovery_flow() -> None:
+    auth_js = (REPO_ROOT / "core" / "ui" / "js" / "auth.js").read_text(encoding="utf-8")
+    auth_ui_js = (REPO_ROOT / "core" / "ui" / "js" / "auth-ui.js").read_text(encoding="utf-8")
+
+    assert "function recoverAccount" in auth_js
+    assert "authRequest('/auth/recover', 'POST', payload)" in auth_js
+    assert "Forgot password?" in auth_ui_js
+    assert "data-action=\"recover-account\"" in auth_ui_js
+    assert "data-form=\"recover-account\"" in auth_ui_js
+    assert "recovery_code" in auth_ui_js
+    assert "new_password" in auth_ui_js
+    assert "confirm_password" in auth_ui_js
+    assert "Passwords do not match." in auth_ui_js
+    assert "Unable to recover account. Check the recovery information and try again." in auth_ui_js
+    assert "Password reset. Sign in with your new password." in auth_ui_js
+    assert "renderLogin(root, { ...options, loginMessage:" in auth_ui_js
+
+
+def test_security_ui_regenerates_recovery_codes_once_without_storage() -> None:
+    auth_js = (REPO_ROOT / "core" / "ui" / "js" / "auth.js").read_text(encoding="utf-8")
+    security_js = (REPO_ROOT / "core" / "ui" / "js" / "security.js").read_text(encoding="utf-8")
+
+    assert "function regenerateRecoveryCodes" in auth_js
+    assert "authRequest('/auth/recovery-codes/regenerate', 'POST', payload)" in auth_js
+    assert "Regenerate recovery codes" in security_js
+    assert "This invalidates unused old recovery codes." in security_js
+    assert "await regenerateRecoveryCodes({});" in security_js
+    assert "result?.recovery_codes" in security_js
+    assert "I saved these codes" in security_js
+    assert "target.innerHTML = '';" in security_js
+    assert "await refreshAfterSecurityMutation(root);" in security_js
+    assert "localStorage" not in security_js
+    assert "sessionStorage" not in security_js
 
 
 def test_app_boot_checks_auth_state_before_protected_mount() -> None:

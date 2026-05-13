@@ -14,7 +14,7 @@ This map exists to keep authority boundaries explicit. Canonical, supported, sec
 - Drifted: `core/ui/js/cards/backup.js` expects `/app/backup` or `/app.db`; no matching mounted backend route was found.
 - Drifted: `core/ui/js/cards/home_donuts.js` uses `/app/transactions/summary` and `/app/transactions`, but both endpoints are explicit stubs.
 - Canonical: `/session/token` authority is only `core/api/http.py`; it remains unclaimed-mode compatibility and returns `login_required` in claimed mode rather than minting a legacy app-access bypass.
-- Canonical: `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`, `/auth/recover`, and `/auth/recovery-codes/regenerate` expose DB-backed auth account lifecycle over `bus_auth_session`. The SPA calls `/auth/state` during boot before protected app mounting, preserves legacy local behavior while unclaimed, requires login UI before normal screens once claimed without a current session, and refreshes in-memory auth state after permission/session-sensitive Security UI actions.
+- Canonical: `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`, `/auth/recover`, and `/auth/recovery-codes/regenerate` expose DB-backed auth account lifecycle over `bus_auth_session`. The SPA calls `/auth/state` during boot before protected app mounting, preserves legacy local behavior while unclaimed, requires login UI before normal screens once claimed without a current session, exposes account recovery from the claimed-mode login card, exposes recovery-code regeneration from Security management, and refreshes in-memory auth state after permission/session-sensitive Security UI actions.
 - Canonical: `/app/users`, `/app/roles`, `/app/sessions`, and `/app/audit` expose claimed-mode user, role, session, and audit management. The `#/security` UI consumes these routes when permitted; backend route-local permissions remain authoritative and no default users are created.
 - Drifted: `/app/logs` is the UI event-feed endpoint, while `/logs` is the text runtime log tail; similar names, different contracts.
 - Guard posture: Covered protected route families now declare route-local token and permission dependencies. Sensitive mutations retain existing write gates and owner-commit gates where already present; see `04_SECURITY_TRUST_AND_OPERATIONS.md`.
@@ -211,7 +211,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | `#/recipes` | Canonical | Recipe screen; supports `#/recipes/{id}`. | `core/ui/js/cards/recipes.js` |
 | `#/contacts` | Canonical | Contacts/vendors/orgs screen; supports `#/contacts/{id}`. | `core/ui/js/cards/vendors.js` |
 | `#/settings` | Canonical | Settings + admin/backup/import/export. | `core/ui/js/cards/settings.js`, `core/ui/js/cards/admin.js` |
-| `#/security` | Canonical | Current user, owner claim entry, users/roles, sessions, and audit management when permitted. | `core/ui/app.js`, `core/ui/js/auth.js`, `core/ui/js/auth-ui.js`, `core/ui/js/security.js` |
+| `#/security` | Canonical | Current user, owner claim entry, recovery-code regeneration, users/roles, sessions, and audit management when permitted. | `core/ui/app.js`, `core/ui/js/auth.js`, `core/ui/js/auth-ui.js`, `core/ui/js/security.js` |
 | `#/logs` | Canonical | UI event-log screen backed by `/app/logs`. | `core/ui/js/logs.js` |
 | `#/finance` | Canonical | Finance KPI + transactions screen. | `core/ui/js/cards/finance.js` |
 | `#/runs` | Drifted | Placeholder screen; detail route also normalizes. | `core/ui/app.js` |
@@ -232,7 +232,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | Screen | Direct API dependencies |
 | --- | --- |
 | Welcome/onboarding | `/session/token`, `/app/system/state`, `/app/system/start-fresh`, `/license/EULA.md` |
-| Auth boot/login/claim chrome | `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me` |
+| Auth boot/login/claim/recovery chrome | `/auth/state`, `/auth/setup-owner`, `/auth/recover`, `/auth/login`, `/auth/logout`, `/auth/me` |
 | Home | `/openapi.json`, `/app/transactions/summary?window=30d`, `/app/transactions?limit=10` |
 | Inventory | `/app/items`, `/app/items/{id}`, `/app/stock/in`, `/app/stock/out`, `/app/purchase`, `/app/finance/refund`, `/app/vendors?is_vendor=true`, `/app/contacts?is_vendor=true`, `/app/items/{id}` `DELETE` |
 | Manufacturing | `/app/recipes`, `/app/recipes/{id}`, `/app/manufacture`, `/app/ledger/history` |
@@ -240,7 +240,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | Contacts | `/app/vendors?is_org=true`, `/app/vendors?is_vendor=true`, `/app/contacts?...`, `/app/contacts` `POST`, `/app/vendors/{id}` `PUT|DELETE`, `/app/contacts/{id}` `PUT|DELETE` |
 | Settings | `/app/config`, `/app/update/check`, `/app/update/stage` |
 | Settings/Admin | `/app/db/export`, `/app/db/exports`, `/app/db/import/upload`, `/app/db/import/preview`, `/app/db/import/commit` |
-| Security | `/auth/state`, `/app/users`, `/app/roles`, `/app/sessions`, `/app/sessions/{id}/revoke`, `/app/audit` |
+| Security | `/auth/state`, `/auth/recovery-codes/regenerate`, `/app/users`, `/app/roles`, `/app/sessions`, `/app/sessions/{id}/revoke`, `/app/audit` |
 | Logs | `/app/logs?limit=...&cursor_id=...` |
 | Finance | `/app/finance/summary?from=...&to=...`, `/app/finance/transactions?from=...&to=...&limit=100` |
 

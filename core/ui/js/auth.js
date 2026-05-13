@@ -48,6 +48,14 @@ export function login(payload) {
   return authRequest('/auth/login', 'POST', payload);
 }
 
+export function recoverAccount(payload) {
+  return authRequest('/auth/recover', 'POST', payload);
+}
+
+export function regenerateRecoveryCodes(payload = {}) {
+  return authRequest('/auth/recovery-codes/regenerate', 'POST', payload);
+}
+
 export function logout() {
   return authRequest('/auth/logout', 'POST', {});
 }

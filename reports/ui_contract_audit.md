@@ -1,6 +1,6 @@
 # UI Contract Audit Report
 
-- Timestamp (UTC): 2026-05-13T22:31:28Z
+- Timestamp (UTC): 2026-05-13T22:41:54Z
 - Repo: D:\# Dev Test\BUSCore-Test\TGC-BUS-Core
 - Search tool: rg
 - Overall status: **PASS**
@@ -133,7 +133,7 @@ core/ui/js/auth.js:48:  return authRequest('/auth/login', 'POST', payload);
 PASS - all matches contained in core/ui/js/auth.js
 
 ```text
-core/ui/js/auth.js:52:  return authRequest('/auth/logout', 'POST', {});
+core/ui/js/auth.js:60:  return authRequest('/auth/logout', 'POST', {});
 ```
 
 ### /auth/me (1 matches)
@@ -141,7 +141,7 @@ core/ui/js/auth.js:52:  return authRequest('/auth/logout', 'POST', {});
 PASS - all matches contained in core/ui/js/auth.js
 
 ```text
-core/ui/js/auth.js:56:  return authRequest('/auth/me');
+core/ui/js/auth.js:64:  return authRequest('/auth/me');
 ```
 
 ## Summary

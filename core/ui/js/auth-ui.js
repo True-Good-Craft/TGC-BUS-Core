@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { login, setupOwner } from './auth.js';
+import { login, recoverAccount, setupOwner } from './auth.js';
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -116,10 +116,17 @@ function renderLogin(root, options) {
         <div class="auth-status" data-role="auth-status" data-tone="neutral" aria-live="polite"></div>
         <div class="auth-actions">
           <button type="submit" class="btn primary">Log in</button>
+          <button type="button" class="btn" data-action="recover-account">Forgot password?</button>
         </div>
       </form>
     </section>
   `;
+
+  if (options.loginMessage) setStatus(root, options.loginMessage, 'success');
+
+  root.querySelector('[data-action="recover-account"]')?.addEventListener('click', () => {
+    renderRecover(root, options);
+  });
 
   root.querySelector('[data-form="login"]')?.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -143,6 +150,66 @@ function renderLogin(root, options) {
       }
     } finally {
       if (submit) {
+        submit.disabled = false;
+        submit.textContent = previousText;
+      }
+    }
+  });
+}
+
+function renderRecover(root, options) {
+  root.innerHTML = `
+    <section class="auth-card auth-card--wide">
+      <div class="auth-card-head">
+        <p class="auth-eyebrow">Account recovery</p>
+        <h1>Recover owner account</h1>
+      </div>
+      <form data-form="recover-account" class="auth-form">
+        <label>Username <input name="username" autocomplete="username" required autofocus></label>
+        <label>Recovery code <input name="recovery_code" autocomplete="one-time-code" required></label>
+        <label>New password <input name="new_password" type="password" autocomplete="new-password" required></label>
+        <label>Confirm new password <input name="confirm_password" type="password" autocomplete="new-password" required></label>
+        <div class="auth-status" data-role="auth-status" data-tone="neutral" aria-live="polite"></div>
+        <div class="auth-actions">
+          <button type="button" class="btn" data-action="back-to-login">Back to login</button>
+          <button type="submit" class="btn primary">Reset password</button>
+        </div>
+      </form>
+    </section>
+  `;
+
+  root.querySelector('[data-action="back-to-login"]')?.addEventListener('click', () => {
+    renderLogin(root, options);
+  });
+
+  root.querySelector('[data-form="recover-account"]')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submit = form.querySelector('button[type="submit"]');
+    const previousText = submit?.textContent || 'Reset password';
+    const newPassword = formValue(form, 'new_password');
+    const confirmPassword = formValue(form, 'confirm_password');
+    if (newPassword !== confirmPassword) {
+      setStatus(root, 'Passwords do not match.', 'error');
+      return;
+    }
+    if (submit) {
+      submit.disabled = true;
+      submit.textContent = 'Resetting...';
+    }
+    setStatus(root, 'Checking recovery code...');
+    try {
+      await recoverAccount({
+        username: formValue(form, 'username'),
+        recovery_code: formValue(form, 'recovery_code'),
+        new_password: newPassword,
+      });
+      renderLogin(root, { ...options, loginMessage: 'Password reset. Sign in with your new password.' });
+    } catch (error) {
+      console.error('account recovery failed', error);
+      setStatus(root, 'Unable to recover account. Check the recovery information and try again.', 'error');
+    } finally {
+      if (submit && root.contains(submit)) {
         submit.disabled = false;
         submit.textContent = previousText;
       }

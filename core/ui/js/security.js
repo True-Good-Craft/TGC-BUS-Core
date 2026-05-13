@@ -7,6 +7,7 @@ import {
   listRoles,
   listSessions,
   listUsers,
+  regenerateRecoveryCodes,
   resetPassword,
   revokeSession,
   setUserRoles,
@@ -94,6 +95,63 @@ function renderUnclaimed(onOpenClaim) {
     </div>
   `;
   section.querySelector('[data-action="open-claim"]')?.addEventListener('click', () => onOpenClaim?.());
+  return section;
+}
+
+function renderRecoveryRegenerationSection(root) {
+  const section = document.createElement('section');
+  section.className = 'security-panel';
+  section.innerHTML = `
+    <div class="security-panel-head security-panel-head--split">
+      <h3>Recovery Codes</h3>
+      <span>Owner recovery</span>
+    </div>
+    <p>Generate a new set of one-time recovery codes for the current account.</p>
+    <div class="settings-action-row">
+      <button type="button" class="btn" data-action="regenerate-recovery-codes">Regenerate recovery codes</button>
+    </div>
+    <div data-role="recovery-code-result"></div>
+  `;
+  section.querySelector('[data-action="regenerate-recovery-codes"]')?.addEventListener('click', async (event) => {
+    const confirmed = window.confirm('This invalidates unused old recovery codes.');
+    if (!confirmed) return;
+    const button = event.currentTarget;
+    const previousText = button?.textContent || 'Regenerate recovery codes';
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Regenerating...';
+    }
+    try {
+      const result = await regenerateRecoveryCodes({});
+      const codes = result?.recovery_codes || [];
+      const target = section.querySelector('[data-role="recovery-code-result"]');
+      if (target) {
+        target.innerHTML = `
+          <p>Save these recovery codes now. They are shown once.</p>
+          <ol class="auth-recovery-list">
+            ${codes.map((code) => `<li><code>${escapeHtml(code)}</code></li>`).join('')}
+          </ol>
+          <div class="settings-action-row">
+            <button type="button" class="btn primary" data-action="confirm-recovery-codes-saved">I saved these codes</button>
+          </div>
+        `;
+        target.querySelector('[data-action="confirm-recovery-codes-saved"]')?.addEventListener('click', async () => {
+          target.innerHTML = '';
+          setSecurityStatus(root, 'Recovery codes regenerated.', 'success');
+          await refreshAfterSecurityMutation(root);
+        });
+      }
+      await refreshAuthForSecurity(root);
+    } catch (error) {
+      console.error('recovery code regeneration failed', error);
+      handleSecurityError(root, error, 'Recovery code regeneration failed.');
+    } finally {
+      if (button && section.contains(button)) {
+        button.disabled = false;
+        button.textContent = previousText;
+      }
+    }
+  });
   return section;
 }
 
@@ -335,6 +393,10 @@ export async function mountSecurity(container, options = {}) {
 
   const rolesResult = canReadUsers ? await listRoles().catch((error) => ({ error })) : { roles: [] };
   const roles = rolesResult.roles || [];
+
+  if (canManageUsers) {
+    body.appendChild(renderRecoveryRegenerationSection(container));
+  }
 
   if (canReadUsers) {
     const usersResult = await listUsers().catch((error) => ({ error }));

@@ -12,6 +12,9 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.14` to `1.1.1.15` for the recovery UI entry-point patch without changing public `VERSION`.
+- Added minimal claimed-mode recovery UI: login now exposes a recovery form for the existing `/auth/recover` backend route, validates password confirmation client-side, shows generic recovery failures, and returns to login with a success message without storing recovery data.
+- Added Security UI recovery-code regeneration for users with management authority, using the existing `/auth/recovery-codes/regenerate` backend route, warning before invalidating old unused codes, showing new codes once, and clearing them after confirmation.
 - Bumped `INTERNAL_VERSION` from `1.1.1.13` to `1.1.1.14` for release-blocker hardening without changing public `VERSION`.
 - Added owner recovery and recovery-code regeneration API behavior: recovery codes remain long-lived until used/regenerated, are stored only as hashes, burn on successful use, revoke existing sessions, require login after reset, write audit events, and use generic recovery failure responses with DB-backed failed-attempt rate limiting.
 - Hardened auth sessions with explicit 12-hour idle timeout, 30-day max age, and throttled `last_seen_at` touch behavior.
