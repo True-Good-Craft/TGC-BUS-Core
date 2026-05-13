@@ -12,6 +12,8 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.12` to `1.1.1.13` for the Phase 7 auth/security hardening and release-readiness audit without changing public `VERSION`.
+- Hardened auth/user-account release readiness with an explicit minimum password length, route-level password-policy errors, expanded cookie/session/permission/owner-invariant/UI-storage tests, and an OS-stable UI contract audit that keeps legacy endpoint and canonical-containment guardrails active with documented allowlists for known compatibility code.
 - Bumped `INTERNAL_VERSION` from `1.1.1.11` to `1.1.1.12` for the Phase 6 claim/login/logout and Security UI pass without changing public `VERSION`.
 - Added frontend auth boot, owner-claim, recovery-code display, login/logout, current-user chrome, permission-aware navigation hiding, and `#/security` user/session/audit management UI on top of the existing backend auth APIs while preserving unclaimed local mode and avoiding localStorage auth authority.
 - Bumped `INTERNAL_VERSION` from `1.1.1.10` to `1.1.1.11` for the Phase 5 claimed-mode user, role, session, and audit management API without changing public `VERSION`.

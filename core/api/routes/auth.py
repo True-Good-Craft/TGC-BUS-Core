@@ -28,7 +28,7 @@ from core.appdb.models import (
     AuthUserRole,
 )
 from core.auth.audit import create_audit_event
-from core.auth.passwords import SCRYPT_SCHEME, hash_password, verify_password
+from core.auth.passwords import SCRYPT_SCHEME, hash_password, validate_password_policy, verify_password
 from core.auth.permissions import OWNER_ROLE_KEY, default_role_bundles
 from core.auth.sessions import generate_session_token, hash_session_token
 from core.auth.store import count_auth_users, normalize_username
@@ -62,6 +62,13 @@ def _safe_text(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def _require_valid_password(password: str) -> None:
+    try:
+        validate_password_policy(password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
 
 
 def _cookie_security(request: Request) -> tuple[str, bool]:
@@ -254,8 +261,7 @@ def setup_owner(
         username_norm = normalize_username(payload.username)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"error": "username_required"}) from exc
-    if not payload.password or not payload.password.strip():
-        raise HTTPException(status_code=400, detail={"error": "password_required"})
+    _require_valid_password(payload.password)
 
     roles = _seed_system_roles(db)
     owner_role = roles[OWNER_ROLE_KEY]

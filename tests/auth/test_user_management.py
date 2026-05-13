@@ -7,8 +7,11 @@ from core.api.routes.auth import AUTH_SESSION_COOKIE
 from core.auth.passwords import SCRYPT_SCHEME, hash_password, verify_password
 from core.auth.permissions import (
     OPERATOR_ROLE_KEY,
+    OWNER_ROLE_KEY,
     PERMISSION_AUDIT_READ,
+    PERMISSION_SESSIONS_MANAGE,
     PERMISSION_USERS_MANAGE,
+    PERMISSION_USERS_READ,
     VIEWER_ROLE_KEY,
 )
 from core.auth.sessions import hash_session_token
@@ -155,6 +158,20 @@ def test_owner_can_list_users_and_create_child_user_with_hashed_password(bus_cli
     assert duplicate.status_code == 409
     assert duplicate.json()["detail"]["error"] == "username_exists"
 
+    short = client.post("/app/users", json={"username": "short-pass", "password": "short", "roles": []})
+    assert short.status_code == 400
+    assert short.json()["detail"]["error"] == "password_too_short"
+
+
+def test_owner_can_access_security_management_routes(bus_client):
+    client = bus_client["client"]
+    _setup_owner(client)
+
+    assert client.get("/app/users").status_code == 200
+    assert client.get("/app/roles").status_code == 200
+    assert client.get("/app/sessions").status_code == 200
+    assert client.get("/app/audit").status_code == 200
+
 
 def test_viewer_and_operator_cannot_manage_users(bus_client):
     owner_client = bus_client["client"]
@@ -167,6 +184,37 @@ def test_viewer_and_operator_cannot_manage_users(bus_client):
         response = client.post("/app/users", json={"username": "blocked", "password": "temporary-password"})
         assert response.status_code == 403, f"{username}: {response.text}"
         assert response.json()["detail"]["error"] == "permission_denied"
+
+
+def test_security_management_permissions_are_independent(bus_client):
+    owner_client = bus_client["client"]
+    _setup_owner(owner_client)
+    _create_user(owner_client, "viewer", roles=[VIEWER_ROLE_KEY])
+
+    viewer = _login(bus_client, "viewer", "temporary-password")
+    for method, path, payload in [
+        ("get", "/app/audit", None),
+        ("get", "/app/sessions", None),
+        ("post", "/app/sessions/1/revoke", {}),
+        ("patch", "/app/users/1/roles", {"roles": [VIEWER_ROLE_KEY]}),
+    ]:
+        kwargs = {"json": payload} if payload is not None else {}
+        response = getattr(viewer, method)(path, **kwargs)
+        assert response.status_code == 403, f"{method.upper()} {path}: {response.text}"
+        assert response.json()["detail"]["error"] == "permission_denied"
+
+    _create_role_with_permissions(bus_client, "user_reader", [PERMISSION_USERS_READ])
+    _create_db_user_with_role(bus_client, "user-reader", "user_reader")
+    reader = _login(bus_client, "user-reader", "temporary-password")
+    assert reader.get("/app/users").status_code == 200
+    role_change = reader.patch("/app/users/1/roles", json={"roles": [VIEWER_ROLE_KEY]})
+    assert role_change.status_code == 403
+
+    _create_role_with_permissions(bus_client, "session_manager", [PERMISSION_SESSIONS_MANAGE])
+    _create_db_user_with_role(bus_client, "session-manager", "session_manager")
+    session_manager = _login(bus_client, "session-manager", "temporary-password")
+    assert session_manager.get("/app/sessions").status_code == 200
+    assert session_manager.get("/app/audit").status_code == 403
 
 
 def test_user_with_users_manage_can_create_and_update_users(bus_client):
@@ -230,6 +278,22 @@ def test_owner_invariant_prevents_disabling_or_stripping_last_owner(bus_client):
     assert strip.json()["detail"]["error"] == "last_enabled_owner"
 
 
+def test_two_owner_invariant_allows_one_owner_to_be_disabled_or_stripped(bus_client):
+    client = bus_client["client"]
+    _setup_owner(client)
+    second_owner = _create_user(client, "second-owner", roles=[OWNER_ROLE_KEY])
+
+    disable = client.post(f"/app/users/{second_owner['id']}/disable")
+    assert disable.status_code == 200, disable.text
+
+    enable = client.post(f"/app/users/{second_owner['id']}/enable")
+    assert enable.status_code == 200, enable.text
+
+    strip = client.patch(f"/app/users/{second_owner['id']}/roles", json={"roles": [VIEWER_ROLE_KEY]})
+    assert strip.status_code == 200, strip.text
+    assert strip.json()["user"]["roles"] == [VIEWER_ROLE_KEY]
+
+
 def test_password_reset_changes_credentials_and_revokes_sessions(bus_client):
     client = bus_client["client"]
     _setup_owner(client)
@@ -252,6 +316,34 @@ def test_password_reset_changes_credentials_and_revokes_sessions(bus_client):
     assert old_login.status_code == 401
 
     new_login = _anonymous_client(bus_client).post("/auth/login", json={"username": "reset-me", "password": "new-password"})
+    assert new_login.status_code == 200, new_login.text
+
+    short_reset = client.post(f"/app/users/{child['id']}/reset-password", json={"new_password": "short"})
+    assert short_reset.status_code == 400
+    assert short_reset.json()["detail"]["error"] == "password_too_short"
+
+
+def test_last_owner_password_reset_requires_valid_new_password_and_remains_recoverable(bus_client):
+    client = bus_client["client"]
+    owner_id = _setup_owner(client)
+
+    short = client.post(f"/app/users/{owner_id}/reset-password", json={"new_password": "short"})
+    assert short.status_code == 400
+    assert short.json()["detail"]["error"] == "password_too_short"
+
+    reset = client.post(
+        f"/app/users/{owner_id}/reset-password",
+        json={"new_password": "new-owner-password", "revoke_sessions": True},
+    )
+    assert reset.status_code == 200, reset.text
+    assert reset.json()["revoked_sessions"] >= 1
+
+    old_session = client.get("/app/users")
+    assert old_session.status_code == 401
+    new_login = _anonymous_client(bus_client).post(
+        "/auth/login",
+        json={"username": "owner", "password": "new-owner-password"},
+    )
     assert new_login.status_code == 200, new_login.text
 
 

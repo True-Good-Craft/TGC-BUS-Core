@@ -98,7 +98,7 @@ This is the core trust boundary as implemented today: local runtime first, bound
 
 ### Claimed/unclaimed account model
 
-Phase 3 implemented the global claimed-mode gate. Phase 4 implemented route-local permission checks for covered protected route families. Phase 5 implements user, role, session, and audit management routes. Phase 6 adds the frontend claim/login/logout/current-user/Security management flow on top of those APIs without changing backend auth authority.
+Phase 3 implemented the global claimed-mode gate. Phase 4 implemented route-local permission checks for covered protected route families. Phase 5 implements user, role, session, and audit management routes. Phase 6 adds the frontend claim/login/logout/current-user/Security management flow on top of those APIs without changing backend auth authority. Phase 7 hardening confirms bootstrap/public surfaces, session/cookie safety, permission boundaries, owner invariants, UI storage posture, and guard-script coverage.
 
 | Mode | Trigger | Required behavior |
 | --- | --- | --- |
@@ -107,7 +107,7 @@ Phase 3 implemented the global claimed-mode gate. Phase 4 implemented route-loca
 
 Iron-grip invariants for claimed mode and follow-on user management:
 
-- No default usable admin or owner may be created, including `admin` / `admin`, blank usernames, blank passwords, or hidden pre-created owners that can log in.
+- No default usable admin or owner may be created, including `admin` / `admin`, blank usernames, blank passwords, short passwords below the configured minimum, or hidden pre-created owners that can log in.
 - `POST /auth/setup-owner` may succeed only while the auth user table has zero users. Once any user exists, setup-owner must reject permanently unless the DB is deliberately reset or restored.
 - `/session/token` remains unclaimed runtime-token compatibility. It returns `login_required` in claimed mode and must not grant app access, mint identity, or bypass login.
 - User/account state must be DB-backed canonical state: users, roles, sessions, recovery-code hashes, and audit events. UI `localStorage` is convenience only and cannot become auth authority.
@@ -118,6 +118,7 @@ Iron-grip invariants for claimed mode and follow-on user management:
 Phase 4 route-local permission coverage includes inventory/items, ledger/stock, recipes, manufacturing, vendors/contacts, finance, logs, config/update/system, backup/import/export, settings/google, settings/reader, policy, plans, plugins, local path/open, restart, capabilities, and transparency routes. Reader, organizer, provider catalog/index, and drive scan routes remain deferred pending a distinct provider/catalog permission vocabulary.
 - Phase 5 route-local permission coverage adds `/app/users`, `/app/roles`, `/app/sessions`, and `/app/audit`. User/session mutations retain write gates; session and audit payloads must not expose raw session tokens, session hashes, password hashes, recovery codes, or secret values.
 - Phase 6 UI coverage adds `/auth/state` boot gating, owner setup/recovery-code display, login/logout, current-user chrome, and `#/security` user/session/audit management views. Unclaimed mode must not force setup, and claimed mode without a session must show login before normal app screens or protected `/app/*` calls.
+- Phase 7 hardening keeps the UI contract audit active for forbidden quoted legacy endpoints, legacy endpoint tokens, finance legacy fields, and canonical endpoint containment. Narrow allowlists cover only known compatibility code: the imperial-unit wrapper in `core/ui/js/token.js` and the recipe unit label in `core/ui/js/cards/recipes.js`.
 - Recovery codes must be generated as one-time codes, shown once, stored only as hashes, single-use, and audited when used.
 
 Sensitive claimed-mode audit events now include owner setup, login success/failure, logout, user created/updated/disabled/enabled, password reset, roles changed, and session revoked. Broader runtime audit events for backup export/restore, config changes, finance writes, inventory writes, manufacturing runs, and system restart/start-fresh remain future expansion.

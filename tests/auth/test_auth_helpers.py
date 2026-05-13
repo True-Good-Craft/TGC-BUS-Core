@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from core.auth.audit import create_audit_event
-from core.auth.passwords import SCRYPT_SCHEME, hash_password, password_scheme, verify_password
+from core.auth.passwords import MIN_PASSWORD_LENGTH, SCRYPT_SCHEME, hash_password, password_scheme, verify_password
 from core.auth.permissions import (
     OPERATOR_ROLE_KEY,
     OWNER_ROLE_KEY,
@@ -30,6 +32,13 @@ def test_password_hash_rejects_wrong_password():
 
     assert verify_password("wrong password", encoded) is False
     assert verify_password("correct horse battery staple", "not-a-valid-hash") is False
+
+
+def test_password_hash_rejects_blank_or_short_passwords():
+    with pytest.raises(ValueError, match="password_required"):
+        hash_password("   ")
+    with pytest.raises(ValueError, match="password_too_short"):
+        hash_password("x" * (MIN_PASSWORD_LENGTH - 1))
 
 
 def test_session_token_hash_is_deterministic_and_hides_raw_token():

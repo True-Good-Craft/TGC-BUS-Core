@@ -23,7 +23,7 @@ from core.appdb.models import (
 from core.auth.audit import create_audit_event
 from core.auth.dependencies import AuthUserContext, require_permission
 from core.auth.management import AuthInvariantError, assert_not_last_enabled_owner, ensure_system_roles
-from core.auth.passwords import SCRYPT_SCHEME, hash_password
+from core.auth.passwords import SCRYPT_SCHEME, hash_password, validate_password_policy
 from core.auth.permissions import (
     PERMISSION_AUDIT_READ,
     PERMISSION_SESSIONS_MANAGE,
@@ -79,6 +79,13 @@ def _safe_text(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def _require_valid_password(password: str) -> None:
+    try:
+        validate_password_policy(password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
 
 
 def _fields_set(model: BaseModel) -> set[str]:
@@ -224,10 +231,9 @@ def create_user(
         username_norm = normalize_username(payload.username)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"error": "username_required"}) from exc
-    if not payload.password or not payload.password.strip():
-        raise HTTPException(status_code=400, detail={"error": "password_required"})
     if db.scalar(select(AuthUser.id).where(AuthUser.username_norm == username_norm)) is not None:
         raise HTTPException(status_code=409, detail={"error": "username_exists"})
+    _require_valid_password(payload.password)
 
     roles = _requested_roles(db, payload.roles)
     user = AuthUser(
@@ -383,8 +389,7 @@ def reset_user_password(
 ) -> dict[str, Any]:
     actor_user_id = _claimed_actor(actor)
     user = _require_user(db, user_id)
-    if not payload.new_password or not payload.new_password.strip():
-        raise HTTPException(status_code=400, detail={"error": "password_required"})
+    _require_valid_password(payload.new_password)
     user.password_hash = hash_password(payload.new_password)
     user.password_scheme = SCRYPT_SCHEME
     user.must_change_password = bool(payload.must_change_password)

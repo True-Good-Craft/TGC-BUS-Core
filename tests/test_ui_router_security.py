@@ -55,6 +55,31 @@ def test_auth_client_does_not_use_localstorage_for_authority() -> None:
         assert f"function {name}" in auth_js
 
 
+def test_auth_ui_modules_do_not_store_secrets_or_authority() -> None:
+    sensitive_terms = ("password", "recovery", "session", "token", "permission", "auth")
+    for relative in (
+        ("core", "ui", "app.js"),
+        ("core", "ui", "js", "auth.js"),
+        ("core", "ui", "js", "auth-ui.js"),
+        ("core", "ui", "js", "security.js"),
+    ):
+        source = (REPO_ROOT / Path(*relative)).read_text(encoding="utf-8")
+        for line in source.splitlines():
+            if "localStorage" in line or "sessionStorage" in line:
+                lowered = line.lower()
+                assert not any(term in lowered for term in sensitive_terms), line
+
+
+def test_recovery_codes_are_rendered_once_without_storage() -> None:
+    auth_ui_js = (REPO_ROOT / "core" / "ui" / "js" / "auth-ui.js").read_text(encoding="utf-8")
+
+    assert "renderRecoveryCodes" in auth_ui_js
+    assert "result?.recovery_codes" in auth_ui_js
+    assert "onContinue?.();" in auth_ui_js
+    assert "localStorage" not in auth_ui_js
+    assert "sessionStorage" not in auth_ui_js
+
+
 def test_app_boot_checks_auth_state_before_protected_mount() -> None:
     app_js = (REPO_ROOT / "core" / "ui" / "app.js").read_text(encoding="utf-8")
 

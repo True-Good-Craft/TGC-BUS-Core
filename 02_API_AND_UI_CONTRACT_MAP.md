@@ -18,6 +18,7 @@ This map exists to keep authority boundaries explicit. Canonical, supported, sec
 - Canonical: `/app/users`, `/app/roles`, `/app/sessions`, and `/app/audit` expose claimed-mode user, role, session, and audit management. The `#/security` UI consumes these routes when permitted; backend route-local permissions remain authoritative and no default users are created.
 - Drifted: `/app/logs` is the UI event-feed endpoint, while `/logs` is the text runtime log tail; similar names, different contracts.
 - Guard posture: Covered protected route families now declare route-local token and permission dependencies. Sensitive mutations retain existing write gates and owner-commit gates where already present; see `04_SECURITY_TRUST_AND_OPERATIONS.md`.
+- Password posture: owner setup, user creation, and password reset enforce the central modest minimum password policy from `core/auth/passwords.py` and return controlled `400` errors for blank or too-short passwords.
 
 Phase 5 permission coverage also includes user, role, session, and auth-audit management routes. Phase 6 adds frontend claim/login/logout and Security management screens on top of those routes without changing backend auth authority. Reader, organizer, provider catalog/index/drive scan routes remain intentionally deferred because this phase does not introduce a separate provider/catalog permission vocabulary.
 
@@ -269,3 +270,4 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 - Refresh on: mounted route changes, wrapper removals, screen rewrites, payload-key changes, or guard-model changes that affect contract assumptions.
 - Fastest invalidators: deleting legacy wrappers, implementing real home transactions, adding/removing `/app/*` routes, or replacing the SPA router.
 - Check alongside: `04_SECURITY_TRUST_AND_OPERATIONS.md` for guard/enforcement truth and `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for update-check contract details.
+- UI contract audit guard scope: `scripts/ui_contract_audit.ps1` checks forbidden quoted legacy endpoint strings, forbidden legacy endpoint tokens, finance legacy fields, and canonical endpoint containment for stock/purchase/ledger/manufacture calls. It normalizes Windows path separators and narrowly allowlists the known imperial-unit compatibility wrapper in `core/ui/js/token.js` plus the recipe unit label in `core/ui/js/cards/recipes.js`; new matches outside those allowlists remain failures.

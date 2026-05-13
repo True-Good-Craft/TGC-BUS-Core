@@ -14,6 +14,7 @@ SCRYPT_R = 8
 SCRYPT_P = 1
 SCRYPT_DKLEN = 32
 SALT_BYTES = 16
+MIN_PASSWORD_LENGTH = 8
 
 
 def _b64encode(raw: bytes) -> str:
@@ -25,8 +26,7 @@ def _b64decode(value: str) -> bytes:
 
 
 def hash_password(password: str) -> str:
-    if not isinstance(password, str) or not password:
-        raise ValueError("password_required")
+    validate_password_policy(password)
     salt = secrets.token_bytes(SALT_BYTES)
     digest = hashlib.scrypt(
         password.encode("utf-8"),
@@ -40,6 +40,13 @@ def hash_password(password: str) -> str:
         f"{SCRYPT_SCHEME}$n={SCRYPT_N}$r={SCRYPT_R}$p={SCRYPT_P}"
         f"$salt={_b64encode(salt)}$hash={_b64encode(digest)}"
     )
+
+
+def validate_password_policy(password: str) -> None:
+    if not isinstance(password, str) or not password.strip():
+        raise ValueError("password_required")
+    if len(password.strip()) < MIN_PASSWORD_LENGTH:
+        raise ValueError("password_too_short")
 
 
 def password_scheme(encoded_hash: str) -> str:
@@ -92,7 +99,9 @@ def verify_password(password: str, encoded_hash: str) -> bool:
 
 __all__ = [
     "SCRYPT_SCHEME",
+    "MIN_PASSWORD_LENGTH",
     "hash_password",
     "password_scheme",
+    "validate_password_policy",
     "verify_password",
 ]

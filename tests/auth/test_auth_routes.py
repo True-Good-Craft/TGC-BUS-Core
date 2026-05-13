@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from core.api.routes.auth import AUTH_SESSION_COOKIE, RECOVERY_CODE_COUNT
+from core.auth.passwords import MIN_PASSWORD_LENGTH
 from core.auth.permissions import OWNER_ROLE_KEY
 from core.auth.sessions import hash_session_token
 
@@ -112,6 +113,10 @@ def test_setup_owner_succeeds_and_creates_owner_user_role_session_and_recovery_c
     assert len(payload["recovery_codes"]) == RECOVERY_CODE_COUNT
     assert len(set(payload["recovery_codes"])) == RECOVERY_CODE_COUNT
     assert response.cookies.get(AUTH_SESSION_COOKIE)
+    set_cookie = response.headers.get("set-cookie", "").lower()
+    assert f"{AUTH_SESSION_COOKIE}=" in set_cookie
+    assert "httponly" in set_cookie
+    assert "samesite=lax" in set_cookie
 
     with engine_module.SessionLocal() as db:
         users = db.execute(select(models.AuthUser)).scalars().all()
@@ -139,6 +144,19 @@ def test_setup_owner_succeeds_and_creates_owner_user_role_session_and_recovery_c
         sessions = db.execute(select(models.AuthSession)).scalars().all()
         assert len(sessions) == 1
         assert sessions[0].session_hash == hash_session_token(response.cookies[AUTH_SESSION_COOKIE])
+        assert str(response.cookies[AUTH_SESSION_COOKIE]) not in str(sessions[0].session_hash)
+
+
+def test_setup_owner_rejects_short_password(bus_client):
+    client = bus_client["client"]
+
+    response = client.post(
+        "/auth/setup-owner",
+        json={"username": "owner", "password": "x" * (MIN_PASSWORD_LENGTH - 1)},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["error"] == "password_too_short"
 
 
 def test_setup_owner_second_call_fails(bus_client):
@@ -197,6 +215,9 @@ def test_login_succeeds_with_correct_credentials_and_creates_db_session(bus_clie
     assert response.json()["ok"] is True
     assert response.json()["user"]["username"] == "owner"
     assert response.cookies.get(AUTH_SESSION_COOKIE)
+    set_cookie = response.headers.get("set-cookie", "").lower()
+    assert "httponly" in set_cookie
+    assert "samesite=lax" in set_cookie
     with engine_module.SessionLocal() as db:
         sessions = db.execute(select(models.AuthSession)).scalars().all()
         assert len(sessions) == 2
@@ -245,6 +266,9 @@ def test_logout_revokes_session(bus_client):
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+    set_cookie = response.headers.get("set-cookie", "").lower()
+    assert f"{AUTH_SESSION_COOKIE}=" in set_cookie
+    assert "max-age=0" in set_cookie or "expires=" in set_cookie
     with engine_module.SessionLocal() as db:
         session = db.scalar(select(models.AuthSession).where(models.AuthSession.session_hash == hash_session_token(auth_token)))
         assert session is not None
