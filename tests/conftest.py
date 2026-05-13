@@ -32,6 +32,7 @@ BUS_MODULES_TO_RESET = [
     "core.appdb.models_recipes",
     "core.appdb.session",
     "core.auth.audit",
+    "core.auth.dependencies",
     "core.auth.passwords",
     "core.auth.permissions",
     "core.auth.sessions",

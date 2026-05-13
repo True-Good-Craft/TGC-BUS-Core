@@ -17,6 +17,8 @@ from core.appdb.engine import get_session
 from core.appdb.models import CashEvent, Item, ItemMovement
 from core.appdb.models_recipes import ManufacturingRun
 from core.api.utils.quantity_guard import reject_legacy_qty_keys
+from core.auth.dependencies import require_permission
+from core.auth.permissions import PERMISSION_FINANCE_READ, PERMISSION_FINANCE_WRITE
 from core.config.writes import require_writes
 from core.metrics.metric import default_unit_for, uom_multiplier
 from core.metrics.metric import normalize_quantity_to_base_int
@@ -40,6 +42,7 @@ def finance_export_csv(
     to: Optional[str] = Query(None, alias="to"),
     profile: str = Query("generic"),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_FINANCE_READ)),
     _token: None = Depends(require_token_ctx),
 ):
     if profile not in SUPPORTED_EXPORT_PROFILES:
@@ -161,6 +164,7 @@ class ExpenseIn(BaseModel):
 def finance_expense(
     body: ExpenseIn,
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_FINANCE_WRITE)),
     _token: None = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ):
@@ -199,6 +203,7 @@ class RefundIn(BaseModel):
 def finance_refund(
     raw: dict = Body(...),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_FINANCE_WRITE)),
     _token: None = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ):
@@ -285,6 +290,7 @@ def finance_profit(
     from_: str = Query(..., alias="from"),
     to: str = Query(..., alias="to"),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_FINANCE_READ)),
     _token: None = Depends(require_token_ctx),
 ):
     # Params are YYYY-MM-DD. Bounds: [from 00:00:00, to_next_day 00:00:00) (exclusive upper).
@@ -350,6 +356,7 @@ def finance_summary(
     from_: str = Query(..., alias="from"),
     to: str = Query(..., alias="to"),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_FINANCE_READ)),
     _token: None = Depends(require_token_ctx),
 ):
     window, error = _parse_window_read(from_, to)
@@ -456,6 +463,7 @@ def finance_transactions(
     to: str = Query(..., alias="to"),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_FINANCE_READ)),
     _token: None = Depends(require_token_ctx),
 ):
     window, error = _parse_window_read(from_, to)

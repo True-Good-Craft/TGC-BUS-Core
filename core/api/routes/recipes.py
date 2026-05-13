@@ -14,6 +14,8 @@ from core.api.utils.quantity_guard import reject_legacy_qty_keys
 from core.appdb.engine import get_session
 from core.appdb.models import Item
 from core.appdb.models_recipes import ManufacturingRun, Recipe, RecipeItem
+from core.auth.dependencies import require_permission
+from core.auth.permissions import PERMISSION_RECIPES_READ, PERMISSION_RECIPES_WRITE
 from core.config.writes import require_writes
 from core.metrics.metric import default_unit_for, from_base, normalize_quantity_to_base_int
 from core.policy.guard import require_owner_commit
@@ -141,6 +143,7 @@ def _serialize_recipe_detail(db: Session, recipe: Recipe) -> dict:
 @router.get("")
 async def list_recipes(
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_RECIPES_READ)),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
@@ -169,6 +172,7 @@ async def list_recipes(
 async def get_recipe(
     rid: int,
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_RECIPES_READ)),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
@@ -184,6 +188,7 @@ async def create_recipe(
     raw: dict = Body(...),
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _permission=Depends(require_permission(PERMISSION_RECIPES_WRITE)),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
@@ -251,6 +256,7 @@ async def update_recipe(
     raw: dict = Body(...),
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _permission=Depends(require_permission(PERMISSION_RECIPES_WRITE)),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
@@ -326,6 +332,7 @@ async def delete_recipe(
     req: Request,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _permission=Depends(require_permission(PERMISSION_RECIPES_WRITE)),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):

@@ -6,6 +6,8 @@ from typing import Dict, Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import ValidationError
 
+from core.auth.dependencies import require_permission
+from core.auth.permissions import PERMISSION_SETTINGS_MANAGE, PERMISSION_SETTINGS_READ
 from core.config.writes import require_writes
 from core.config.manager import load_config, save_config
 from core.config.update_policy import UpdatePolicyError
@@ -15,7 +17,10 @@ router = APIRouter()
 
 
 @router.get("/config")
-def get_config(_token: None = Depends(require_token_ctx)) -> Dict[str, Any]:
+def get_config(
+    _permission=Depends(require_permission(PERMISSION_SETTINGS_READ)),
+    _token: None = Depends(require_token_ctx),
+) -> Dict[str, Any]:
     return load_config().model_dump()
 
 
@@ -23,6 +28,7 @@ def get_config(_token: None = Depends(require_token_ctx)) -> Dict[str, Any]:
 def update_config(
     request: Request,
     payload: Dict[str, Any] = Body(...),
+    _permission=Depends(require_permission(PERMISSION_SETTINGS_MANAGE)),
     _token: None = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:

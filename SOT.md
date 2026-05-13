@@ -90,11 +90,11 @@
 
 ### User Accounts / Claimed Owner Security Model — Authorization Delta
 
-* This delta authorizes and records the local auth/user account model. Phase 1 added the DB schema and low-level helper skeleton. Phase 2 added the first DB-backed auth route surface (`/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`) with owner setup, login/logout, recovery-code generation, session rows, and auth audit events. Phase 3 cuts over the global HTTP auth gate: unclaimed mode preserves legacy local `bus_session` behavior, while claimed mode requires a valid DB-backed `bus_auth_session` for protected routes and rejects legacy `bus_session` as `/app/*` authority. Route-local permissions, user-management routes, and UI remain deferred.
+* This delta authorizes and records the local auth/user account model. Phase 1 added the DB schema and low-level helper skeleton. Phase 2 added the first DB-backed auth route surface (`/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`) with owner setup, login/logout, recovery-code generation, session rows, and auth audit events. Phase 3 cut over the global HTTP auth gate: unclaimed mode preserves legacy local `bus_session` behavior, while claimed mode requires a valid DB-backed `bus_auth_session` for protected routes and rejects legacy `bus_session` as `/app/*` authority. Phase 4 adds route-local claimed-mode permission dependencies for covered protected API route families. User-management routes and UI remain deferred.
 
 * BUS Core has two intended auth modes. **Unclaimed mode** exists when the canonical auth user table has zero users. In unclaimed mode, BUS Core remains usable in the current local-first/simple mode; first-run or account setup is not mandatory; the UI may show a non-blocking "Secure this BUS Core" option; and no default usable admin account exists.
 
-* **Claimed mode** begins when one or more real users exist in the canonical auth user table. In claimed mode, login is required for protected routes, API requests must resolve to a real current user through `bus_auth_session`, sensitive auth events are audited, and the owner account has iron-grip authority. Explicit route-local permission checks are still deferred and must be added before permissions become granular authorization authority.
+* **Claimed mode** begins when one or more real users exist in the canonical auth user table. In claimed mode, login is required for protected routes, API requests must resolve to a real current user through `bus_auth_session`, covered protected API routes enforce route-local permissions, sensitive auth events are audited, and the owner account has iron-grip authority.
 
 * No default usable admin or owner account may be created. Forbidden states include `admin` / `admin`, blank username, blank password, or any hidden pre-created owner account that can log in.
 
@@ -106,7 +106,7 @@
 
 * Once claimed, BUS Core must always retain at least one enabled owner. The system must prevent disabling the last enabled owner, deleting the last enabled owner, or removing owner role/authority from the last enabled owner.
 
-* Backend permission enforcement is security. UI hiding/showing controls is convenience only. Future protected routes must declare auditable route-local permission dependencies such as `require_permission("inventory.read")` or `require_permission("inventory.write")`; global middleware may remain a broad safety net but must not be the only visible authority for protected app routes.
+* Backend permission enforcement is security. UI hiding/showing controls is convenience only. Covered protected routes declare auditable route-local permission dependencies such as `require_permission("inventory.read")` or `require_permission("inventory.write")`; global middleware remains a broad safety net but is no longer the only visible authority for covered protected app routes. Unclaimed mode compatibility must continue to no-op these permission checks safely.
 
 * Owner setup generates one-time recovery codes. Recovery codes must be shown once, only hashes may be stored, used recovery codes must be single-use, and recovery-code use must be audited when a recovery-use route exists.
 

@@ -12,6 +12,8 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.9` to `1.1.1.10` for the Phase 4 route-local claimed-mode permission dependency pass without changing public `VERSION`.
+- Added claimed-mode route-local permission dependencies for covered protected route families, including inventory/items, ledger/stock, recipes, manufacturing, vendors/contacts, finance, logs, config/update/system, backup/import/export, and practical sensitive utility routes while preserving unclaimed-mode legacy local behavior and existing write/owner gates.
 - Bumped `INTERNAL_VERSION` from `1.1.1.8` to `1.1.1.9` for the Phase 3 claimed-mode global auth gate cutover without changing public `VERSION`.
 - Cut over the global HTTP auth gate so unclaimed mode preserves legacy local `bus_session` behavior, claimed mode requires valid DB-backed `bus_auth_session` for protected routes, `/session/token` returns `login_required` in claimed mode, and bootstrap auth routes stay reachable without adding UI, user-management routes, route-local permissions, default users, or business-logic changes.
 - Bumped `INTERNAL_VERSION` from `1.1.1.7` to `1.1.1.8` for the Phase 2 auth account-lifecycle route surface without changing public `VERSION`.

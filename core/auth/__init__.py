@@ -19,12 +19,13 @@
 
 """Auth helper package.
 
-Existing OAuth service-account helpers live here. DB-backed user-account helpers added for
-future claimed-owner auth are intentionally not wired into runtime session behavior yet.
+Existing OAuth service-account helpers live here. DB-backed user-account helpers provide
+claimed/unclaimed auth state, sessions, and route-local permission dependencies.
 """
 
 __all__ = [
     "audit",
+    "dependencies",
     "google_sa",
     "passwords",
     "permissions",

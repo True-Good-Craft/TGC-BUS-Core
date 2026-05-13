@@ -7,6 +7,8 @@ from sqlalchemy import asc, func
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
+from core.auth.dependencies import require_permission
+from core.auth.permissions import PERMISSION_INVENTORY_READ, PERMISSION_INVENTORY_WRITE
 from core.config.writes import require_writes
 from core.policy.guard import require_owner_commit
 from core.appdb.models import CashEvent, Item, ItemBatch, ItemMovement, Vendor
@@ -180,6 +182,7 @@ def _row(it: Item, vendor_name: Optional[str] = None, on_hand: Optional[int] = N
 def list_items(
     include_archived: bool = Query(False),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_READ)),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ) -> List[Dict[str, Any]]:
@@ -204,6 +207,7 @@ def list_items(
 def get_item(
     item_id: int,
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_READ)),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
@@ -261,6 +265,7 @@ def create_item(
     payload: Dict[str, Any] = Body(...),
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_WRITE)),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
@@ -348,6 +353,7 @@ def update_item(
     payload: Dict[str, Any] = Body(...),
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_WRITE)),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
@@ -408,6 +414,7 @@ def delete_item(
     item_id: int,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_WRITE)),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:

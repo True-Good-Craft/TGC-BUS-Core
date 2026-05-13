@@ -111,6 +111,16 @@ from core.api.routes import config as config_routes
 from core.api.routes import update as update_routes
 from core.api.routes import system_state as system_state_routes
 from core.api.routes import auth as auth_routes
+from core.auth.dependencies import require_permission
+from core.auth.permissions import (
+    PERMISSION_BACKUP_EXPORT,
+    PERMISSION_BACKUP_RESTORE,
+    PERMISSION_INVENTORY_WRITE,
+    PERMISSION_LOGS_READ,
+    PERMISSION_SETTINGS_MANAGE,
+    PERMISSION_SETTINGS_READ,
+    PERMISSION_SYSTEM_ADMIN,
+)
 from core.auth.store import count_auth_users
 
 from core.api.errors import error_envelope, normalize_http_exc, normalize_validation_err
@@ -1130,7 +1140,11 @@ def _safe_plan_dump(plan: Plan) -> Dict[str, Any]:
 
 
 @protected.post("/app/db/export")
-def app_export(req: ExportReq, _writes: None = Depends(require_writes)):
+def app_export(
+    req: ExportReq,
+    _permission=Depends(require_permission(PERMISSION_BACKUP_EXPORT)),
+    _writes: None = Depends(require_writes),
+):
     if not req.password:
         raise HTTPException(status_code=400, detail={"error": "password_required"})
     res = export_db(req.password)
@@ -1143,13 +1157,18 @@ def app_export(req: ExportReq, _writes: None = Depends(require_writes)):
 
 
 @protected.get("/app/db/exports")
-def app_exports(_writes: None = Depends(require_writes)):
+def app_exports(
+    _permission=Depends(require_permission(PERMISSION_BACKUP_EXPORT)),
+    _writes: None = Depends(require_writes),
+):
     return {"ok": True, "exports": _list_exports()}
 
 
 @protected.post("/app/db/import/upload")
 async def app_import_upload(
-    file: UploadFile = File(...), _w: None = Depends(require_writes)
+    file: UploadFile = File(...),
+    _permission=Depends(require_permission(PERMISSION_BACKUP_RESTORE)),
+    _w: None = Depends(require_writes),
 ):
     data = await file.read()
     res = stage_uploaded_backup(file.filename, data)
@@ -1159,7 +1178,11 @@ async def app_import_upload(
 
 
 @protected.post("/app/db/import/preview")
-def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
+def app_import_preview(
+    req: ImportReq,
+    _permission=Depends(require_permission(PERMISSION_BACKUP_RESTORE)),
+    _w: None = Depends(require_writes),
+):
     res = _import_preview(req.path, req.password)
     if not res.get("ok"):
         err = res.get("error", "preview_failed")
@@ -1170,7 +1193,12 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
 
 
 @protected.post("/app/db/import/commit")
-def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(require_writes)):
+def app_import_commit(
+    req: ImportReq,
+    request: Request,
+    _permission=Depends(require_permission(PERMISSION_BACKUP_RESTORE)),
+    _w: None = Depends(require_writes),
+):
     app = request.app
     dev = os.environ.get("BUS_DEV") in {"1", "true", "True"}
     _log = lambda s: log(f"[restore] commit: {s}")
@@ -1287,6 +1315,7 @@ def _db_conn() -> sqlite3.Connection:
 def inventory_run(
     body: InventoryRun,
     token: str = Depends(require_token),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_WRITE)),
     _writes: None = Depends(require_writes),
 ):
     inputs = {int(k): float(v) for k, v in (body.inputs or {}).items()}
@@ -1820,7 +1849,10 @@ def _mask_secret(value: Optional[str]) -> str | None:
 
 
 @protected.get("/settings/google", response_model=GoogleSettingsOut)
-def settings_google_get(response: Response) -> GoogleSettingsOut:
+def settings_google_get(
+    response: Response,
+    _permission=Depends(require_permission(PERMISSION_SETTINGS_READ)),
+) -> GoogleSettingsOut:
     response.headers["Cache-Control"] = "no-store"
 
     client_id = Secrets.get("google_drive", "client_id") or ""
@@ -1843,6 +1875,7 @@ def settings_google_get(response: Response) -> GoogleSettingsOut:
 def settings_google_post(
     payload: GoogleSettingsIn,
     response: Response,
+    _permission=Depends(require_permission(PERMISSION_SETTINGS_MANAGE)),
     _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
@@ -1866,7 +1899,9 @@ def settings_google_post(
 
 @protected.delete("/settings/google")
 def settings_google_delete(
-    response: Response, _writes: None = Depends(require_writes)
+    response: Response,
+    _permission=Depends(require_permission(PERMISSION_SETTINGS_MANAGE)),
+    _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
 
@@ -1883,13 +1918,16 @@ def settings_google_delete(
 
 
 @protected.get("/settings/reader", response_model=None)
-def get_reader_settings() -> Dict[str, Any]:
+def get_reader_settings(
+    _permission=Depends(require_permission(PERMISSION_SETTINGS_READ)),
+) -> Dict[str, Any]:
     return _reader_load()
 
 
 @protected.post("/settings/reader", response_model=None)
 def post_reader_settings(
     payload: Dict[str, Any] = Body(default={}),
+    _permission=Depends(require_permission(PERMISSION_SETTINGS_MANAGE)),
     _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:  # type: ignore[assignment]
     payload = payload if isinstance(payload, dict) else {}
@@ -1991,6 +2029,7 @@ def drive_available_drives() -> Dict[str, Any]:
 @oauth.post("/oauth/google/start", response_model=None)
 def oauth_google_start(
     body: GoogleStartIn | None = Body(default=None),
+    _permission=Depends(require_permission(PERMISSION_SETTINGS_MANAGE)),
     _ctx=Depends(require_token_ctx),
 ):
     _prune_oauth_states()
@@ -2084,7 +2123,10 @@ def oauth_google_callback(request: Request):
 
 
 @oauth.post("/oauth/google/revoke", response_model=None)
-def oauth_google_revoke(_ctx=Depends(require_token_ctx)):
+def oauth_google_revoke(
+    _permission=Depends(require_permission(PERMISSION_SETTINGS_MANAGE)),
+    _ctx=Depends(require_token_ctx),
+):
     token = Secrets.get("google_drive", "oauth_refresh")
     if token:
         try:
@@ -2110,7 +2152,10 @@ def oauth_google_revoke(_ctx=Depends(require_token_ctx)):
 
 
 @oauth.get("/oauth/google/status", response_model=None)
-def oauth_google_status(_ctx=Depends(require_token_ctx)):
+def oauth_google_status(
+    _permission=Depends(require_permission(PERMISSION_SETTINGS_READ)),
+    _ctx=Depends(require_token_ctx),
+):
     token = Secrets.get("google_drive", "oauth_refresh")
     connected = bool(token)
     response = JSONResponse({"connected": connected})
@@ -2119,13 +2164,15 @@ def oauth_google_status(_ctx=Depends(require_token_ctx)):
 
 
 @protected.get("/policy")
-def get_policy() -> Dict[str, Any]:
+def get_policy(_permission=Depends(require_permission(PERMISSION_SETTINGS_READ))) -> Dict[str, Any]:
     return load_policy().model_dump()
 
 
 @protected.post("/policy")
 def set_policy(
-    policy: Policy = Body(...), _writes: None = Depends(require_writes)
+    policy: Policy = Body(...),
+    _permission=Depends(require_permission(PERMISSION_SETTINGS_MANAGE)),
+    _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     save_policy(policy)
     return policy.model_dump()
@@ -2133,7 +2180,9 @@ def set_policy(
 
 @protected.post("/plans")
 def create_plan(
-    plan: Plan = Body(...), _writes: None = Depends(require_writes)
+    plan: Plan = Body(...),
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
+    _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     normalized = plan.model_copy(update={"status": PlanStatus.DRAFT, "stats": {}})
     save_plan(normalized)
@@ -2141,12 +2190,15 @@ def create_plan(
 
 
 @protected.get("/plans")
-def plans_index() -> List[Dict[str, Any]]:
+def plans_index(_permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN))) -> List[Dict[str, Any]]:
     return list_plans()
 
 
 @protected.get("/plans/{plan_id}")
-def plans_get(plan_id: str) -> Dict[str, Any]:
+def plans_get(
+    plan_id: str,
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
+) -> Dict[str, Any]:
     plan = get_plan(plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="plan_not_found")
@@ -2154,7 +2206,11 @@ def plans_get(plan_id: str) -> Dict[str, Any]:
 
 
 @protected.post("/plans/{plan_id}/preview")
-def plans_preview(plan_id: str, _writes: None = Depends(require_writes)) -> Dict[str, Any]:
+def plans_preview(
+    plan_id: str,
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
+    _writes: None = Depends(require_writes),
+) -> Dict[str, Any]:
     plan = get_plan(plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="plan_not_found")
@@ -2168,6 +2224,7 @@ def plans_preview(plan_id: str, _writes: None = Depends(require_writes)) -> Dict
 def plans_commit(
     plan_id: str,
     request: Request,
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
     _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     plan = get_plan(plan_id)
@@ -2185,7 +2242,11 @@ def plans_commit(
 
 
 @protected.post("/plans/{plan_id}/export")
-def plans_export(plan_id: str, _writes: None = Depends(require_writes)) -> Response:
+def plans_export(
+    plan_id: str,
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
+    _writes: None = Depends(require_writes),
+) -> Response:
     plan = get_plan(plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="plan_not_found")
@@ -2193,7 +2254,7 @@ def plans_export(plan_id: str, _writes: None = Depends(require_writes)) -> Respo
 
 
 @protected.get("/plugins")
-def plugins() -> Dict[str, Any]:
+def plugins(_permission=Depends(require_permission(PERMISSION_SETTINGS_READ))) -> Dict[str, Any]:
     core = _require_core()
     out = core.plugin_list()
     return _with_run_id({"plugins": out})
@@ -2211,6 +2272,7 @@ def _get_plugin_by_id(service_id: str):
 def plugin_read(
     service_id: str,
     body: Dict[str, Any] = Body(default={}),
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
     _writes: None = Depends(require_writes),
 ):  # type: ignore[assignment]
     plugin = _get_plugin_by_id(service_id)
@@ -2238,6 +2300,7 @@ def plugin_read(
 def plugin_enable(
     pid: str,
     body: Dict[str, Any] = Body(default={}),
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
     _writes: None = Depends(require_writes),
 ):  # type: ignore[assignment]
     try:
@@ -2265,7 +2328,9 @@ def plugin_enable(
 
 @protected.post("/probe")
 def probe(
-    body: Any = Body(default=None), _writes: None = Depends(require_writes)
+    body: Any = Body(default=None),
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
+    _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     core = _require_core()
     services: List[str]
@@ -2307,7 +2372,7 @@ def probe(
 
 
 @protected.get("/capabilities")
-def get_capabilities() -> Dict[str, Any]:
+def get_capabilities(_permission=Depends(require_permission(PERMISSION_SETTINGS_READ))) -> Dict[str, Any]:
     manifest = registry.emit_manifest_async()
     return _with_run_id(manifest)
 
@@ -2315,6 +2380,7 @@ def get_capabilities() -> Dict[str, Any]:
 @protected.post("/execTransform")
 def exec_transform(
     body: Dict[str, Any] = Body(...),
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
     _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     core = _require_core()
@@ -2349,6 +2415,7 @@ def exec_transform(
 @protected.post("/policy.simulate")
 def policy_simulate(
     body: Dict[str, Any] = Body(...),
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
     _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     core = _require_core()
@@ -2365,6 +2432,7 @@ def policy_simulate(
 @protected.post("/nodes.manifest.sync")
 def manifest_sync(
     body: Dict[str, Any] = Body(...),
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
     _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     manifest = body.get("manifest")
@@ -2376,7 +2444,7 @@ def manifest_sync(
 
 
 @protected.get("/transparency.report")
-def transparency_report() -> Dict[str, Any]:
+def transparency_report(_permission=Depends(require_permission(PERMISSION_SETTINGS_READ))) -> Dict[str, Any]:
     core = _require_core()
     report = core.transparency_report()
     report["manifest_path"] = str(MANIFEST_PATH)
@@ -2384,7 +2452,7 @@ def transparency_report() -> Dict[str, Any]:
 
 
 @protected.get("/logs")
-def logs() -> Dict[str, Any]:
+def logs(_permission=Depends(require_permission(PERMISSION_LOGS_READ))) -> Dict[str, Any]:
     path = LOG_FILE or (LOGS / "core.log")
     if not path.exists():
         return _with_run_id({"logs": []})
@@ -2393,14 +2461,17 @@ def logs() -> Dict[str, Any]:
 
 
 @protected.get("/local/available_drives", response_model=None)
-def local_available_drives() -> Dict[str, Any]:
+def local_available_drives(_permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN))) -> Dict[str, Any]:
     if os.name == "nt":
         return {"drives": _list_windows_drives()}
     return {"drives": _list_posix_mounts()}
 
 
 @protected.get("/local/validate_path", response_model=None)
-def local_validate_path(path: str = Query(..., min_length=1)) -> Dict[str, Any]:
+def local_validate_path(
+    path: str = Query(..., min_length=1),
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
+) -> Dict[str, Any]:
     try:
         resolved_path = _resolve_allowed_local_path(path)
     except HTTPException:
@@ -2414,7 +2485,9 @@ def local_validate_path(path: str = Query(..., min_length=1)) -> Dict[str, Any]:
 
 @protected.post("/open/local", response_model=None)
 def open_local(
-    payload: Dict[str, Any], _writes: None = Depends(require_writes)
+    payload: Dict[str, Any],
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
+    _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     """Open a local file or folder in the system file explorer."""
 
@@ -2440,7 +2513,10 @@ def open_local(
 
 
 @protected.post("/server/restart", response_model=None)
-def server_restart(_writes: None = Depends(require_writes)) -> Dict[str, Any]:
+def server_restart(
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
+    _writes: None = Depends(require_writes),
+) -> Dict[str, Any]:
     """Exit the running process so it can be restarted manually."""
 
     try:
