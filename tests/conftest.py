@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 BUS_MODULES_TO_RESET = [
     "core.api.http",
+    "core.api.routes.auth",
     "core.api.routes.finance_api",
     "core.api.routes.items",
     "core.api.routes.ledger_api",

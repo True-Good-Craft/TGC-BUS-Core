@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.1.1 **Updated:** 2026-05-12 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.1.1 **Updated:** 2026-05-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -90,7 +90,7 @@
 
 ### User Accounts / Claimed Owner Security Model — Authorization Delta
 
-* This delta authorizes the future auth/user account model. Phase 1 adds the DB schema and low-level helper skeleton only; it does not state that login routes, runtime permission dependencies, recovery-code issuance, UI account setup, or claimed-mode identity sessions are active in the current runtime.
+* This delta authorizes the future auth/user account model. Phase 1 added the DB schema and low-level helper skeleton. Phase 2 adds the first DB-backed auth route surface (`/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`) with owner setup, login/logout, recovery-code generation, session rows, and auth audit events. It does not make claimed-mode auth the global runtime authority yet: `session_guard`, `/session/token`, existing `/app/*` permissions, and UI behavior remain unchanged.
 
 * BUS Core has two intended auth modes. **Unclaimed mode** exists when the canonical auth user table has zero users. In unclaimed mode, BUS Core remains usable in the current local-first/simple mode; first-run or account setup is not mandatory; the UI may show a non-blocking "Secure this BUS Core" option; and no default usable admin account exists.
 
@@ -98,7 +98,7 @@
 
 * No default usable admin or owner account may be created. Forbidden states include `admin` / `admin`, blank username, blank password, or any hidden pre-created owner account that can log in.
 
-* Future `POST /auth/setup-owner` is one-way and may succeed only while the auth user table has zero users. Once any user exists, owner setup must reject permanently unless the DB is deliberately reset or restored.
+* `POST /auth/setup-owner` is one-way and may succeed only while the auth user table has zero users. Once any user exists, owner setup must reject permanently unless the DB is deliberately reset or restored.
 
 * `GET /session/token` is current runtime-token compatibility, not future identity authority. In unclaimed mode it may continue supporting current local operation. In claimed mode it must not grant app access, mint identity, or bypass login.
 
@@ -108,7 +108,7 @@
 
 * Backend permission enforcement is security. UI hiding/showing controls is convenience only. Future protected routes must declare auditable route-local permission dependencies such as `require_permission("inventory.read")` or `require_permission("inventory.write")`; global middleware may remain a broad safety net but must not be the only visible authority for protected app routes.
 
-* Owner setup should eventually generate one-time recovery codes. Recovery codes must be shown once, only hashes may be stored, used recovery codes must be single-use, and recovery-code use must be audited.
+* Owner setup generates one-time recovery codes. Recovery codes must be shown once, only hashes may be stored, used recovery codes must be single-use, and recovery-code use must be audited when a recovery-use route exists.
 
 * Sensitive claimed-mode actions that should eventually write audit events include owner setup, login success/failure, logout, user created/disabled/enabled, password reset, roles/permissions changed, backup export/restore, config changes, finance writes, inventory writes, manufacturing runs, and system restart/start-fresh.
 

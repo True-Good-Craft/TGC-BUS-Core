@@ -12,6 +12,8 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.7` to `1.1.1.8` for the Phase 2 auth account-lifecycle route surface without changing public `VERSION`.
+- Added DB-backed `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, and `/auth/me` routes with owner setup, login/logout session creation/revocation, one-time recovery-code generation/storage-by-hash, and auth audit events while leaving `session_guard`, `/session/token`, existing `/app/*` permissions, UI, and default-user creation unchanged.
 - Bumped `INTERNAL_VERSION` from `1.1.1.6` to `1.1.1.7` for the Phase 1 DB-backed auth schema and low-level service skeleton without changing public `VERSION`.
 - Added auth/user-account ORM tables and pure helper modules for future claimed/unclaimed auth while leaving `/session/token`, session middleware, route permissions, UI, and default-user creation unchanged.
 - Bumped `INTERNAL_VERSION` from `1.1.1.5` to `1.1.1.6` for the Phase 0 auth/user accounts governance authorization pass without changing public `VERSION`.
