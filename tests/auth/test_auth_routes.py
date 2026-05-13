@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -17,6 +19,28 @@ def _legacy_client(bus_client) -> TestClient:
     client = TestClient(bus_client["api_http"].APP)
     client.headers.update({"Cookie": f"bus_session={_legacy_session_token(bus_client)}"})
     return client
+
+
+def _anonymous_client(bus_client) -> TestClient:
+    return TestClient(bus_client["api_http"].APP)
+
+
+def _auth_only_client(bus_client, auth_token: str) -> TestClient:
+    client = TestClient(bus_client["api_http"].APP)
+    client.headers.update({"Cookie": f"{AUTH_SESSION_COOKIE}={auth_token}"})
+    return client
+
+
+def _auth_token_from_client(client: TestClient) -> str:
+    auth_token = client.cookies.get(AUTH_SESSION_COOKIE)
+    if auth_token:
+        return str(auth_token)
+    cookie_header = client.headers.get("Cookie", "")
+    for part in cookie_header.split(";"):
+        name, _, value = part.strip().partition("=")
+        if name == AUTH_SESSION_COOKIE and value:
+            return value
+    raise AssertionError("missing auth session cookie")
 
 
 def _setup_owner(client) -> dict:
@@ -41,7 +65,7 @@ def _setup_owner(client) -> dict:
 
 
 def test_auth_state_returns_unclaimed_on_fresh_db(bus_client):
-    client = bus_client["client"]
+    client = _anonymous_client(bus_client)
 
     response = client.get("/auth/state")
 
@@ -53,6 +77,20 @@ def test_auth_state_returns_unclaimed_on_fresh_db(bus_client):
         "login_required": False,
         "current_user": None,
     }
+
+
+def test_unclaimed_mode_preserves_session_token_and_legacy_app_access(bus_client):
+    client = _anonymous_client(bus_client)
+
+    token_response = client.get("/session/token")
+    assert token_response.status_code == 200
+    token = token_response.json()["token"]
+    assert token
+    assert token_response.cookies.get("bus_session") == token
+
+    app_response = client.get("/app/system/state", headers={"Cookie": f"bus_session={token}"})
+    assert app_response.status_code == 200
+    assert "status" in app_response.json()
 
 
 def test_setup_owner_succeeds_and_creates_owner_user_role_session_and_recovery_codes(bus_client):
@@ -114,6 +152,33 @@ def test_setup_owner_second_call_fails(bus_client):
 
     assert second.status_code == 409
     assert second.json()["detail"]["error"] == "owner_setup_unavailable"
+
+
+def test_claimed_bootstrap_auth_routes_are_reachable_without_legacy_cookie(bus_client):
+    _setup_owner(bus_client["client"])
+    client = _anonymous_client(bus_client)
+
+    state_response = client.get("/auth/state")
+    assert state_response.status_code == 200
+    assert state_response.json()["mode"] == "claimed"
+
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "owner", "password": "correct horse battery staple"},
+    )
+    assert login_response.status_code == 200, login_response.text
+    assert login_response.cookies.get(AUTH_SESSION_COOKIE)
+
+    setup_response = client.post(
+        "/auth/setup-owner",
+        json={"username": "second", "password": "another good password"},
+    )
+    assert setup_response.status_code == 409
+    assert setup_response.json()["detail"]["error"] == "owner_setup_unavailable"
+
+    logout_response = client.post("/auth/logout")
+    assert logout_response.status_code == 200
+    assert logout_response.json() == {"ok": True}
 
 
 def test_login_succeeds_with_correct_credentials_and_creates_db_session(bus_client):
@@ -232,7 +297,71 @@ def test_auth_state_returns_claimed_with_and_without_valid_auth_session(bus_clie
     assert payload["current_user"]["username"] == "owner"
 
 
-def test_existing_session_token_behavior_remains_unchanged(bus_client):
+def test_claimed_mode_rejects_legacy_session_and_accepts_auth_session_for_app_routes(bus_client):
+    setup_client = bus_client["client"]
+    _setup_owner(setup_client)
+    auth_token = _auth_token_from_client(setup_client)
+
+    legacy_response = _legacy_client(bus_client).get("/app/system/state")
+    assert legacy_response.status_code == 401
+    assert legacy_response.json() == {"error": "auth_required"}
+
+    auth_response = _auth_only_client(bus_client, auth_token).get("/app/system/state")
+    assert auth_response.status_code == 200
+    assert "status" in auth_response.json()
+
+
+def test_claimed_session_token_does_not_create_legacy_bypass(bus_client):
+    _setup_owner(bus_client["client"])
+    client = _anonymous_client(bus_client)
+
+    token_response = client.get("/session/token")
+    assert token_response.status_code == 401
+    assert token_response.json() == {"error": "login_required"}
+    assert token_response.cookies.get("bus_session") is None
+
+    app_response = client.get("/app/system/state")
+    assert app_response.status_code == 401
+    assert app_response.json() == {"error": "auth_required"}
+
+
+def test_claimed_mode_rejects_revoked_auth_session(bus_client):
+    setup_client = bus_client["client"]
+    models = bus_client["models"]
+    engine_module = bus_client["engine"]
+    _setup_owner(setup_client)
+    auth_token = _auth_token_from_client(setup_client)
+    with engine_module.SessionLocal() as db:
+        session = db.scalar(select(models.AuthSession).where(models.AuthSession.session_hash == hash_session_token(auth_token)))
+        assert session is not None
+        session.revoked_at = datetime.utcnow()
+        db.commit()
+
+    response = _auth_only_client(bus_client, auth_token).get("/app/system/state")
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "auth_required"}
+
+
+def test_claimed_mode_rejects_expired_auth_session(bus_client):
+    setup_client = bus_client["client"]
+    models = bus_client["models"]
+    engine_module = bus_client["engine"]
+    _setup_owner(setup_client)
+    auth_token = _auth_token_from_client(setup_client)
+    with engine_module.SessionLocal() as db:
+        session = db.scalar(select(models.AuthSession).where(models.AuthSession.session_hash == hash_session_token(auth_token)))
+        assert session is not None
+        session.expires_at = datetime.utcnow() - timedelta(minutes=1)
+        db.commit()
+
+    response = _auth_only_client(bus_client, auth_token).get("/app/system/state")
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "auth_required"}
+
+
+def test_unclaimed_session_token_behavior_remains_unchanged(bus_client):
     client = bus_client["client"]
 
     response = client.get("/session/token")

@@ -90,17 +90,17 @@
 
 ### User Accounts / Claimed Owner Security Model — Authorization Delta
 
-* This delta authorizes the future auth/user account model. Phase 1 added the DB schema and low-level helper skeleton. Phase 2 adds the first DB-backed auth route surface (`/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`) with owner setup, login/logout, recovery-code generation, session rows, and auth audit events. It does not make claimed-mode auth the global runtime authority yet: `session_guard`, `/session/token`, existing `/app/*` permissions, and UI behavior remain unchanged.
+* This delta authorizes and records the local auth/user account model. Phase 1 added the DB schema and low-level helper skeleton. Phase 2 added the first DB-backed auth route surface (`/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`) with owner setup, login/logout, recovery-code generation, session rows, and auth audit events. Phase 3 cuts over the global HTTP auth gate: unclaimed mode preserves legacy local `bus_session` behavior, while claimed mode requires a valid DB-backed `bus_auth_session` for protected routes and rejects legacy `bus_session` as `/app/*` authority. Route-local permissions, user-management routes, and UI remain deferred.
 
 * BUS Core has two intended auth modes. **Unclaimed mode** exists when the canonical auth user table has zero users. In unclaimed mode, BUS Core remains usable in the current local-first/simple mode; first-run or account setup is not mandatory; the UI may show a non-blocking "Secure this BUS Core" option; and no default usable admin account exists.
 
-* **Claimed mode** begins when one or more real users exist in the canonical auth user table. In claimed mode, login is required, API requests must resolve to a real current user, protected routes must enforce explicit route-local permissions, sensitive operations must be audited, and the owner account has iron-grip authority.
+* **Claimed mode** begins when one or more real users exist in the canonical auth user table. In claimed mode, login is required for protected routes, API requests must resolve to a real current user through `bus_auth_session`, sensitive auth events are audited, and the owner account has iron-grip authority. Explicit route-local permission checks are still deferred and must be added before permissions become granular authorization authority.
 
 * No default usable admin or owner account may be created. Forbidden states include `admin` / `admin`, blank username, blank password, or any hidden pre-created owner account that can log in.
 
 * `POST /auth/setup-owner` is one-way and may succeed only while the auth user table has zero users. Once any user exists, owner setup must reject permanently unless the DB is deliberately reset or restored.
 
-* `GET /session/token` is current runtime-token compatibility, not future identity authority. In unclaimed mode it may continue supporting current local operation. In claimed mode it must not grant app access, mint identity, or bypass login.
+* `GET /session/token` is runtime-token compatibility for unclaimed mode, not identity authority. In claimed mode it returns `login_required` and must not grant app access, mint identity, refresh usable `bus_session` authority, or bypass login.
 
 * User/account authority must be DB-backed canonical state. UI `localStorage` may store presentation hints only and must never become auth, role, permission, recovery, or session authority.
 

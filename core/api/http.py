@@ -62,6 +62,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.status import HTTP_401_UNAUTHORIZED
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import DB_PATH as DB_FILE, dispose_engine, get_engine, get_session
@@ -110,6 +111,7 @@ from core.api.routes import config as config_routes
 from core.api.routes import update as update_routes
 from core.api.routes import system_state as system_state_routes
 from core.api.routes import auth as auth_routes
+from core.auth.store import count_auth_users
 
 from core.api.errors import error_envelope, normalize_http_exc, normalize_validation_err
 from core.config.paths import (
@@ -401,10 +403,14 @@ PUBLIC_PATHS = {
     "/openapi.json",
     "/docs",
     "/docs/oauth2-redirect",
+    "/auth/state",
+    "/auth/login",
+    "/auth/setup-owner",
+    "/auth/logout",
+    "/auth/me",
 }
 PUBLIC_PREFIXES = (
     "/ui/",
-    "/session/",
     # "/dev/" removed to enforce middleware auth on dev routes
     "/brand/",
     "/favicon.ico",
@@ -576,6 +582,11 @@ def _load_or_create_token() -> str:
 @app.get("/session/token")
 def session_token(request: Request):
     state = get_state(request)
+    with _auth_gate_db() as db:
+        user_count = _auth_user_count_for_gate(db)
+        if user_count > 0:
+            return JSONResponse({"error": "login_required"}, status_code=HTTP_401_UNAUTHORIZED)
+
     tok = state.tokens.current()
     _persist_session_token(tok)
     resp = JSONResponse({"token": tok})
@@ -818,7 +829,26 @@ def _require_token(token: Optional[str]) -> None:
         raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail={"error": "unauthorized"})
 
 
+def _claimed_auth_context(request: Request) -> Dict[str, str] | None:
+    auth_session = getattr(request.state, "auth_session", None)
+    auth_user = getattr(request.state, "auth_user", None)
+    if not isinstance(auth_session, dict) or not isinstance(auth_user, dict):
+        return None
+    session_id = str(auth_session.get("id") or "").strip()
+    user_id = str(auth_user.get("id") or "").strip()
+    if not session_id or not user_id:
+        return None
+    return {
+        "token": f"auth-session:{session_id}",
+        "auth_session_id": session_id,
+        "user_id": user_id,
+    }
+
+
 def require_token_ctx(request: Request) -> Dict[str, str]:
+    claimed_context = _claimed_auth_context(request)
+    if claimed_context is not None:
+        return claimed_context
     token = get_session_token(request)
     _require_token(token)
     assert token is not None
@@ -826,6 +856,9 @@ def require_token_ctx(request: Request) -> Dict[str, str]:
 
 
 def require_token(request: Request) -> str:
+    claimed_context = _claimed_auth_context(request)
+    if claimed_context is not None:
+        return claimed_context["token"]
     token = get_session_token(request)
     _require_token(token)
     assert token is not None
@@ -847,6 +880,60 @@ async def _require_session(req: Request):
     return None
 
 
+def _is_missing_auth_table_error(exc: OperationalError) -> bool:
+    text_error = str(exc).lower()
+    return "no such table" in text_error and "auth_users" in text_error
+
+
+class _AuthGateDb:
+    def __enter__(self) -> Session:
+        self._db_gen = get_session()
+        self._db = next(self._db_gen)
+        return self._db
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        try:
+            self._db.close()
+        finally:
+            self._db_gen.close()
+
+
+def _auth_gate_db() -> _AuthGateDb:
+    return _AuthGateDb()
+
+
+def _auth_user_count_for_gate(db: Session) -> int:
+    try:
+        return count_auth_users(db)
+    except OperationalError as exc:
+        if _is_missing_auth_table_error(exc):
+            return 0
+        raise
+
+
+def _attach_claimed_auth_context(request: Request, auth_session, auth_user) -> None:
+    request.state.auth_mode = "claimed"
+    request.state.auth_session = {
+        "id": int(auth_session.id),
+        "user_id": int(auth_session.user_id),
+        "expires_at": auth_session.expires_at.isoformat() if auth_session.expires_at else None,
+    }
+    request.state.auth_user = {
+        "id": int(auth_user.id),
+        "username": str(auth_user.username),
+        "username_norm": str(auth_user.username_norm),
+    }
+
+
+async def _require_claimed_auth_session(request: Request, db: Session):
+    auth_session, auth_user = auth_routes._current_session(db, request)
+    if auth_session is None or auth_user is None:
+        return JSONResponse({"error": "auth_required"}, status_code=HTTP_401_UNAUTHORIZED)
+    _attach_claimed_auth_context(request, auth_session, auth_user)
+    db.commit()
+    return None
+
+
 @app.middleware("http")
 async def session_guard(request: Request, call_next):
     p = request.url.path
@@ -857,9 +944,19 @@ async def session_guard(request: Request, call_next):
     # Make static UI, session bootstrap, and brand assets public
     if p in PUBLIC_PATHS or any(p.startswith(prefix) for prefix in PUBLIC_PREFIXES):
         return await call_next(request)
-    failure = await _require_session(request)
-    if failure:
-        return failure
+    try:
+        with _auth_gate_db() as db:
+            user_count = _auth_user_count_for_gate(db)
+            if user_count == 0:
+                request.state.auth_mode = "unclaimed"
+                failure = await _require_session(request)
+            else:
+                failure = await _require_claimed_auth_session(request, db)
+            if failure:
+                return failure
+    except SQLAlchemyError:
+        logger.exception("[auth] gate unavailable")
+        return JSONResponse({"error": "auth_unavailable"}, status_code=503)
     return await call_next(request)
 
 

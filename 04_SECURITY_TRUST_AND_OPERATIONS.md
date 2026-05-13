@@ -34,8 +34,8 @@ Core trust is not only about preventing compromise. It is also about preserving 
 
 | Concern | Status | Enforced by | Scope | Notes |
 | --- | --- | --- | --- | --- |
-| Session gate for non-public routes | Canonical | `session_guard` middleware | Broad route surface | Main route-entry auth barrier. |
-| Route-local token checks | Canonical with compatibility wrapper | `core.api.http.require_token_ctx` plus `tgc.security.require_token_ctx` | Sensitive reads/writes in routed modules | `core.api.http` owns validation; `tgc.security.require_token_ctx` is a compatibility wrapper only. |
+| Session gate for non-public routes | Canonical claimed/unclaimed gate | `session_guard` middleware | Broad route surface | Zero users preserves legacy local `bus_session`; one or more users requires valid DB-backed `bus_auth_session` for protected routes. |
+| Route-local token checks | Canonical with compatibility wrapper | `core.api.http.require_token_ctx` plus `tgc.security.require_token_ctx` | Sensitive reads/writes in routed modules | `core.api.http` owns validation; in claimed mode it accepts the auth context attached by `session_guard`. `tgc.security.require_token_ctx` is a compatibility wrapper only. |
 | Write gate | Canonical | `require_write_access()` / `require_writes()` | Writes and selected admin routes | Controlled by app state plus env/config. |
 | Owner/tester commit gate | Canonical | `require_owner_commit()` | Selected write operations | Strict role/plan enforcement activates only when `BUS_POLICY_ENFORCE=1`. |
 | Dev-only gate | Canonical | `session_guard` path check plus `require_dev()` | `/dev/*` routes and detailed health | `/dev/*` stays hidden as 404 when disabled; when enabled, session auth still applies. |
@@ -45,7 +45,7 @@ Core trust is not only about preventing compromise. It is also about preserving 
 | Update manifest validation | Canonical | `core/services/update.py` | `/app/update/check` | URL/content-type/size/SemVer, channel selection, supported manifest-shape, optional signed-manifest unwrapping, and optional declared metadata shape validation. Read-only check preserves unsigned-manifest compatibility. |
 | Manual update staging endpoint | Canonical | `core/api/routes/update.py`, `core/services/update_stage.py` | `POST /app/update/stage` | Session-authenticated and write-gated; runs trusted staging only when user clicks Update. |
 | Manifest authenticity enforcement | Canonical for staging | `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`, `core/api/routes/update.py`, release mirror workflow | Manifest metadata used by staging | Ed25519 verification and embedded signatures exist; production public key `bus-core-prod-ed25519-2026-04-25` is pinned. `/app/update/stage` requires a trusted signed manifest; `/app/update/check` remains compatibility/read-only. |
-| Claimed owner identity model | Auth route surface implemented; not global runtime authority | `core/api/routes/auth.py`, `core/appdb/models_auth.py`, low-level `core/auth/*` helpers | User accounts, roles, sessions, recovery-code hashes, and audit events | `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, and `/auth/me` exist. Existing `session_guard`, `/session/token`, `/app/*` permission enforcement, and UI remain unchanged until a later cutover. |
+| Claimed owner identity model | Global claimed-mode gate implemented | `core/api/http.py`, `core/api/routes/auth.py`, `core/appdb/models_auth.py`, low-level `core/auth/*` helpers | User accounts, roles, sessions, recovery-code hashes, and audit events | `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, and `/auth/me` exist. Once one or more users exist, protected routes require `bus_auth_session`; legacy `bus_session` no longer grants `/app/*` access. Route-local permissions, user-management routes, and UI remain deferred. |
 | Release artifact hash verification | Bridge groundwork | `core/services/update_artifact.py`, `core/runtime/update_cache.py` | Cached ZIP under `updates\downloads\` | Internal helper requires declared `sha256`, enforces declared `size_bytes` when present, verifies the downloaded ZIP against signed manifest metadata, and records `hash_verified` only. |
 | Safe ZIP extraction | Bridge groundwork | `core/services/update_extract.py`, `core/runtime/update_cache.py` | Local update cache under `updates\versions\<version>\` | Internal helper stages extraction through a temp dir, rejects zip-slip / absolute / escaping / suspicious entries, requires exactly one `.exe`, and records `extracted` only. |
 | Executable trust verification | Bridge groundwork | `core/services/update_exe_trust.py`, `core/runtime/update_cache.py` | Extracted EXE | Internal helper requires Windows Authenticode `Status == Valid`, True Good Craft signer-subject matching, and the pinned signer thumbprint `55474AA9A2D562022A6590D487045E069457F985`, then records `exe_verified` only. |
@@ -81,34 +81,34 @@ Core trust is not only about preventing compromise. It is also about preserving 
 
 | Authority | Status | Location | Notes |
 | --- | --- | --- | --- |
-| Session bootstrap route | Canonical | `GET /session/token` in `core/api/http.py` | Returns `{ token }` and sets cookie. |
+| Session bootstrap route | Canonical unclaimed compatibility | `GET /session/token` in `core/api/http.py` | Returns `{ token }` and sets `bus_session` only while zero auth users exist; returns `login_required` in claimed mode. |
 | AppState token manager | Canonical | `tgc/tokens.py`, `tgc/state.py` | `TokenManager.current()` is the runtime token source that the canonical validator compares against. |
-| Validator authority | Canonical | `core.api.http::{session_guard, validate_session_token, require_token_ctx}` | Middleware, protected-router deps, and direct auth deps all flow through this path. |
+| Validator authority | Canonical | `core.api.http::{session_guard, validate_session_token, require_token_ctx}` | Middleware, protected-router deps, and direct auth deps all flow through this path. Claimed mode uses DB-backed `bus_auth_session` context attached by middleware. |
 | Route-local token dependency compatibility shim | Compatibility wrapper | `tgc.security.require_token_ctx` | Delegates to `core.api.http.require_token_ctx()` and carries no independent validation logic. |
 | Global session token | Secondary | `core/api/http.py::SESSION_TOKEN` | Runtime mirror persisted to `session_token.txt`; fallback/bootstrap state only, not the normal validator authority. |
 | Token file | Secondary | `%LOCALAPPDATA%\BUSCore\app\data\session_token.txt` | Written by `build_app()` / bootstrap path. |
 | Legacy alternate token surfaces | Removed | `app.py`, `tgc/http.py` | Conflicting parallel `/session/token` contracts were removed from the repo. |
 
-- Intended session contract: `GET /session/token` is the only bootstrap surface, it sets the `bus_session` cookie, and non-public routes remain cookie-authenticated even when `BUS_DEV=1`.
-- Intended dev-route contract: `/dev/*` returns `404` whenever `BUS_DEV!=1`; when `BUS_DEV=1`, those routes are available but still require a valid session cookie.
+- Intended session contract: `GET /session/token` remains the legacy bootstrap surface only in unclaimed mode. Once claimed, `/session/token` returns `login_required`, and non-public routes require a valid DB-backed `bus_auth_session` even when `BUS_DEV=1`.
+- Intended dev-route contract: `/dev/*` returns `404` whenever `BUS_DEV!=1`; when `BUS_DEV=1`, those routes are available but still require a valid mode-appropriate session cookie.
 - Docker/host exposure contract: BUS Core is local-first software. Docker Compose defaults to loopback-only publishing, and the default session model is for local loopback use, not multi-user LAN/public hosting. Non-loopback deployment requires explicit operator action, a separate advanced/unsafe override, and stronger network/access controls.
 
-This is the core trust boundary as implemented today: local runtime first, bounded optional network calls, and a single supported bootstrap route. Remaining auth ambiguity must stay documented plainly because it affects operator trust even when the app still functions.
+This is the core trust boundary as implemented today: local runtime first, bounded optional network calls, DB-backed claimed-mode identity, and legacy bootstrap compatibility only while unclaimed.
 
-### Planned claimed/unclaimed account model
+### Claimed/unclaimed account model
 
-This model is authorized for future claimed-mode behavior. Phase 2 adds the DB-backed auth route surface and `bus_auth_session` cookie, but it does not make claimed-mode login globally required and does not add UI, route-local permission checks for existing `/app/*` routes, or legacy runtime session changes.
+Phase 3 implements the global claimed-mode gate. It does not add UI, route-local permission checks for existing `/app/*` routes, or user-management routes.
 
 | Mode | Trigger | Required behavior |
 | --- | --- | --- |
-| Unclaimed mode | Canonical auth user table has zero users | BUS Core remains usable in current local-first/simple mode; first-run/account setup is not mandatory; the UI may show a non-blocking "Secure this BUS Core" option; no default usable admin exists. |
-| Claimed mode | Canonical auth user table has one or more real users | Login is required; API requests resolve to a real current user; protected routes enforce explicit route-local permissions; sensitive operations write audit events; the owner account has iron-grip authority. |
+| Unclaimed mode | Canonical auth user table has zero users | BUS Core remains usable in current local-first/simple mode; legacy `/session/token` / `bus_session` compatibility remains valid for protected routes; first-run/account setup is not mandatory; no default usable admin exists. |
+| Claimed mode | Canonical auth user table has one or more real users | Protected routes require valid DB-backed `bus_auth_session`; legacy `bus_session` is ignored as app-route authority; auth session context is attached to `request.state`; sensitive auth actions write audit events. Granular route-local permissions come later. |
 
-Iron-grip invariants for the future claimed mode:
+Iron-grip invariants for claimed mode and follow-on user management:
 
 - No default usable admin or owner may be created, including `admin` / `admin`, blank usernames, blank passwords, or hidden pre-created owners that can log in.
 - `POST /auth/setup-owner` may succeed only while the auth user table has zero users. Once any user exists, setup-owner must reject permanently unless the DB is deliberately reset or restored.
-- `/session/token` remains current runtime-token compatibility. It may continue to support unclaimed local operation, but it must not grant app access, mint identity, or bypass login in claimed mode.
+- `/session/token` remains unclaimed runtime-token compatibility. It returns `login_required` in claimed mode and must not grant app access, mint identity, or bypass login.
 - User/account state must be DB-backed canonical state: users, roles, sessions, recovery-code hashes, and audit events. UI `localStorage` is convenience only and cannot become auth authority.
 - Once claimed, BUS Core must prevent disabling the last enabled owner, deleting the last enabled owner, or removing owner role/authority from the last enabled owner.
 - Backend permission checks are the security boundary. Future protected routes should use explicit dependencies such as `require_permission("inventory.read")` and `require_permission("inventory.write")`; UI hiding/showing buttons is convenience only.

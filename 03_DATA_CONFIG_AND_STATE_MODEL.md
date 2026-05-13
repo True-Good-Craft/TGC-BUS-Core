@@ -23,8 +23,8 @@ Stability in this phase depends on one durable authority per class of state. Dur
 | Background index freshness | Repo-local file-backed | Drifted | `data/index_state.json` via `core/api/http.py` | Live mutable state outside AppData; also drift relative to the local durable authority model. |
 | First-run / demo readiness | Derived runtime state | Canonical | `GET /app/system/state` from DB counts + bus mode | UI adds secondary local flags on top. |
 | Onboarding complete / EULA accepted / imperial mode | localStorage/UI state | Secondary | `core/ui/app.js` | UI-facing state only; not the source of business truth. |
-| Session/auth state | Cookie + in-memory + file-backed | Narrowed drift | `core.api.http`, `AppState.tokens`, global `SESSION_TOKEN`, `session_token.txt`, `tgc.security.require_token_ctx` | `core.api.http` is the canonical validator authority, `tgc.security.require_token_ctx` is a compatibility wrapper, and the global/file tokens remain secondary mirrors. |
-| User accounts and identity state | DB-backed auth route surface | Implemented for `/auth/*`; not global runtime authority | `core/appdb/models_auth.py`, low-level `core/auth/*` helpers, and `core/api/routes/auth.py` | Canonical state includes users, roles, sessions, recovery-code hashes, and audit events. Owner setup/login/logout/current-user routes can write/read this state, but existing `session_guard`, `/session/token`, `/app/*` permission enforcement, and UI remain unchanged. UI `localStorage` must not become auth, role, permission, recovery, or session authority. |
+| Session/auth state | Cookie + DB-backed auth sessions plus legacy runtime token | Claimed/unclaimed gate implemented | `core.api.http`, `core/api/routes/auth.py`, `core/auth/*`, `auth_sessions`, `AppState.tokens`, `session_token.txt`, `tgc.security.require_token_ctx` | Zero users preserves legacy local `bus_session` behavior. One or more users makes DB-backed `bus_auth_session` the authority for protected routes. `tgc.security.require_token_ctx` remains a compatibility wrapper over `core.api.http`. |
+| User accounts and identity state | DB-backed | Implemented as claimed-mode identity authority | `core/appdb/models_auth.py`, low-level `core/auth/*` helpers, and `core/api/routes/auth.py` | Canonical state includes users, roles, sessions, recovery-code hashes, and audit events. `session_guard` now uses auth user count to choose unclaimed vs claimed mode. UI `localStorage` must not become auth, role, permission, recovery, or session authority. |
 | Capability manifest | File-backed generated state | Canonical | `%LOCALAPPDATA%\BUSCore\state\system_manifest.json` | Signed with local HMAC key. |
 
 ## Persistence model
@@ -52,8 +52,8 @@ Stability in this phase depends on one durable authority per class of state. Dur
 | `recipes` / `recipe_items` | Canonical | Output and component quantities are stored as base-int values. |
 | `manufacturing_runs` | Canonical | Execution history with `status`, `output_qty`, `meta`. |
 | `auth_users` / user table | Implemented schema skeleton | DB-backed user authority; zero users means unclaimed mode, one or more users means claimed mode. No users are created automatically. |
-| `auth_roles` / user-role tables | Implemented schema skeleton | Role and permission authority; at least one enabled owner must always remain once claimed. Runtime enforcement comes later. |
-| `auth_sessions` | Implemented for auth routes | DB-backed session rows for `bus_auth_session`; `/session/token` remains current compatibility and must not be claimed-mode identity authority. Global runtime session behavior is unchanged. |
+| `auth_roles` / user-role tables | Implemented schema skeleton | Role and permission authority; at least one enabled owner must always remain once claimed. Granular route-local permission enforcement comes later. |
+| `auth_sessions` | Implemented claimed-mode gate authority | DB-backed session rows for `bus_auth_session`; `/session/token` remains unclaimed compatibility and returns `login_required` in claimed mode. |
 | `auth_recovery_codes` | Implemented for owner setup | Owner setup stores recovery-code hashes only and returns plaintext recovery codes once. Recovery-code reset/use route is not implemented yet. |
 | `auth_audit_events` | Implemented for auth routes | Auth route audit trail for owner setup, login success/failure, and logout. Broader runtime audit integration comes later. |
 
@@ -140,13 +140,13 @@ These files exist today, but they are not ideal durable authorities. They are be
 
 ## DB-backed auth state and route surface
 
-This section records the DB-backed auth model as of Phase 2. The current route surface adds owner setup, login, logout, auth state, current-user lookup, session rows, recovery-code hashes, and auth audit events. It does not add UI, route-local permission enforcement for existing `/app/*` routes, or global runtime session cutover.
+This section records the DB-backed auth model as of Phase 3. The route surface adds owner setup, login, logout, auth state, current-user lookup, session rows, recovery-code hashes, and auth audit events. The global gate now cuts over by mode: zero users preserves legacy local `bus_session`; one or more users requires valid `bus_auth_session` for protected routes. It does not add UI, route-local permission enforcement for existing `/app/*` routes, or user-management routes.
 
 | State | Status | Intended authority | Required invariant |
 | --- | --- | --- | --- |
 | Users | Implemented schema/helper skeleton | DB-backed auth table in `core/appdb/models_auth.py`; helpers in `core/auth/store.py` | Zero users means unclaimed mode; one or more users means claimed mode. No hidden or default usable admin may exist. |
 | Roles and permissions | Implemented schema skeleton | DB-backed role/permission tables in `core/appdb/models_auth.py`; constants in `core/auth/permissions.py` | Claimed mode must always retain at least one enabled owner. |
-| Sessions | Implemented for auth routes | DB-backed session table plus token generation/hash helpers in `core/auth/sessions.py`; cookie name `bus_auth_session` | Auth routes can resolve a current DB-backed user. Existing app runtime still uses `bus_session` until a later cutover. |
+| Sessions | Implemented claimed-mode gate authority | DB-backed session table plus token generation/hash helpers in `core/auth/sessions.py`; cookie name `bus_auth_session` | Claimed protected routes require a valid, unexpired, unrevoked auth session. Legacy `bus_session` remains valid only in unclaimed mode. |
 | Recovery codes | Implemented for owner setup | DB-backed recovery-code hash table | Recovery codes are shown once by owner setup and stored only as hashes. Recovery-code reset/use route comes later. |
 | Audit events | Implemented for auth routes | DB-backed audit event table plus `core/auth/audit.py` helper | Owner setup, login success/failure, and logout write auth audit events. Broader sensitive-operation audit integration comes later. |
 

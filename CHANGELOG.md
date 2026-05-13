@@ -12,6 +12,8 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.8` to `1.1.1.9` for the Phase 3 claimed-mode global auth gate cutover without changing public `VERSION`.
+- Cut over the global HTTP auth gate so unclaimed mode preserves legacy local `bus_session` behavior, claimed mode requires valid DB-backed `bus_auth_session` for protected routes, `/session/token` returns `login_required` in claimed mode, and bootstrap auth routes stay reachable without adding UI, user-management routes, route-local permissions, default users, or business-logic changes.
 - Bumped `INTERNAL_VERSION` from `1.1.1.7` to `1.1.1.8` for the Phase 2 auth account-lifecycle route surface without changing public `VERSION`.
 - Added DB-backed `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, and `/auth/me` routes with owner setup, login/logout session creation/revocation, one-time recovery-code generation/storage-by-hash, and auth audit events while leaving `session_guard`, `/session/token`, existing `/app/*` permissions, UI, and default-user creation unchanged.
 - Bumped `INTERNAL_VERSION` from `1.1.1.6` to `1.1.1.7` for the Phase 1 DB-backed auth schema and low-level service skeleton without changing public `VERSION`.

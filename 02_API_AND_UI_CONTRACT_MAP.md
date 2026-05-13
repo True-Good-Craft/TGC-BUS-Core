@@ -13,8 +13,8 @@ This map exists to keep authority boundaries explicit. Canonical, supported, sec
 
 - Drifted: `core/ui/js/cards/backup.js` expects `/app/backup` or `/app.db`; no matching mounted backend route was found.
 - Drifted: `core/ui/js/cards/home_donuts.js` uses `/app/transactions/summary` and `/app/transactions`, but both endpoints are explicit stubs.
-- Canonical: `/session/token` authority is only `core/api/http.py`; legacy alternate runtime surfaces that previously conflicted here were removed.
-- Canonical but not global runtime authority yet: `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, and `/auth/me` expose DB-backed auth account lifecycle over `bus_auth_session`, while existing `/session/token` and `session_guard` behavior remain unchanged.
+- Canonical: `/session/token` authority is only `core/api/http.py`; it remains unclaimed-mode compatibility and returns `login_required` in claimed mode rather than minting a legacy app-access bypass.
+- Canonical: `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, and `/auth/me` expose DB-backed auth account lifecycle over `bus_auth_session`. The global gate now preserves legacy local behavior while unclaimed and requires `bus_auth_session` for protected routes once claimed.
 - Drifted: `/app/logs` is the UI event-feed endpoint, while `/logs` is the text runtime log tail; similar names, different contracts.
 - Guard posture: Scoped ledger, finance, config, update-check, and app-log routes now declare route-local token dependencies, and their sensitive mutations declare route-local write gates; see `04_SECURITY_TRUST_AND_OPERATIONS.md`.
 
@@ -31,12 +31,12 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | `GET` | `/health` | Canonical | Minimal health/version response. | `core/api/http.py` |
 | `GET` | `/health/detailed` | Secondary | Dev-only detailed health payload. | `core/api/http.py` |
 | `GET` | `/dev/paths` | Secondary | Path diagnostics. | `core/api/http.py` |
-| `GET` | `/session/token` | Canonical | Mint/read current session token and set cookie. | `core/api/http.py` |
-| `GET` | `/auth/state` | Canonical; future auth surface | Return DB-backed claimed/unclaimed auth state. Existing global `session_guard` is not cut over yet. | `core/api/routes/auth.py` |
-| `POST` | `/auth/setup-owner` | Canonical; future auth surface | One-way first owner setup when zero auth users exist; creates owner, recovery-code hashes, auth session, and audit event. No default user is created automatically. | `core/api/routes/auth.py` |
-| `POST` | `/auth/login` | Canonical; future auth surface | Validate DB-backed user credentials and create `bus_auth_session`; does not replace current `/session/token` runtime path yet. | `core/api/routes/auth.py` |
-| `POST` | `/auth/logout` | Canonical; future auth surface | Revoke the DB-backed auth session if present and clear `bus_auth_session`. | `core/api/routes/auth.py` |
-| `GET` | `/auth/me` | Canonical; future auth surface | Return current DB-backed auth user, roles, and permissions when `bus_auth_session` is valid. | `core/api/routes/auth.py` |
+| `GET` | `/session/token` | Canonical | In unclaimed mode, mint/read current legacy session token and set cookie. In claimed mode, return `login_required` and do not grant app access. | `core/api/http.py` |
+| `GET` | `/auth/state` | Canonical auth surface | Return DB-backed claimed/unclaimed auth state; reachable as bootstrap without legacy `bus_session`. | `core/api/routes/auth.py` |
+| `POST` | `/auth/setup-owner` | Canonical auth surface | One-way first owner setup when zero auth users exist; creates owner, recovery-code hashes, auth session, and audit event. No default user is created automatically. | `core/api/routes/auth.py` |
+| `POST` | `/auth/login` | Canonical auth surface | Validate DB-backed user credentials and create `bus_auth_session`; reachable as bootstrap without legacy `bus_session`. | `core/api/routes/auth.py` |
+| `POST` | `/auth/logout` | Canonical auth surface | Revoke the DB-backed auth session if present and clear `bus_auth_session`. | `core/api/routes/auth.py` |
+| `GET` | `/auth/me` | Canonical auth surface | Return unclaimed/null state with zero users, 401 without auth in claimed mode, or current DB-backed auth user when `bus_auth_session` is valid. | `core/api/routes/auth.py` |
 | `GET` | `/ui/plugins/{plugin_id}` | Canonical | Serve plugin UI root asset. | `core/api/http.py` |
 | `GET` | `/ui/plugins/{plugin_id}/{resource_path:path}` | Canonical | Serve plugin UI asset path. | `core/api/http.py` |
 
