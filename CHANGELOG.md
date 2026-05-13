@@ -12,6 +12,8 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.11` to `1.1.1.12` for the Phase 6 claim/login/logout and Security UI pass without changing public `VERSION`.
+- Added frontend auth boot, owner-claim, recovery-code display, login/logout, current-user chrome, permission-aware navigation hiding, and `#/security` user/session/audit management UI on top of the existing backend auth APIs while preserving unclaimed local mode and avoiding localStorage auth authority.
 - Bumped `INTERNAL_VERSION` from `1.1.1.10` to `1.1.1.11` for the Phase 5 claimed-mode user, role, session, and audit management API without changing public `VERSION`.
 - Added the backend-only `/app/users`, `/app/roles`, `/app/sessions`, and `/app/audit` management surface with route-local `users.read`, `users.manage`, `sessions.manage`, and `audit.read` permissions, write gates on mutations, last-enabled-owner invariant enforcement, session revocation for disabled/reset users, and audit events for user/session management actions.
 - Bumped `INTERNAL_VERSION` from `1.1.1.9` to `1.1.1.10` for the Phase 4 route-local claimed-mode permission dependency pass without changing public `VERSION`.

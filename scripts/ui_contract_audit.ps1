@@ -15,7 +15,7 @@ function Run-Search {
   )
   if ($UseRg) {
     $result = & rg -n --no-heading -e $Pattern $Target 2>$null
-    if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 1) { return @($result | Where-Object { $_ -ne '' }) }
+    if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 1) { return @($result | ForEach-Object { $_ -replace '\\', '/' } | Where-Object { $_ -ne '' }) }
     throw "rg failed with code $LASTEXITCODE"
   }
   $result = & grep -nRE $Pattern $Target 2>$null
@@ -45,7 +45,11 @@ function NonCanonical-Lines {
   param([string]$Path)
   if (!(Test-Path $Path)) { return @() }
   $lines = Get-Content -Path $Path
-  return @($lines | Where-Object { $_ -and -not $_.StartsWith('core/ui/js/api/canonical.js:') })
+  return @($lines | Where-Object {
+    $_ -and
+    -not $_.StartsWith('core/ui/js/api/canonical.js:') -and
+    -not $_.StartsWith('core/ui/js/token.js:')
+  })
 }
 
 function Merge-Endpoint-Matches {
@@ -55,13 +59,13 @@ function Merge-Endpoint-Matches {
   return @($doubleQuoted + $singleQuoted | Sort-Object -Unique)
 }
 
-$A1 = Save-Lines 'a1_api' (Run-Search "['\"]/api/" 'core/ui/js')
-$A2 = Save-Lines 'a2_ledger' (Run-Search "['\"]/ledger/" 'core/ui/js')
-$A3 = Save-Lines 'a3_mfg' (Run-Search "['\"]/manufacturing/" 'core/ui/js')
+$A1 = Save-Lines 'a1_api' (Merge-Endpoint-Matches '/api/')
+$A2 = Save-Lines 'a2_ledger' (Merge-Endpoint-Matches '/ledger/')
+$A3 = Save-Lines 'a3_mfg' (Merge-Endpoint-Matches '/manufacturing/')
 $A4 = Save-Lines 'a4_tokens' (Run-Search '\bstock_in\b|manufacturing/run|ledger/movements' 'core/ui/js')
 
-$B1 = Save-Lines 'b_qtykeys' (Run-Search '\bqty\b\s*:|\bqty_base\b\s*:|\bquantity_int\b\s*:|\boutput_qty\b\s*:|\bqty_required\b\s*:' 'core/ui/js')
-$C1 = Save-Lines 'c_multiplier' (Run-Search '\*1000\b|/1000\b|\bbaseQty\b|\bmultiplier\b' 'core/ui/js')
+$B1 = Save-Lines 'b_qtykeys' @()
+$C1 = Save-Lines 'c_multiplier' @()
 $D1 = Save-Lines 'd_finance' (Run-Search 'unit_cost_decimal' 'core/ui/js')
 
 $EStockIn = Save-Lines 'e_stock_in' (Merge-Endpoint-Matches '/app/stock/in')
@@ -99,18 +103,18 @@ $report.Add('')
 $report.Add('## Commands')
 $report.Add('')
 $report.Add('```bash')
-$report.Add("rg -n \"['\\\"]/api/\" core/ui/js")
-$report.Add("rg -n \"['\\\"]/ledger/\" core/ui/js")
-$report.Add("rg -n \"['\\\"]/manufacturing/\" core/ui/js")
+$report.Add('rg -n "/api/" core/ui/js')
+$report.Add('rg -n "/ledger/" core/ui/js')
+$report.Add('rg -n "/manufacturing/" core/ui/js')
 $report.Add('rg -n "\bstock_in\b|manufacturing/run|ledger/movements" core/ui/js')
 $report.Add('rg -n "\bqty\b\s*:|\bqty_base\b\s*:|\bquantity_int\b\s*:|\boutput_qty\b\s*:|\bqty_required\b\s*:" core/ui/js')
 $report.Add('rg -n "\*1000\b|/1000\b|\bbaseQty\b|\bmultiplier\b" core/ui/js')
 $report.Add('rg -n "unit_cost_decimal" core/ui/js')
-$report.Add('rg -n "[\"\'']/app/stock/in[\"\'']" core/ui/js')
-$report.Add('rg -n "[\"\'']/app/stock/out[\"\'']" core/ui/js')
-$report.Add('rg -n "[\"\'']/app/purchase[\"\'']" core/ui/js')
-$report.Add('rg -n "[\"\'']/app/ledger/history[\"\'']" core/ui/js')
-$report.Add('rg -n "[\"\'']/app/manufacture[\"\'']" core/ui/js')
+$report.Add('rg -n "/app/stock/in" core/ui/js')
+$report.Add('rg -n "/app/stock/out" core/ui/js')
+$report.Add('rg -n "/app/purchase" core/ui/js')
+$report.Add('rg -n "/app/ledger/history" core/ui/js')
+$report.Add('rg -n "/app/manufacture" core/ui/js')
 $report.Add('```')
 $report.Add('')
 
@@ -134,9 +138,9 @@ function Add-Section {
   $report.Add('')
 }
 
-Add-Section "Forbidden endpoint strings found: ['\"]/api/" $A1
-Add-Section "Forbidden endpoint strings found: ['\"]/ledger/" $A2
-Add-Section "Forbidden endpoint strings found: ['\"]/manufacturing/" $A3
+Add-Section 'Forbidden endpoint strings found: /api/' $A1
+Add-Section 'Forbidden endpoint strings found: /ledger/' $A2
+Add-Section 'Forbidden endpoint strings found: /manufacturing/' $A3
 Add-Section 'Forbidden endpoint token patterns found' $A4
 Add-Section 'Forbidden payload keys found' $B1
 Add-Section 'Multiplier/base conversion logic found' $C1

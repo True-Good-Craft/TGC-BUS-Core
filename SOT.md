@@ -32,7 +32,7 @@
 
 * **Database:** SQLite via SQLAlchemy ORM.
 
-* **UI:** Single-page application (SPA) shell (`core/ui/shell.html`) with modular JS cards.
+* **UI:** Single-page application (SPA) shell (`core/ui/shell.html`) with modular JS cards, auth bootstrap/login/claim flow, and a permission-aware `#/security` management route for users, sessions, and audit.
 
 * **Server:** Uvicorn at `127.0.0.1:8765` (native local) or `0.0.0.0:8765` inside the Docker container, with default Docker Compose host publishing restricted to `127.0.0.1:8765:8765`. Browser CORS defaults are loopback-only (`http://127.0.0.1:8765`, `http://localhost:8765`); wildcard CORS is not part of the supported default runtime.
 
@@ -81,6 +81,8 @@
 * When RID fields are present in plan actions (`src_id`, `dst_parent_id`), invalid RID values MUST NOT silently downgrade into unsafe raw-path fallback for that field.
 
 * Security hardening that changes boundary behavior must be mirrored into `CHANGELOG.md`, `SOT.md`, and affected governance/security docs to prevent policy drift.
+
+* The UI may hide or reveal navigation and Security controls based on the current user's permissions, but backend route-local permission checks remain the authority. UI state must not store passwords, recovery codes, session tokens, or permission authority in `localStorage`.
 
 * Current hardening posture also treats sandbox command construction, admin preview DOM rendering, and import/local path resolution as boundary-sensitive surfaces: sandbox subprocess argv must remain BUS Core-owned and fixed, untrusted preview metadata must render as text, and user-influenced filesystem paths must resolve under explicit allowed roots before use.
 

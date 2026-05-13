@@ -106,6 +106,14 @@ export async function settingsCard(el) {
       </div>
 
       <div class="settings-card settings-card--operational">
+        <h3 class="settings-section-title">Security</h3>
+        <p class="settings-subtext">Claim owner setup, current user, users, roles, sessions, and audit controls are available from Security when permitted.</p>
+        <div class="settings-action-row">
+          <a class="btn btn-secondary" href="#/security">Open Security</a>
+        </div>
+      </div>
+
+      <div class="settings-card settings-card--operational">
         <h3 class="settings-section-title">Administration</h3>
         <div data-role="admin-section" class="settings-admin-host"></div>
       </div>
