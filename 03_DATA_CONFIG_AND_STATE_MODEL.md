@@ -24,6 +24,7 @@ Stability in this phase depends on one durable authority per class of state. Dur
 | First-run / demo readiness | Derived runtime state | Canonical | `GET /app/system/state` from DB counts + bus mode | UI adds secondary local flags on top. |
 | Onboarding complete / EULA accepted / imperial mode | localStorage/UI state | Secondary | `core/ui/app.js` | UI-facing state only; not the source of business truth. |
 | Session/auth state | Cookie + in-memory + file-backed | Narrowed drift | `core.api.http`, `AppState.tokens`, global `SESSION_TOKEN`, `session_token.txt`, `tgc.security.require_token_ctx` | `core.api.http` is the canonical validator authority, `tgc.security.require_token_ctx` is a compatibility wrapper, and the global/file tokens remain secondary mirrors. |
+| User accounts and identity state | DB-backed schema skeleton | Implemented schema/helper skeleton; not runtime-enforced | `core/appdb/models_auth.py` and low-level `core/auth/*` helpers | Canonical state includes users, roles, sessions, recovery-code hashes, and audit events. These tables are created on startup, but login/session runtime, permission enforcement, owner setup, and UI remain future work. UI `localStorage` must not become auth, role, permission, recovery, or session authority. |
 | Capability manifest | File-backed generated state | Canonical | `%LOCALAPPDATA%\BUSCore\state\system_manifest.json` | Signed with local HMAC key. |
 
 ## Persistence model
@@ -50,6 +51,11 @@ Stability in this phase depends on one durable authority per class of state. Dur
 | `cash_events` | Canonical | Finance ledger with `kind`, `amount_cents`, item linkage, and source correlation. |
 | `recipes` / `recipe_items` | Canonical | Output and component quantities are stored as base-int values. |
 | `manufacturing_runs` | Canonical | Execution history with `status`, `output_qty`, `meta`. |
+| `auth_users` / user table | Implemented schema skeleton | DB-backed user authority; zero users means unclaimed mode, one or more users means claimed mode. No users are created automatically. |
+| `auth_roles` / user-role tables | Implemented schema skeleton | Role and permission authority; at least one enabled owner must always remain once claimed. Runtime enforcement comes later. |
+| `auth_sessions` | Implemented schema skeleton | Future claimed-mode login/session authority; `/session/token` must not be claimed-mode identity authority. Runtime session behavior is unchanged. |
+| `auth_recovery_codes` | Implemented schema skeleton | Future owner recovery-code hashes only; codes shown once and single-use. Code issuance/use is not implemented yet. |
+| `auth_audit_events` | Implemented schema skeleton | Future sensitive-action audit trail for owner setup, login/logout, user/role changes, backup/restore, config changes, finance/inventory writes, manufacturing runs, and restart/start-fresh. Runtime audit integration comes later. |
 
 ### Schema and migration authority
 
@@ -131,6 +137,20 @@ These files exist today, but they are not ideal durable authorities. They are be
 | Onboarding completion flag | Secondary | `localStorage["bus.onboarding.completed"]` | UI-only suppression flag. |
 | EULA acceptance flag | Secondary | `localStorage["buscore.eulaAccepted"]` | UI-only acceptance state. |
 | Start fresh action | Canonical | `POST /app/system/start-fresh` | Switches bus mode to prod and recreates prod DB. |
+
+## DB-backed auth state skeleton
+
+This section records the Phase 1 schema/helper skeleton. The current pass adds DB tables and low-level helpers only; it does not add login routes, setup-owner routes, UI, permission enforcement, or runtime session behavior changes.
+
+| State | Status | Intended authority | Required invariant |
+| --- | --- | --- | --- |
+| Users | Implemented schema/helper skeleton | DB-backed auth table in `core/appdb/models_auth.py`; helpers in `core/auth/store.py` | Zero users means unclaimed mode; one or more users means claimed mode. No hidden or default usable admin may exist. |
+| Roles and permissions | Implemented schema skeleton | DB-backed role/permission tables in `core/appdb/models_auth.py`; constants in `core/auth/permissions.py` | Claimed mode must always retain at least one enabled owner. |
+| Sessions | Implemented schema/helper skeleton | DB-backed session table plus token generation/hash helpers in `core/auth/sessions.py` | Claimed-mode access must require login and resolve API requests to a real current user. Not wired into runtime yet. |
+| Recovery codes | Implemented schema skeleton | DB-backed recovery-code hash table | Recovery codes are shown once, stored only as hashes, single-use, and audited when used. Issuance/use comes later. |
+| Audit events | Implemented schema/helper skeleton | DB-backed audit event table plus `core/auth/audit.py` helper | Sensitive claimed-mode actions must produce auditable events. Runtime integration comes later. |
+
+UI `localStorage` may support display preferences or non-authoritative setup hints, but it must not become canonical user, role, session, recovery-code, permission, or audit authority.
 
 ## Objective state risks
 

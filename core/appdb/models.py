@@ -130,7 +130,29 @@ __all__ = [
     "Vendor",
 ]
 
-# Import recipe/manufacturing models to attach to the shared Base
+# Import extension model modules to attach to the shared Base
 from core.appdb.models_recipes import ManufacturingRun, Recipe, RecipeItem  # noqa: E402  # isort:skip
+from core.appdb import models_auth as _models_auth  # noqa: E402  # isort:skip
+
+_AUTH_MODEL_EXPORTS = (
+    "AuthAuditEvent",
+    "AuthRecoveryCode",
+    "AuthRole",
+    "AuthRolePermission",
+    "AuthSession",
+    "AuthUser",
+    "AuthUserRole",
+)
+
+for _name in _AUTH_MODEL_EXPORTS:
+    if hasattr(_models_auth, _name):
+        globals()[_name] = getattr(_models_auth, _name)
+
+
+def __getattr__(name: str):
+    if name in _AUTH_MODEL_EXPORTS:
+        return getattr(_models_auth, name)
+    raise AttributeError(name)
 
 __all__ += ["Recipe", "RecipeItem", "ManufacturingRun"]
+__all__ += list(_AUTH_MODEL_EXPORTS)

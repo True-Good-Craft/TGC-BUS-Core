@@ -27,8 +27,14 @@ BUS_MODULES_TO_RESET = [
     "core.appdb.engine",
     "core.appdb.ledger",
     "core.appdb.models",
+    "core.appdb.models_auth",
     "core.appdb.models_recipes",
     "core.appdb.session",
+    "core.auth.audit",
+    "core.auth.passwords",
+    "core.auth.permissions",
+    "core.auth.sessions",
+    "core.auth.store",
     "core.config.manager",
     "core.config.writes",
     "core.journal.inventory",
@@ -89,6 +95,7 @@ def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.
     import core.appdb.engine as engine_module
     import core.appdb.ledger as ledger_module
     import core.appdb.models as models_module
+    import core.appdb.models_auth as auth_models_module
     import core.appdb.models_recipes as recipes_module
     import core.services.models as services_models
     import core.api.http as api_http
@@ -96,6 +103,9 @@ def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.
     engine_module = importlib.reload(engine_module)
     ledger_module = importlib.reload(ledger_module)
     models_module = importlib.reload(models_module)
+    auth_models_module = importlib.reload(auth_models_module)
+    for model_name in auth_models_module.__all__:
+        setattr(models_module, model_name, getattr(auth_models_module, model_name))
     recipes_module = importlib.reload(recipes_module)
     services_models = importlib.reload(services_models)
     api_http = importlib.reload(api_http)

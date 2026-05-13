@@ -12,6 +12,10 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.6` to `1.1.1.7` for the Phase 1 DB-backed auth schema and low-level service skeleton without changing public `VERSION`.
+- Added auth/user-account ORM tables and pure helper modules for future claimed/unclaimed auth while leaving `/session/token`, session middleware, route permissions, UI, and default-user creation unchanged.
+- Bumped `INTERNAL_VERSION` from `1.1.1.5` to `1.1.1.6` for the Phase 0 auth/user accounts governance authorization pass without changing public `VERSION`.
+- Authorized the planned local-first user account model in governance docs: zero-user unclaimed mode, one-or-more-user claimed mode, no default usable admin, one-way owner setup, DB-backed auth state, route-local auditable permissions, last-enabled-owner invariants, recovery-code rules, and claimed-mode audit expectations.
 - Bumped `INTERNAL_VERSION` from `1.1.1.4` to `1.1.1.5` for Patch 1D test write-gate AppData isolation without changing public `VERSION`.
 - Isolated the shared API test client `LOCALAPPDATA` under pytest temp directories so write-gate setup/teardown cannot mutate the user's real `%LOCALAPPDATA%\BUSCore\config.json`.
 - Added regression coverage proving a sentinel real AppData config remains unchanged while the isolated test config receives `dev.writes_enabled` updates.

@@ -45,6 +45,7 @@ Core trust is not only about preventing compromise. It is also about preserving 
 | Update manifest validation | Canonical | `core/services/update.py` | `/app/update/check` | URL/content-type/size/SemVer, channel selection, supported manifest-shape, optional signed-manifest unwrapping, and optional declared metadata shape validation. Read-only check preserves unsigned-manifest compatibility. |
 | Manual update staging endpoint | Canonical | `core/api/routes/update.py`, `core/services/update_stage.py` | `POST /app/update/stage` | Session-authenticated and write-gated; runs trusted staging only when user clicks Update. |
 | Manifest authenticity enforcement | Canonical for staging | `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`, `core/api/routes/update.py`, release mirror workflow | Manifest metadata used by staging | Ed25519 verification and embedded signatures exist; production public key `bus-core-prod-ed25519-2026-04-25` is pinned. `/app/update/stage` requires a trusted signed manifest; `/app/update/check` remains compatibility/read-only. |
+| Claimed owner identity model | Schema/helper skeleton implemented; not runtime-enforced | `core/appdb/models_auth.py`, low-level `core/auth/*` helpers | User accounts, roles, sessions, recovery-code hashes, and audit events | Zero users means unclaimed mode; one or more users means claimed mode. Claimed-mode login, route-local permissions, owner setup, recovery-code issuance, and runtime audit integration come later. |
 | Release artifact hash verification | Bridge groundwork | `core/services/update_artifact.py`, `core/runtime/update_cache.py` | Cached ZIP under `updates\downloads\` | Internal helper requires declared `sha256`, enforces declared `size_bytes` when present, verifies the downloaded ZIP against signed manifest metadata, and records `hash_verified` only. |
 | Safe ZIP extraction | Bridge groundwork | `core/services/update_extract.py`, `core/runtime/update_cache.py` | Local update cache under `updates\versions\<version>\` | Internal helper stages extraction through a temp dir, rejects zip-slip / absolute / escaping / suspicious entries, requires exactly one `.exe`, and records `extracted` only. |
 | Executable trust verification | Bridge groundwork | `core/services/update_exe_trust.py`, `core/runtime/update_cache.py` | Extracted EXE | Internal helper requires Windows Authenticode `Status == Valid`, True Good Craft signer-subject matching, and the pinned signer thumbprint `55474AA9A2D562022A6590D487045E069457F985`, then records `exe_verified` only. |
@@ -93,6 +94,27 @@ Core trust is not only about preventing compromise. It is also about preserving 
 - Docker/host exposure contract: BUS Core is local-first software. Docker Compose defaults to loopback-only publishing, and the default session model is for local loopback use, not multi-user LAN/public hosting. Non-loopback deployment requires explicit operator action, a separate advanced/unsafe override, and stronger network/access controls.
 
 This is the core trust boundary as implemented today: local runtime first, bounded optional network calls, and a single supported bootstrap route. Remaining auth ambiguity must stay documented plainly because it affects operator trust even when the app still functions.
+
+### Planned claimed/unclaimed account model
+
+This model is authorized for future claimed-mode behavior. Phase 1 adds auth tables and low-level helpers only; it does not describe active login behavior and does not add setup-owner routes, UI, permission checks, or session-runtime changes in this pass.
+
+| Mode | Trigger | Required behavior |
+| --- | --- | --- |
+| Unclaimed mode | Canonical auth user table has zero users | BUS Core remains usable in current local-first/simple mode; first-run/account setup is not mandatory; the UI may show a non-blocking "Secure this BUS Core" option; no default usable admin exists. |
+| Claimed mode | Canonical auth user table has one or more real users | Login is required; API requests resolve to a real current user; protected routes enforce explicit route-local permissions; sensitive operations write audit events; the owner account has iron-grip authority. |
+
+Iron-grip invariants for the future claimed mode:
+
+- No default usable admin or owner may be created, including `admin` / `admin`, blank usernames, blank passwords, or hidden pre-created owners that can log in.
+- Future `POST /auth/setup-owner` may succeed only while the auth user table has zero users. Once any user exists, setup-owner must reject permanently unless the DB is deliberately reset or restored.
+- `/session/token` remains current runtime-token compatibility. It may continue to support unclaimed local operation, but it must not grant app access, mint identity, or bypass login in claimed mode.
+- User/account state must be DB-backed canonical state: users, roles, sessions, recovery-code hashes, and audit events. UI `localStorage` is convenience only and cannot become auth authority.
+- Once claimed, BUS Core must prevent disabling the last enabled owner, deleting the last enabled owner, or removing owner role/authority from the last enabled owner.
+- Backend permission checks are the security boundary. Future protected routes should use explicit dependencies such as `require_permission("inventory.read")` and `require_permission("inventory.write")`; UI hiding/showing buttons is convenience only.
+- Recovery codes must be generated as one-time codes, shown once, stored only as hashes, single-use, and audited when used.
+
+Sensitive claimed-mode audit events should include owner setup, login success/failure, logout, user created/disabled/enabled, password reset, roles/permissions changed, backup export/restore, config changes, finance writes, inventory writes, manufacturing runs, and system restart/start-fresh.
 
 
 ### Route-level enforcement inconsistencies
