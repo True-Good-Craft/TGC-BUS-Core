@@ -27,6 +27,7 @@ __all__ = [
     "audit",
     "dependencies",
     "google_sa",
+    "management",
     "passwords",
     "permissions",
     "sessions",

@@ -12,6 +12,8 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.10` to `1.1.1.11` for the Phase 5 claimed-mode user, role, session, and audit management API without changing public `VERSION`.
+- Added the backend-only `/app/users`, `/app/roles`, `/app/sessions`, and `/app/audit` management surface with route-local `users.read`, `users.manage`, `sessions.manage`, and `audit.read` permissions, write gates on mutations, last-enabled-owner invariant enforcement, session revocation for disabled/reset users, and audit events for user/session management actions.
 - Bumped `INTERNAL_VERSION` from `1.1.1.9` to `1.1.1.10` for the Phase 4 route-local claimed-mode permission dependency pass without changing public `VERSION`.
 - Added claimed-mode route-local permission dependencies for covered protected route families, including inventory/items, ledger/stock, recipes, manufacturing, vendors/contacts, finance, logs, config/update/system, backup/import/export, and practical sensitive utility routes while preserving unclaimed-mode legacy local behavior and existing write/owner gates.
 - Bumped `INTERNAL_VERSION` from `1.1.1.8` to `1.1.1.9` for the Phase 3 claimed-mode global auth gate cutover without changing public `VERSION`.

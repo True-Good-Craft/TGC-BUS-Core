@@ -18,6 +18,7 @@ SCOPED_ROUTE_FILES = (
     Path("core/api/routes/config.py"),
     Path("core/api/routes/update.py"),
     Path("core/api/routes/logs_api.py"),
+    Path("core/api/routes/users.py"),
     Path("core/api/routes/recipes.py"),
     Path("core/api/routes/manufacturing.py"),
     Path("core/api/routes/vendors.py"),

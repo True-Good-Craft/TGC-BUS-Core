@@ -15,10 +15,11 @@ This map exists to keep authority boundaries explicit. Canonical, supported, sec
 - Drifted: `core/ui/js/cards/home_donuts.js` uses `/app/transactions/summary` and `/app/transactions`, but both endpoints are explicit stubs.
 - Canonical: `/session/token` authority is only `core/api/http.py`; it remains unclaimed-mode compatibility and returns `login_required` in claimed mode rather than minting a legacy app-access bypass.
 - Canonical: `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, and `/auth/me` expose DB-backed auth account lifecycle over `bus_auth_session`. The global gate now preserves legacy local behavior while unclaimed and requires `bus_auth_session` for protected routes once claimed.
+- Canonical: `/app/users`, `/app/roles`, `/app/sessions`, and `/app/audit` expose backend-only claimed-mode user, role, session, and audit management. They do not add UI and do not create default users.
 - Drifted: `/app/logs` is the UI event-feed endpoint, while `/logs` is the text runtime log tail; similar names, different contracts.
 - Guard posture: Covered protected route families now declare route-local token and permission dependencies. Sensitive mutations retain existing write gates and owner-commit gates where already present; see `04_SECURITY_TRUST_AND_OPERATIONS.md`.
 
-Phase 4 permission coverage includes inventory/items, ledger/stock, recipes, manufacturing, vendors/contacts, finance, logs, config/update/system, backup/import/export, and practical sensitive utility routes in `core/api/http.py`. Reader, organizer, provider catalog/index/drive scan routes remain intentionally deferred because this phase does not introduce a separate provider/catalog permission vocabulary.
+Phase 5 permission coverage also includes user, role, session, and auth-audit management routes. Reader, organizer, provider catalog/index/drive scan routes remain intentionally deferred because this phase does not introduce a separate provider/catalog permission vocabulary.
 
 Silent contract drift is a stability risk. The purpose of this document is not to enlarge the declared surface, but to keep the live supported surface explicit and reviewable.
 
@@ -53,6 +54,18 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | `GET` | `/app/update/check` | Canonical | Token + `updates.check` | One-shot update check. | `core/api/routes/update.py` |
 | `GET` | `/app/system/state` | Canonical | Token + `system.read` | Return bus mode, first-run, counts, build/schema status. | `core/api/routes/system_state.py` |
 | `POST` | `/app/system/start-fresh` | Canonical | Token + `system.admin` + `require_writes` | Switch demo -> prod and initialize fresh prod DB. | `core/api/routes/system_state.py` |
+| `GET` | `/app/users` | Canonical | Token + `users.read` | List DB-backed auth users without password hashes. | `core/api/routes/users.py` |
+| `POST` | `/app/users` | Canonical | Token + `users.manage` + `require_writes` | Create a claimed-mode child user and audit `user.created`. | `core/api/routes/users.py` |
+| `GET` | `/app/users/{user_id}` | Canonical | Token + `users.read` | Read one DB-backed auth user without password hash. | `core/api/routes/users.py` |
+| `PATCH` | `/app/users/{user_id}` | Canonical | Token + `users.manage` + `require_writes` | Update user profile/enabled/password-change state under owner invariant. | `core/api/routes/users.py` |
+| `POST` | `/app/users/{user_id}/disable` | Canonical | Token + `users.manage` + `require_writes` | Disable a user, revoke active sessions, and preserve last-owner invariant. | `core/api/routes/users.py` |
+| `POST` | `/app/users/{user_id}/enable` | Canonical | Token + `users.manage` + `require_writes` | Re-enable a user. | `core/api/routes/users.py` |
+| `POST` | `/app/users/{user_id}/reset-password` | Canonical | Token + `users.manage` + `require_writes` | Hash a new temporary password and optionally revoke sessions. | `core/api/routes/users.py` |
+| `GET` | `/app/roles` | Canonical | Token + `users.read` | List system roles and permissions. | `core/api/routes/users.py` |
+| `PATCH` | `/app/users/{user_id}/roles` | Canonical | Token + `users.manage` + `require_writes` | Replace user role assignments under owner invariant. | `core/api/routes/users.py` |
+| `GET` | `/app/sessions` | Canonical | Token + `sessions.manage` | List active/recent auth sessions without token/hash material. | `core/api/routes/users.py` |
+| `POST` | `/app/sessions/{session_id}/revoke` | Canonical | Token + `sessions.manage` + `require_writes` | Revoke an auth session and audit `session.revoked`. | `core/api/routes/users.py` |
+| `GET` | `/app/audit` | Canonical | Token + `audit.read` | List auth/user-management audit events with bounded filters. | `core/api/routes/users.py` |
 | `POST` | `/app/db/export` | Canonical | Protected router + `require_writes` | Create encrypted DB export. | `core/api/http.py` |
 | `GET` | `/app/db/exports` | Canonical | Protected router + `require_writes` | List export files. | `core/api/http.py` |
 | `POST` | `/app/db/import/upload` | Canonical | Protected router + `require_writes` | Upload backup file to staging area. | `core/api/http.py` |

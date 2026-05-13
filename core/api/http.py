@@ -111,6 +111,7 @@ from core.api.routes import config as config_routes
 from core.api.routes import update as update_routes
 from core.api.routes import system_state as system_state_routes
 from core.api.routes import auth as auth_routes
+from core.api.routes import users as users_routes
 from core.auth.dependencies import require_permission
 from core.auth.permissions import (
     PERMISSION_BACKUP_EXPORT,
@@ -2578,6 +2579,7 @@ def create_app():
         app.include_router(config_routes.router, prefix="/app")
         app.include_router(update_routes.router, prefix="/app")
         app.include_router(system_state_routes.router, prefix="/app")
+        app.include_router(users_routes.router, prefix="/app")
         app.include_router(auth_routes.router)
         app.state._domain_routes_registered = True
     return app

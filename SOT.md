@@ -90,11 +90,11 @@
 
 ### User Accounts / Claimed Owner Security Model — Authorization Delta
 
-* This delta authorizes and records the local auth/user account model. Phase 1 added the DB schema and low-level helper skeleton. Phase 2 added the first DB-backed auth route surface (`/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`) with owner setup, login/logout, recovery-code generation, session rows, and auth audit events. Phase 3 cut over the global HTTP auth gate: unclaimed mode preserves legacy local `bus_session` behavior, while claimed mode requires a valid DB-backed `bus_auth_session` for protected routes and rejects legacy `bus_session` as `/app/*` authority. Phase 4 adds route-local claimed-mode permission dependencies for covered protected API route families. User-management routes and UI remain deferred.
+* This delta authorizes and records the local auth/user account model. Phase 1 added the DB schema and low-level helper skeleton. Phase 2 added the first DB-backed auth route surface (`/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`) with owner setup, login/logout, recovery-code generation, session rows, and auth audit events. Phase 3 cut over the global HTTP auth gate: unclaimed mode preserves legacy local `bus_session` behavior, while claimed mode requires a valid DB-backed `bus_auth_session` for protected routes and rejects legacy `bus_session` as `/app/*` authority. Phase 4 added route-local claimed-mode permission dependencies for covered protected API route families. Phase 5 adds backend-only claimed-mode user, role, session, and audit management routes. UI remains deferred.
 
 * BUS Core has two intended auth modes. **Unclaimed mode** exists when the canonical auth user table has zero users. In unclaimed mode, BUS Core remains usable in the current local-first/simple mode; first-run or account setup is not mandatory; the UI may show a non-blocking "Secure this BUS Core" option; and no default usable admin account exists.
 
-* **Claimed mode** begins when one or more real users exist in the canonical auth user table. In claimed mode, login is required for protected routes, API requests must resolve to a real current user through `bus_auth_session`, covered protected API routes enforce route-local permissions, sensitive auth events are audited, and the owner account has iron-grip authority.
+* **Claimed mode** begins when one or more real users exist in the canonical auth user table. In claimed mode, login is required for protected routes, API requests must resolve to a real current user through `bus_auth_session`, covered protected API routes enforce route-local permissions, sensitive auth and user-management events are audited, and the owner account has iron-grip authority.
 
 * No default usable admin or owner account may be created. Forbidden states include `admin` / `admin`, blank username, blank password, or any hidden pre-created owner account that can log in.
 
@@ -104,13 +104,13 @@
 
 * User/account authority must be DB-backed canonical state. UI `localStorage` may store presentation hints only and must never become auth, role, permission, recovery, or session authority.
 
-* Once claimed, BUS Core must always retain at least one enabled owner. The system must prevent disabling the last enabled owner, deleting the last enabled owner, or removing owner role/authority from the last enabled owner.
+* Once claimed, BUS Core must always retain at least one enabled owner. The system must prevent disabling the last enabled owner, deleting the last enabled owner, or removing owner role/authority from the last enabled owner. Backend user-management code must enforce this through a central invariant helper rather than ad hoc route checks.
 
-* Backend permission enforcement is security. UI hiding/showing controls is convenience only. Covered protected routes declare auditable route-local permission dependencies such as `require_permission("inventory.read")` or `require_permission("inventory.write")`; global middleware remains a broad safety net but is no longer the only visible authority for covered protected app routes. Unclaimed mode compatibility must continue to no-op these permission checks safely.
+* Backend permission enforcement is security. UI hiding/showing controls is convenience only. Covered protected routes declare auditable route-local permission dependencies such as `require_permission("inventory.read")`, `require_permission("users.manage")`, or `require_permission("audit.read")`; global middleware remains a broad safety net but is no longer the only visible authority for covered protected app routes. Unclaimed mode compatibility must continue to no-op these permission checks safely.
 
 * Owner setup generates one-time recovery codes. Recovery codes must be shown once, only hashes may be stored, used recovery codes must be single-use, and recovery-code use must be audited when a recovery-use route exists.
 
-* Sensitive claimed-mode actions that should eventually write audit events include owner setup, login success/failure, logout, user created/disabled/enabled, password reset, roles/permissions changed, backup export/restore, config changes, finance writes, inventory writes, manufacturing runs, and system restart/start-fresh.
+* Sensitive claimed-mode actions that write audit events include owner setup, login success/failure, logout, user created/updated/disabled/enabled, password reset, roles changed, and session revoked. Future broader runtime audit expansion should include backup export/restore, config changes, finance writes, inventory writes, manufacturing runs, and system restart/start-fresh.
 
 ### Release and Update Boundary
 
