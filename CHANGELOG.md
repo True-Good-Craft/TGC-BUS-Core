@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.1.2] - 2026-05-13
+## [1.2.0] - 2026-05-13
 
 ### Fixed
 - Fixed cached update handoff when BUS Core is already running from a previously staged verified update.
@@ -10,7 +10,7 @@
 - Running executables are not overwritten or deleted during update staging, and older verified-ready cached versions do not block newer updates.
 
 ### Changed
-- Bumped `VERSION` from `1.1.1` to `1.1.2` and reset `INTERNAL_VERSION` from `1.1.1.15` to `1.1.2.0` for the verified update-cache handoff patch release.
+- Bumped `VERSION` from `1.1.1` to `1.2.0` and reset `INTERNAL_VERSION` from `1.1.1.15` to `1.2.0.0` for the verified update-cache handoff release, reflecting the complexity of the cache-state and launcher-handoff changes.
 
 ## [1.0.4] - 2026-04-24
 
