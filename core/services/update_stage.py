@@ -76,20 +76,26 @@ class UpdateStageService:
                     message="No newer version is available.",
                 )
 
-            target_root = update_cache.ensure_cache_dirs(root)
-            state = update_cache.read_state(target_root, active_version=CURRENT_VERSION)
-            ready = state.get("verified_ready")
-            if isinstance(ready, Mapping):
-                ready_version = ready.get("version")
-                ready_exe = ready.get("exe_path")
-                if isinstance(ready_version, str) and isinstance(ready_exe, str) and update_cache._parse_semver(ready_version) >= update_cache._parse_semver(release.version):
-                    return _success(latest_version=latest_version, exe_path=ready_exe)
-
             if not release.declared_sha256:
                 return _failed(
                     latest_version=latest_version,
                     code="missing_declared_sha256",
                     message="Manifest declared sha256 is required for staging.",
+                )
+
+            target_root = update_cache.ensure_cache_dirs(root)
+            state = update_cache.read_state(target_root, active_version=CURRENT_VERSION)
+            ready = update_cache.find_verified_ready(
+                state,
+                version=release.version,
+                sha256=release.declared_sha256,
+            )
+            ready_exe = _ready_exe_path_if_present(ready, root=target_root, version=release.version)
+            if ready_exe is not None:
+                return _success(
+                    latest_version=latest_version,
+                    exe_path=ready_exe,
+                    status="already_ready",
                 )
 
             downloaded = self._artifact_service.download_and_verify(release, root=target_root)
@@ -129,10 +135,10 @@ class UpdateStageService:
             )
 
 
-def _success(*, latest_version: str | None, exe_path: str) -> UpdateStageResult:
+def _success(*, latest_version: str | None, exe_path: str, status: str = "verified_ready") -> UpdateStageResult:
     return UpdateStageResult(
         ok=True,
-        status="verified_ready",
+        status=status,
         current_version=CURRENT_VERSION,
         latest_version=latest_version,
         exe_path=exe_path,
@@ -205,3 +211,21 @@ def _coerce_extracted_record(value: Any) -> dict[str, Any] | None:
         "sha256": candidate["sha256"],
         "size_bytes": size_bytes,
     }
+
+
+def _ready_exe_path_if_present(record: Mapping[str, Any] | None, *, root: Path, version: str) -> str | None:
+    if not isinstance(record, Mapping):
+        return None
+    exe_path = record.get("exe_path")
+    if not isinstance(exe_path, str) or not exe_path.strip():
+        return None
+    candidate = Path(exe_path).resolve(strict=False)
+    versions_root = update_cache.versions_dir(root).resolve(strict=False)
+    expected_dir = (versions_root / version).resolve(strict=False)
+    try:
+        candidate.relative_to(expected_dir)
+    except ValueError:
+        return None
+    if not candidate.exists() or not candidate.is_file():
+        return None
+    return str(candidate)

@@ -74,8 +74,7 @@ class UpdateReadyPromotionService:
         verified_at = _require_non_empty_text(exe_verified.get("verified_at"), code="invalid_exe_verified")
         ready_at = verified_at
 
-        mutable_state = dict(state)
-        mutable_state["verified_ready"] = {
+        ready_record = {
             "version": version,
             "channel": channel,
             "artifact_path": str(normalized_artifact),
@@ -90,6 +89,18 @@ class UpdateReadyPromotionService:
             "verified_at": verified_at,
             "ready_at": ready_at,
         }
+        mutable_state = dict(state)
+        ready_versions = mutable_state.get("verified_ready_versions")
+        if not isinstance(ready_versions, dict):
+            ready_versions = {}
+        version_records = ready_versions.get(version)
+        if not isinstance(version_records, dict):
+            version_records = {}
+        ready_versions = dict(ready_versions)
+        ready_versions[version] = dict(version_records)
+        ready_versions[version][sha256] = ready_record
+        mutable_state["verified_ready"] = ready_record
+        mutable_state["verified_ready_versions"] = ready_versions
         update_cache.write_state(mutable_state, target_root, active_version=CURRENT_VERSION)
         return VerifiedReadyArtifact(
             version=version,

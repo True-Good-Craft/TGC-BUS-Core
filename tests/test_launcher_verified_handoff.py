@@ -80,7 +80,7 @@ def _import_launcher(monkeypatch: pytest.MonkeyPatch):
 
 
 def _state(version: str, exe_path: Path) -> dict:
-    return {"verified_ready": {"version": version, "exe_path": str(exe_path)}}
+    return {"verified_ready": {"version": version, "exe_path": str(exe_path), "sha256": "a" * 64}}
 
 
 def test_no_verified_ready_keeps_current(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -151,20 +151,21 @@ def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyP
         "read_state",
         lambda _root, active_version: {
             "verified_ready": {
-                "version": "1.0.5",
-                "exe_path": "C:/cache/versions/1.0.5/BUS-Core.exe",
+                "version": "1.2.0",
+                "exe_path": "C:/cache/versions/1.2.0/BUS-Core.exe",
+                "sha256": "a" * 64,
             }
         },
     )
     monkeypatch.setattr(
         launcher.Path,
         "exists",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.0.5/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.0/BUS-Core.exe",
     )
     monkeypatch.setattr(
         launcher.Path,
         "is_file",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.0.5/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.0/BUS-Core.exe",
     )
 
     launched = launcher._maybe_handoff_to_verified_ready(
@@ -175,7 +176,7 @@ def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyP
 
     assert launched is True
     assert len(calls) == 1
-    assert calls[0][0].replace("\\", "/") == "C:/cache/versions/1.0.5/BUS-Core.exe"
+    assert calls[0][0].replace("\\", "/") == "C:/cache/versions/1.2.0/BUS-Core.exe"
     assert calls[0][1:] == (8765, False)
 
 
@@ -203,20 +204,21 @@ def test_verified_ready_newer_ask_yes_attempts_launch(monkeypatch: pytest.Monkey
         "read_state",
         lambda _root, active_version: {
             "verified_ready": {
-                "version": "1.0.7",
-                "exe_path": "C:/cache/versions/1.0.7/BUS-Core.exe",
+                "version": "1.2.1",
+                "exe_path": "C:/cache/versions/1.2.1/BUS-Core.exe",
+                "sha256": "a" * 64,
             }
         },
     )
     monkeypatch.setattr(
         launcher.Path,
         "exists",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.0.7/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.1/BUS-Core.exe",
     )
     monkeypatch.setattr(
         launcher.Path,
         "is_file",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.0.7/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.1/BUS-Core.exe",
     )
 
     launched = launcher._maybe_handoff_to_verified_ready(
@@ -253,20 +255,21 @@ def test_verified_ready_newer_ask_no_does_not_launch(monkeypatch: pytest.MonkeyP
         "read_state",
         lambda _root, active_version: {
             "verified_ready": {
-                "version": "1.0.8",
-                "exe_path": "C:/cache/versions/1.0.8/BUS-Core.exe",
+                "version": "1.2.2",
+                "exe_path": "C:/cache/versions/1.2.2/BUS-Core.exe",
+                "sha256": "a" * 64,
             }
         },
     )
     monkeypatch.setattr(
         launcher.Path,
         "exists",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.0.8/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.2/BUS-Core.exe",
     )
     monkeypatch.setattr(
         launcher.Path,
         "is_file",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.0.8/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.2/BUS-Core.exe",
     )
 
     launched = launcher._maybe_handoff_to_verified_ready(
@@ -313,13 +316,13 @@ def test_invalid_or_missing_exe_path_is_ignored(tmp_path: Path, monkeypatch: pyt
     root = tmp_path / "updates"
 
     missing = launcher._verified_ready_candidate(
-        state={"verified_ready": {"version": "1.0.5", "exe_path": str(root / "versions" / "1.0.5" / "BUS-Core.exe")}},
+        state={"verified_ready": {"version": "1.0.5", "exe_path": str(root / "versions" / "1.0.5" / "BUS-Core.exe"), "sha256": "a" * 64}},
         cache_root=root,
         current_version="1.0.4",
         current_executable=None,
     )
     invalid = launcher._verified_ready_candidate(
-        state={"verified_ready": {"version": "1.0.5", "exe_path": ""}},
+        state={"verified_ready": {"version": "1.0.5", "exe_path": "", "sha256": "a" * 64}},
         cache_root=root,
         current_version="1.0.4",
         current_executable=None,
@@ -327,6 +330,31 @@ def test_invalid_or_missing_exe_path_is_ignored(tmp_path: Path, monkeypatch: pyt
 
     assert missing is None
     assert invalid is None
+
+
+def test_verified_ready_candidate_selects_newest_semver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    launcher = _import_launcher(monkeypatch)
+    root = tmp_path / "updates"
+    exe_111 = root / "versions" / "1.1.1" / "BUS-Core.exe"
+    exe_120 = root / "versions" / "1.2.0" / "BUS-Core.exe"
+    exe_111.parent.mkdir(parents=True, exist_ok=True)
+    exe_120.parent.mkdir(parents=True, exist_ok=True)
+    exe_111.write_bytes(b"old")
+    exe_120.write_bytes(b"new")
+
+    chosen = launcher._verified_ready_candidate(
+        state={
+            "verified_ready_versions": {
+                "1.1.1": {"1" * 64: {"version": "1.1.1", "sha256": "1" * 64, "exe_path": str(exe_111)}},
+                "1.2.0": {"2" * 64: {"version": "1.2.0", "sha256": "2" * 64, "exe_path": str(exe_120)}},
+            }
+        },
+        cache_root=root,
+        current_version="1.1.1",
+        current_executable=None,
+    )
+
+    assert chosen == {"version": "1.2.0", "exe_path": str(exe_120.resolve(strict=False))}
 
 
 def test_launch_failure_falls_back_to_current(monkeypatch: pytest.MonkeyPatch):

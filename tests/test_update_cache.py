@@ -106,13 +106,25 @@ def test_traversal_exe_path_is_rejected(tmp_path):
         update_cache.validate_state(state, root=root, active_version="1.0.4")
 
 
-def test_verified_ready_version_lower_or_equal_to_active_is_rejected(tmp_path):
+def test_verified_ready_version_must_match_version_directory(tmp_path):
     root = _root(tmp_path)
     state = _valid_state(root)
     state["verified_ready"]["version"] = "1.0.4"
 
     with pytest.raises(update_cache.UpdateCacheStateError):
         update_cache.validate_state(state, root=root, active_version="1.0.4")
+
+
+def test_historical_verified_ready_matching_active_version_is_preserved(tmp_path):
+    root = _root(tmp_path)
+    state = _valid_state(root)
+
+    written = update_cache.write_state(state, root, active_version="1.0.5")
+
+    assert written["verified_ready"]["version"] == "1.0.5"
+    assert written["verified_ready_versions"]["1.0.5"]["a" * 64]["exe_path"] == str(
+        (root / "versions" / "1.0.5" / "BUS-Core.exe").resolve()
+    )
 
 
 def test_atomic_write_leaves_valid_json(tmp_path):

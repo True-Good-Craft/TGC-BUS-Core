@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.2] - 2026-05-13
+
+### Fixed
+- Fixed cached update handoff when BUS Core is already running from a previously staged verified update.
+- Multiple `verified_ready` update artifacts can now coexist safely in version+sha keyed cache state.
+- Manual staging now checks the exact manifest latest version and `sha256` before returning `already_ready`, instead of treating any ready artifact as sufficient.
+- Launcher handoff now scans verified-ready records, filters to versions newer than the running `VERSION`, and chooses the newest eligible SemVer version.
+- Running executables are not overwritten or deleted during update staging, and older verified-ready cached versions do not block newer updates.
+
+### Changed
+- Bumped `VERSION` from `1.1.1` to `1.1.2` and reset `INTERNAL_VERSION` from `1.1.1.15` to `1.1.2.0` for the verified update-cache handoff patch release.
+
 ## [1.0.4] - 2026-04-24
 
 ### Changed

@@ -7,8 +7,11 @@ import pytest
 
 from core.runtime import update_cache
 from core.services.update_promote import UpdatePromotionError, UpdateReadyPromotionService
+from core.version import VERSION as CURRENT_VERSION
 
 pytestmark = pytest.mark.unit
+
+READY_VERSION = "1.2.0"
 
 
 def _root(tmp_path: Path) -> Path:
@@ -17,16 +20,16 @@ def _root(tmp_path: Path) -> Path:
 
 def _seed_state(root: Path) -> dict:
     update_cache.ensure_cache_dirs(root)
-    artifact_path = root / "downloads" / "BUS-Core-1.0.5-stable.zip"
+    artifact_path = root / "downloads" / f"BUS-Core-{READY_VERSION}-stable.zip"
     artifact_path.write_bytes(b"zip-bytes")
-    extracted_dir = root / "versions" / "1.0.5"
+    extracted_dir = root / "versions" / READY_VERSION
     extracted_dir.mkdir(parents=True, exist_ok=True)
-    exe_path = extracted_dir / "BUS-Core-1.0.5.exe"
+    exe_path = extracted_dir / f"BUS-Core-{READY_VERSION}.exe"
     exe_path.write_bytes(b"exe-bytes")
 
-    state = update_cache.read_state(root, active_version="1.0.4")
+    state = update_cache.read_state(root, active_version=CURRENT_VERSION)
     state["hash_verified"] = {
-        "version": "1.0.5",
+        "version": READY_VERSION,
         "channel": "stable",
         "artifact_path": str(artifact_path.resolve()),
         "sha256": "a" * 64,
@@ -37,7 +40,7 @@ def _seed_state(root: Path) -> dict:
         "verified_at": "2026-04-25T12:00:01Z",
     }
     state["extracted"] = {
-        "version": "1.0.5",
+        "version": READY_VERSION,
         "channel": "stable",
         "artifact_path": str(artifact_path.resolve()),
         "extracted_dir": str(extracted_dir.resolve()),
@@ -47,7 +50,7 @@ def _seed_state(root: Path) -> dict:
         "extracted_at": "2026-04-25T12:01:00Z",
     }
     state["exe_verified"] = {
-        "version": "1.0.5",
+        "version": READY_VERSION,
         "channel": "stable",
         "extracted_dir": str(extracted_dir.resolve()),
         "exe_path": str(exe_path.resolve()),
@@ -59,7 +62,7 @@ def _seed_state(root: Path) -> dict:
         "verified": True,
         "verified_at": "2026-04-25T12:02:00Z",
     }
-    return update_cache.write_state(state, root, active_version="1.0.4")
+    return update_cache.write_state(state, root, active_version=CURRENT_VERSION)
 
 
 def test_happy_path_promotes_to_verified_ready(tmp_path: Path):
@@ -68,14 +71,15 @@ def test_happy_path_promotes_to_verified_ready(tmp_path: Path):
 
     promoted = UpdateReadyPromotionService().promote(state, root=root)
 
-    stored = update_cache.read_state(root, active_version="1.0.4")
-    assert promoted.version == "1.0.5"
+    stored = update_cache.read_state(root, active_version=CURRENT_VERSION)
+    assert promoted.version == READY_VERSION
     assert stored["verified_ready"] is not None
     assert stored["verified_ready"]["artifact_path"] == state["hash_verified"]["artifact_path"]
     assert stored["verified_ready"]["extracted_dir"] == state["extracted"]["extracted_dir"]
     assert stored["verified_ready"]["exe_path"] == state["extracted"]["exe_path"]
     assert stored["verified_ready"]["sha256"] == "a" * 64
     assert stored["verified_ready"]["publisher"] == "True Good Craft"
+    assert stored["verified_ready_versions"][READY_VERSION]["a" * 64]["exe_path"] == state["extracted"]["exe_path"]
 
 
 def test_missing_hash_verified_is_rejected(tmp_path: Path):
@@ -87,7 +91,7 @@ def test_missing_hash_verified_is_rejected(tmp_path: Path):
         UpdateReadyPromotionService().promote(state, root=root)
 
     assert exc_info.value.code == "missing_hash_verified"
-    assert update_cache.read_state(root, active_version="1.0.4")["verified_ready"] is None
+    assert update_cache.read_state(root, active_version=CURRENT_VERSION)["verified_ready"] is None
 
 
 def test_missing_extracted_is_rejected(tmp_path: Path):
@@ -116,7 +120,7 @@ def test_mismatched_version_is_rejected(tmp_path: Path):
     root = _root(tmp_path)
     state = _seed_state(root)
     state["exe_verified"] = dict(state["exe_verified"])
-    state["exe_verified"]["version"] = "1.0.6"
+    state["exe_verified"]["version"] = "1.2.1"
 
     with pytest.raises(UpdatePromotionError) as exc_info:
         UpdateReadyPromotionService().promote(state, root=root)
@@ -183,7 +187,7 @@ def test_extracted_dir_outside_versions_is_rejected(tmp_path: Path):
 def test_exe_path_outside_extracted_dir_is_rejected(tmp_path: Path):
     root = _root(tmp_path)
     state = _seed_state(root)
-    outside_exe = tmp_path / "outside" / "BUS-Core-1.0.5.exe"
+    outside_exe = tmp_path / "outside" / f"BUS-Core-{READY_VERSION}.exe"
     outside_exe.parent.mkdir(parents=True, exist_ok=True)
     outside_exe.write_bytes(b"exe-bytes")
     state["extracted"] = dict(state["extracted"])
@@ -218,20 +222,20 @@ def test_missing_exe_file_is_rejected(tmp_path: Path):
         UpdateReadyPromotionService().promote(state, root=root)
 
     assert exc_info.value.code == "invalid_exe_path"
-    assert update_cache.read_state(root, active_version="1.0.4")["verified_ready"] is None
+    assert update_cache.read_state(root, active_version=CURRENT_VERSION)["verified_ready"] is None
 
 
 def test_failure_leaves_existing_states_unchanged(tmp_path: Path):
     root = _root(tmp_path)
     state = _seed_state(root)
-    original = update_cache.read_state(root, active_version="1.0.4")
+    original = update_cache.read_state(root, active_version=CURRENT_VERSION)
     state["extracted"] = dict(state["extracted"])
     state["extracted"]["sha256"] = "b" * 64
 
     with pytest.raises(UpdatePromotionError):
         UpdateReadyPromotionService().promote(state, root=root)
 
-    stored = update_cache.read_state(root, active_version="1.0.4")
+    stored = update_cache.read_state(root, active_version=CURRENT_VERSION)
     assert stored["hash_verified"] == original["hash_verified"]
     assert stored["extracted"] == original["extracted"]
     assert stored["exe_verified"] == original["exe_verified"]

@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.1.1 **Updated:** 2026-05-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.1.2 **Updated:** 2026-05-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -146,9 +146,9 @@
 
 * Client-side signed-manifest enforcement is required for manual update staging (`POST /app/update/stage`) and remains off for read-only update checks. Unsigned manifest compatibility is intentionally preserved only for discovery/check behavior, not for artifact staging.
 
-* This release is an update-chain hardening bridge release. Manual staging requires trusted signed manifest metadata, hash-verifies downloaded ZIP artifacts against manifest `sha256` metadata while enforcing declared size when present, safely extracts hash-verified ZIPs into the local update cache, verifies EXE Authenticode/publisher/thumbprint trust, and promotes only consistent `verified_ready` state. It still does not force restart or auto-apply an update while Core is running.
+* This release is an update-chain hardening bridge release. Manual staging requires trusted signed manifest metadata, hash-verifies downloaded ZIP artifacts against manifest `sha256` metadata while enforcing declared size when present, safely extracts hash-verified ZIPs into the local update cache, verifies EXE Authenticode/publisher/thumbprint trust, and promotes only consistent version+sha keyed `verified_ready_versions` state. Legacy `verified_ready` remains only a compatibility/latest pointer. It still does not force restart or auto-apply an update while Core is running.
 
-* BUS Core has a DB/app ownership lock that prevents multiple live owners of the same DB/app root. Launcher preflight blocks duplicate native launches before browser open / uvicorn bind, and the app-level lock remains defense-in-depth. This ownership lock is a prerequisite for future verified version handoff, but this bridge release does not add staged update application.
+* BUS Core has a DB/app ownership lock that prevents multiple live owners of the same DB/app root. Launcher preflight blocks duplicate native launches before browser open / uvicorn bind, and the app-level lock remains defense-in-depth. Verified version handoff is evaluated after DB ownership lock on next start, scans verified-ready records, filters to versions newer than the running `VERSION`, and chooses the newest eligible SemVer candidate according to the configured launch policy.
 
 * Windows code signing is currently a manual post-build ceremony. `scripts/build_core.ps1` builds the onefile EXE and prints optional `signtool sign` / `signtool verify` commands; it does not sign or verify artifacts automatically.
 
@@ -464,14 +464,14 @@
 
 
 *
-**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `exe_verified` means the extracted EXE passed Authenticode/publisher/thumbprint trust checks. `verified_ready` is written only when `hash_verified`, `extracted`, and `exe_verified` agree and confined cache files still exist.
+**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `exe_verified` means the extracted EXE passed Authenticode/publisher/thumbprint trust checks. `verified_ready_versions` is keyed by version and sha256 and is written only when `hash_verified`, `extracted`, and `exe_verified` agree and confined cache files still exist. Legacy `verified_ready` is only a compatibility/latest pointer.
 
 *
 **Backward-compatible manifest requirement:** Public manifests must keep top-level `latest.version` and `latest.download.url` so existing deployed BUS Core clients can still detect a newer version and open the Lighthouse-provided download link. Channel-aware and metadata-rich fields must remain additive.
 
 
 *
-**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `exe_verified` means the extracted EXE passed Authenticode/publisher/thumbprint trust checks. `verified_ready` is written only when `hash_verified`, `extracted`, and `exe_verified` agree and confined cache files still exist.
+**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `exe_verified` means the extracted EXE passed Authenticode/publisher/thumbprint trust checks. `verified_ready_versions` is keyed by version and sha256 and is written only when `hash_verified`, `extracted`, and `exe_verified` agree and confined cache files still exist. Legacy `verified_ready` is only a compatibility/latest pointer.
 
 
 *
@@ -511,7 +511,7 @@
 
 * DB/app ownership locking prevents two live BUS Core owners from using the same DB/app root. Launcher preflight blocks a duplicate native instance before browser open / uvicorn bind, and the app-level lock remains defense-in-depth.
 
-* The update cache/state model now supports conservative `hash_verified`, `extracted`, `exe_verified`, and `verified_ready` stages under `%LOCALAPPDATA%\BUSCore\updates\state.json`. `verified_ready` is written only after ZIP hash, safe extraction, EXE trust, version/channel/hash/path consistency, and confined-file existence checks succeed.
+* The update cache/state model now supports conservative `hash_verified`, `extracted`, `exe_verified`, and version+sha keyed `verified_ready_versions` stages under `%LOCALAPPDATA%\BUSCore\updates\state.json`. `verified_ready_versions` records are written only after ZIP hash, safe extraction, EXE trust, version/channel/hash/path consistency, and confined-file existence checks succeed; legacy `verified_ready` remains a compatibility/latest pointer.
 
 * Manifest authenticity primitives support Ed25519 signatures, deterministic canonical JSON, signature envelopes, and embedded top-level signatures. Embedded signatures preserve public compatibility by keeping top-level `latest.version` and `latest.download.url`; the signature covers canonical JSON after removing top-level `signature`.
 

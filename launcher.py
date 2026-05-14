@@ -185,41 +185,49 @@ def _verified_ready_candidate(
     current_version: str,
     current_executable: Path | None,
 ) -> dict[str, str] | None:
-    ready = state.get("verified_ready")
-    if not isinstance(ready, dict):
+    records = update_cache.iter_verified_ready_records(state)
+    if not records:
         _startup_log("[launcher] verified_ready not present; continuing current version.")
         return None
 
-    version = ready.get("version")
-    exe_path_value = ready.get("exe_path")
-    if not isinstance(version, str) or not isinstance(exe_path_value, str) or not exe_path_value.strip():
-        _startup_log("[launcher] verified_ready invalid/incomplete; continuing current version.")
-        return None
-
-    candidate_semver = _parse_semver(version)
     current_semver = _parse_semver(current_version)
-    if candidate_semver is None or current_semver is None or candidate_semver <= current_semver:
-        _startup_log("[launcher] verified_ready present but not newer; continuing current version.")
+    if current_semver is None:
+        _startup_log("[launcher] current version is not strict SemVer; continuing current version.")
         return None
 
-    candidate_exe = Path(exe_path_value).resolve(strict=False)
-    if not candidate_exe.exists() or not candidate_exe.is_file():
-        _startup_log("[launcher] verified_ready executable missing; continuing current version.")
+    candidates: list[tuple[tuple[int, int, int], dict[str, str]]] = []
+    for ready in records:
+        version = ready.get("version")
+        exe_path_value = ready.get("exe_path")
+        if not isinstance(version, str) or not isinstance(exe_path_value, str) or not exe_path_value.strip():
+            continue
+
+        candidate_semver = _parse_semver(version)
+        if candidate_semver is None or candidate_semver <= current_semver:
+            continue
+
+        candidate_exe = Path(exe_path_value).resolve(strict=False)
+        if not candidate_exe.exists() or not candidate_exe.is_file():
+            continue
+
+        versions_root = update_cache.versions_dir(cache_root).resolve(strict=False)
+        expected_dir = (versions_root / version).resolve(strict=False)
+        try:
+            candidate_exe.relative_to(expected_dir)
+        except ValueError:
+            continue
+
+        if current_executable is not None and candidate_exe == current_executable:
+            continue
+
+        candidates.append((candidate_semver, {"version": version, "exe_path": str(candidate_exe)}))
+
+    if not candidates:
+        _startup_log("[launcher] no eligible newer verified_ready executable found; continuing current version.")
         return None
 
-    versions_root = update_cache.versions_dir(cache_root).resolve(strict=False)
-    expected_dir = (versions_root / version).resolve(strict=False)
-    try:
-        candidate_exe.relative_to(expected_dir)
-    except ValueError:
-        _startup_log("[launcher] verified_ready executable path is outside versions/<version>; continuing current version.")
-        return None
-
-    if current_executable is not None and candidate_exe == current_executable:
-        _startup_log("[launcher] verified_ready executable matches current executable; continuing current version.")
-        return None
-
-    return {"version": version, "exe_path": str(candidate_exe)}
+    candidates.sort(key=lambda item: item[0])
+    return candidates[-1][1]
 
 
 def _ask_windows_use_verified(version: str) -> bool:

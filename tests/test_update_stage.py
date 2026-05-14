@@ -112,6 +112,27 @@ class _PromoteSvc:
         return _Promoted()
 
 
+def _ready_record(root: Path, *, version: str, sha256: str) -> dict[str, object]:
+    artifact_path = root / "downloads" / f"BUS-Core-{version}-stable.zip"
+    extracted_dir = root / "versions" / version
+    exe_path = extracted_dir / "BUS-Core.exe"
+    return {
+        "version": version,
+        "channel": "stable",
+        "artifact_path": str(artifact_path.resolve(strict=False)),
+        "extracted_dir": str(extracted_dir.resolve(strict=False)),
+        "exe_path": str(exe_path.resolve(strict=False)),
+        "sha256": sha256,
+        "size_bytes": 123,
+        "publisher": "True Good Craft",
+        "signer_subject": "CN=True Good Craft, O=True Good Craft",
+        "signer_thumbprint": "55474aa9a2d562022a6590d487045e069457f985",
+        "verified": True,
+        "verified_at": "2026-05-13T12:00:00Z",
+        "ready_at": "2026-05-13T12:00:00Z",
+    }
+
+
 def _release(*, version: str = FUTURE_VERSION, declared_sha256: str | None = "a" * 64) -> ManifestRelease:
     return ManifestRelease(
         version=version,
@@ -299,23 +320,140 @@ def test_stage_idempotent_when_verified_ready_already_present(tmp_path: Path, mo
         update_service=_UpdateSvc(_release(version=FUTURE_VERSION)),
         artifact_service=_ArtifactSvc(calls),
     )
+    exe_path = tmp_path / "versions" / FUTURE_VERSION / "BUS-Core.exe"
+    exe_path.parent.mkdir(parents=True, exist_ok=True)
+    exe_path.write_bytes(b"exe")
+    ready = _ready_record(tmp_path, version=FUTURE_VERSION, sha256="a" * 64)
 
     monkeypatch.setattr("core.services.update_stage.update_cache.ensure_cache_dirs", lambda root=None: root or tmp_path)
     monkeypatch.setattr(
         "core.services.update_stage.update_cache.read_state",
         lambda *_args, **_kwargs: {
-            "verified_ready": {
-                "version": FUTURE_VERSION,
-                "exe_path": str(tmp_path / "versions" / FUTURE_VERSION / "BUS-Core.exe"),
-            }
+            "verified_ready": ready,
+            "verified_ready_versions": {FUTURE_VERSION: {"a" * 64: ready}},
         },
     )
 
     result = service.stage(manifest_url="https://example.test/manifest.json", channel="stable", root=tmp_path)
 
     assert result.ok is True
-    assert result.status == "verified_ready"
+    assert result.status == "already_ready"
     assert calls == []
+
+
+def test_stage_ignores_older_verified_ready_and_restages_exact_latest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from core.runtime import update_cache
+    from core.services.update_promote import UpdateReadyPromotionService
+
+    calls: list[str] = []
+    old_version = "1.1.1"
+    latest_version = "1.2.0"
+    old_sha = "1" * 64
+    latest_sha = "2" * 64
+    root = tmp_path / "updates"
+    update_cache.ensure_cache_dirs(root)
+
+    old_artifact = update_cache.downloads_dir(root) / f"BUS-Core-{old_version}-stable.zip"
+    old_artifact.write_bytes(b"old zip")
+    old_dir = update_cache.versions_dir(root) / old_version
+    old_dir.mkdir(parents=True, exist_ok=True)
+    old_exe = old_dir / "BUS-Core.exe"
+    old_exe.write_bytes(b"old exe")
+    old_ready = _ready_record(root, version=old_version, sha256=old_sha)
+    state = update_cache.read_state(root, active_version=old_version)
+    state["verified_ready"] = old_ready
+    state["verified_ready_versions"] = {old_version: {old_sha: old_ready}}
+    update_cache.write_state(state, root, active_version=old_version)
+
+    class _WritingArtifactSvc(_ArtifactSvc):
+        def download_and_verify(self, release, *, root=None):
+            self.calls.append("download")
+            target_root = Path(root)
+            artifact_path = update_cache.downloads_dir(target_root) / f"BUS-Core-{release.version}-stable.zip"
+            artifact_path.write_bytes(b"new zip")
+            state = update_cache.read_state(target_root, active_version=old_version)
+            state["hash_verified"] = {
+                "version": release.version,
+                "channel": release.channel,
+                "artifact_path": str(artifact_path.resolve()),
+                "sha256": release.declared_sha256,
+                "size_bytes": release.declared_size_bytes,
+                "downloaded": True,
+                "hash_verified": True,
+                "downloaded_at": "2026-05-13T12:01:00Z",
+                "verified_at": "2026-05-13T12:01:00Z",
+            }
+            update_cache.write_state(state, target_root, active_version=old_version)
+            return state["hash_verified"]
+
+    class _WritingExtractSvc(_ExtractSvc):
+        def extract(self, downloaded, *, root=None):
+            self.calls.append("extract")
+            target_root = Path(root)
+            extracted_dir = update_cache.versions_dir(target_root) / downloaded["version"]
+            extracted_dir.mkdir(parents=True, exist_ok=False)
+            exe_path = extracted_dir / "BUS-Core.exe"
+            exe_path.write_bytes(b"new exe")
+            state = update_cache.read_state(target_root, active_version=old_version)
+            state["extracted"] = {
+                "version": downloaded["version"],
+                "channel": downloaded["channel"],
+                "artifact_path": downloaded["artifact_path"],
+                "extracted_dir": str(extracted_dir.resolve()),
+                "exe_path": str(exe_path.resolve()),
+                "sha256": downloaded["sha256"],
+                "size_bytes": downloaded["size_bytes"],
+                "extracted_at": "2026-05-13T12:02:00Z",
+            }
+            update_cache.write_state(state, target_root, active_version=old_version)
+            return state["extracted"]
+
+    class _WritingExeSvc(_ExeSvc):
+        def verify(self, extracted, *, root=None):
+            self.calls.append("verify")
+            target_root = Path(root)
+            state = update_cache.read_state(target_root, active_version=old_version)
+            state["exe_verified"] = {
+                "version": extracted["version"],
+                "channel": extracted["channel"],
+                "extracted_dir": extracted["extracted_dir"],
+                "exe_path": extracted["exe_path"],
+                "sha256": extracted["sha256"],
+                "size_bytes": extracted["size_bytes"],
+                "publisher": "True Good Craft",
+                "signer_subject": "CN=True Good Craft, O=True Good Craft",
+                "signer_thumbprint": "55474aa9a2d562022a6590d487045e069457f985",
+                "verified": True,
+                "verified_at": "2026-05-13T12:03:00Z",
+            }
+            update_cache.write_state(state, target_root, active_version=old_version)
+            return state["exe_verified"]
+
+    monkeypatch.setattr("core.services.update_stage.CURRENT_VERSION", old_version)
+    monkeypatch.setattr("core.services.update_promote.CURRENT_VERSION", old_version)
+    service = UpdateStageService(
+        update_service=_UpdateSvc(_release(version=latest_version, declared_sha256=latest_sha), calls=calls),
+        artifact_service=_WritingArtifactSvc(calls),
+        extract_service=_WritingExtractSvc(calls),
+        exe_trust_service=_WritingExeSvc(calls),
+        promote_service=UpdateReadyPromotionService(),
+    )
+
+    staged = service.stage(manifest_url="https://example.test/manifest.json", channel="stable", root=root)
+    stored = update_cache.read_state(root, active_version=old_version)
+
+    assert staged.ok is True
+    assert staged.status == "verified_ready"
+    assert calls == ["check", "download", "extract", "verify"]
+    assert stored["verified_ready_versions"][old_version][old_sha]["exe_path"] == str(old_exe.resolve())
+    assert stored["verified_ready_versions"][latest_version][latest_sha]["exe_path"].endswith("BUS-Core.exe")
+    assert old_exe.exists()
+
+    restaged = service.stage(manifest_url="https://example.test/manifest.json", channel="stable", root=root)
+
+    assert restaged.ok is True
+    assert restaged.status == "already_ready"
+    assert calls == ["check", "download", "extract", "verify", "check"]
 
 
 def test_stage_update_check_error_maps_code(tmp_path: Path):

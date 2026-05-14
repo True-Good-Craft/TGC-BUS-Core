@@ -69,7 +69,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
     - `restart_available`
     - `error_code`
     - `error_message`
-  - Success means a newer version is verified and written to conservative `verified_ready` state.
+  - Success means a newer version is verified and written to conservative version+sha keyed `verified_ready_versions` state; legacy `verified_ready` remains a compatibility/latest pointer.
   - It does not force restart, does not overwrite the running EXE, and does not itself launch the staged executable.
   - Launcher handoff, when enabled by config, is evaluated on next start after DB ownership lock.
 
