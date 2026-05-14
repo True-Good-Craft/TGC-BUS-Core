@@ -14,6 +14,8 @@ from core.api.schemas.manufacturing import ManufacturingRunRequest, parse_run_re
 from core.appdb.engine import get_session
 from core.appdb.ledger import InsufficientStock
 from core.appdb.models import Item, Recipe
+from core.auth.dependencies import require_permission
+from core.auth.permissions import PERMISSION_MANUFACTURING_READ, PERMISSION_MANUFACTURING_RUN
 from core.config.writes import require_writes
 from core.config.paths import JOURNAL_DIR
 from core.manufacturing.service import execute_run_txn, format_shortages, validate_run
@@ -164,6 +166,7 @@ async def canonical_manufacture(
     raw_body: Any = Body(...),
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _permission=Depends(require_permission(PERMISSION_MANUFACTURING_RUN)),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
@@ -255,6 +258,7 @@ async def run_manufacturing_wrapper(
     raw_body: Any = Body(...),
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _permission=Depends(require_permission(PERMISSION_MANUFACTURING_RUN)),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
@@ -297,12 +301,20 @@ def append_mfg_journal(entry: dict) -> None:
 
 
 @router.get("/runs")
-async def list_runs(days: int = Query(30, ge=1, le=365)):
+async def list_runs(
+    days: int = Query(30, ge=1, le=365),
+    _permission=Depends(require_permission(PERMISSION_MANUFACTURING_READ)),
+    _token: str = Depends(require_token_ctx),
+):
     return {"runs": _load_recent_runs(days)}
 
 
 @router.get("/history")
-async def list_runs_alias(days: int = Query(30, ge=1, le=365)):
+async def list_runs_alias(
+    days: int = Query(30, ge=1, le=365),
+    _permission=Depends(require_permission(PERMISSION_MANUFACTURING_READ)),
+    _token: str = Depends(require_token_ctx),
+):
     return {"runs": _load_recent_runs(days)}
 
 

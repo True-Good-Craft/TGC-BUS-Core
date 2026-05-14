@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from core.auth.dependencies import require_permission
+from core.auth.permissions import PERMISSION_UPDATES_CHECK, PERMISSION_UPDATES_STAGE
 from core.config.writes import require_writes
 from core.config.manager import load_config
 from core.runtime.manifest_keys import active_manifest_public_keys
@@ -56,7 +58,10 @@ def _stage_payload(result: UpdateStageResult) -> dict[str, object | None]:
 
 
 @router.get("/update/check")
-def check_for_updates(_token: None = Depends(require_token_ctx)) -> dict[str, object | None]:
+def check_for_updates(
+    _permission=Depends(require_permission(PERMISSION_UPDATES_CHECK)),
+    _token: None = Depends(require_token_ctx),
+) -> dict[str, object | None]:
     try:
         cfg = load_config().updates
         result = get_update_service().check(
@@ -79,6 +84,7 @@ def check_for_updates(_token: None = Depends(require_token_ctx)) -> dict[str, ob
 
 @router.post("/update/stage")
 def stage_update(
+    _permission=Depends(require_permission(PERMISSION_UPDATES_STAGE)),
     _token: None = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ) -> dict[str, object | None]:

@@ -27,7 +27,7 @@
 | API contract | Canonical | Mounted routes in `core/api/http.py` and `core/api/routes/*` | Detailed in `02_API_AND_UI_CONTRACT_MAP.md`. |
 | Persistence schema | Canonical | `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/api/http.py::startup_migrations()` | SQL files in `migrations/` are supplementary, not the only authority. |
 | Durable settings config | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` via `core/config/manager.py` | Root config is the single app-runtime settings authority; `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only. |
-| Session/auth authority | Canonical with secondary mirrors | `core.api.http` auth stack, `GET /session/token`, `tgc.security.require_token_ctx` | `core.api.http` owns authorization decisions; `tgc.security.require_token_ctx` is a compatibility wrapper, and `SESSION_TOKEN` / `session_token.txt` remain secondary mirrors. See `04_SECURITY_TRUST_AND_OPERATIONS.md`. |
+| Session/auth authority | Claimed/unclaimed global gate implemented | `core/api/http.py::session_guard`, `core.api.http.require_token_ctx`, `GET /session/token`, `core/api/routes/auth.py`, `core/auth/*`, and `auth_*` tables | `core.api.http` owns the global gate. Zero users preserves legacy local `bus_session` behavior. One or more users requires valid DB-backed `bus_auth_session` for protected routes; legacy `bus_session` no longer grants `/app/*` access. `/session/token` is unclaimed compatibility only and returns `login_required` once claimed. See `04_SECURITY_TRUST_AND_OPERATIONS.md`. |
 | Update check behavior | Canonical | `core/api/routes/update.py`, `core/services/update.py`, `core/config/manager.py` | UI contract lives in `core/ui/js/update-check.js`; client-side signed-manifest enforcement remains off. |
 | Manifest authenticity and update artifact staging | Bridge groundwork | `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`, `core/services/update_artifact.py`, `core/services/update_extract.py`, `scripts/sign_manifest.py`, `.github/workflows/release-mirror.yml` | Release publication signs manifests; Core can verify Ed25519 manifest metadata, hash-verify downloaded ZIPs into the local update cache, and safely extract them into `updates\versions\<version>\`, but executable trust verification and handoff are not implemented. |
 | Release version | Canonical | `core/version.py` | `VERSION` is the strict SemVer release authority; `INTERNAL_VERSION` is the working revision. |
@@ -76,7 +76,7 @@ Stability in the current phase comes from keeping these authority lines singular
 
 ### Request path
 
-1. `session_guard` allows only public paths without a cookie-backed session.
+1. `session_guard` allows public/bootstrap paths without a cookie-backed session. For protected routes, zero auth users preserves legacy `bus_session`; one or more auth users requires a valid DB-backed `bus_auth_session` and attaches auth user/session context to `request.state`.
 2. Correlation and maintenance middleware run before handlers.
 3. Route handlers resolve DB sessions, services, and broker/providers as needed.
 4. Domain mutations may write DB rows, journal entries, audit records, and runtime logs.
@@ -118,7 +118,7 @@ Stability in the current phase comes from keeping these authority lines singular
 | Hotspot | Status | Why it matters | Own in |
 | --- | --- | --- | --- |
 | Config authority (`config.json` vs `app\\config.json`) | Resolved | `%LOCALAPPDATA%\BUSCore\config.json` is canonical; `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
-| Session/token split | Narrowed drift | `core.api.http` is the canonical validator authority, `AppState.tokens` is the canonical runtime token source, `tgc.security.require_token_ctx` is a compatibility wrapper, and the global/token-file mirrors still participate secondarily. | `04_SECURITY_TRUST_AND_OPERATIONS.md` |
+| Session/token split | Claimed-mode gate implemented | `core.api.http` is the canonical validator authority, `AppState.tokens` is the legacy unclaimed token source, `tgc.security.require_token_ctx` is a compatibility wrapper, and DB-backed `auth_sessions` are claimed-mode authority. `/session/token` remains unclaimed compatibility only and returns `login_required` once claimed. | `04_SECURITY_TRUST_AND_OPERATIONS.md` |
 | Version/update authority drift | Narrowed drift | `core/version.py` is now the public release/update source, `.github/workflows/release-mirror.yml` machine-checks `tag == v{VERSION}` and signs manifests before publishing; remaining drift is limited to client enforcement being off, declared-but-unverified artifact metadata, stable-only release automation, and release-history dependence on GitHub release assets. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
 | Repo-local mutable state | Drifted | Some live state is stored in repo `data/` instead of AppData. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Placeholder/stale UI surfaces | Drifted | `#/runs`, `#/import`, backup UI, and stub transaction widgets can mislead contract assumptions. | `02_API_AND_UI_CONTRACT_MAP.md` |

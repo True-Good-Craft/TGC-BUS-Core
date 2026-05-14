@@ -12,11 +12,17 @@ pytestmark = pytest.mark.api
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCOPED_ROUTE_FILES = (
+    Path("core/api/routes/items.py"),
     Path("core/api/routes/ledger_api.py"),
     Path("core/api/routes/finance_api.py"),
     Path("core/api/routes/config.py"),
     Path("core/api/routes/update.py"),
     Path("core/api/routes/logs_api.py"),
+    Path("core/api/routes/users.py"),
+    Path("core/api/routes/recipes.py"),
+    Path("core/api/routes/manufacturing.py"),
+    Path("core/api/routes/vendors.py"),
+    Path("core/api/routes/system_state.py"),
 )
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 TEST_SESSION_TOKEN = "route-guard-token"
@@ -60,6 +66,8 @@ def _dependency_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
                     dependency = keyword.value
                     break
         dependency_name = _name(dependency)
+        if dependency_name is None and isinstance(dependency, ast.Call):
+            dependency_name = _name(dependency.func)
         if dependency_name:
             dependency_names.add(dependency_name)
     return dependency_names
@@ -87,9 +95,31 @@ def _dummy_session():
     yield object()
 
 
+def _route_guard_user_context():
+    from core.auth.dependencies import AuthUserContext
+    from core.auth.permissions import ALL_PERMISSIONS, OWNER_ROLE_KEY
+
+    return AuthUserContext(
+        mode="unclaimed",
+        user_id=None,
+        username="route-guard-test",
+        roles=(OWNER_ROLE_KEY,),
+        permissions=ALL_PERMISSIONS,
+    )
+
+
+def _override_named_dependency(app: FastAPI, dependant, name: str, override) -> None:
+    for child_dependant in getattr(dependant, "dependencies", ()):
+        call = getattr(child_dependant, "call", None)
+        if getattr(call, "__name__", None) == name:
+            app.dependency_overrides[call] = override
+        _override_named_dependency(app, child_dependant, name, override)
+
+
 def _guard_test_app(monkeypatch: pytest.MonkeyPatch, *, allow_writes: bool) -> FastAPI:
     from core.api.routes import config as config_routes
     from core.api.routes import finance_api, ledger_api, logs_api
+    from core.auth.dependencies import require_user
     from tgc.security import require_token_ctx
 
     app = FastAPI()
@@ -102,6 +132,11 @@ def _guard_test_app(monkeypatch: pytest.MonkeyPatch, *, allow_writes: bool) -> F
     app.include_router(logs_api.router)
 
     app.dependency_overrides[require_token_ctx] = _require_test_token
+    app.dependency_overrides[require_user] = _route_guard_user_context
+    for route in app.routes:
+        dependant = getattr(route, "dependant", None)
+        if dependant is not None:
+            _override_named_dependency(app, dependant, "require_user", _route_guard_user_context)
     app.dependency_overrides[ledger_api.get_session] = _dummy_session
     app.dependency_overrides[finance_api.get_session] = _dummy_session
     app.dependency_overrides[logs_api.get_session] = _dummy_session
@@ -116,9 +151,13 @@ def test_all_scoped_mutation_routes_have_route_local_token_and_write_guards() ->
         for function_name, methods, dependencies in _route_functions(relative_path):
             if not methods.intersection(MUTATING_METHODS):
                 continue
-            missing = {"require_token_ctx", "require_writes"} - dependencies
+            missing: list[str] = []
+            if "require_token_ctx" not in dependencies:
+                missing.append("require_token_ctx")
+            if not {"require_writes", "require_write_access"}.intersection(dependencies):
+                missing.append("require_writes/require_write_access")
             if missing:
-                violations.append(f"{relative_path}:{function_name} missing {sorted(missing)}")
+                violations.append(f"{relative_path}:{function_name} missing {missing}")
 
     assert not violations, "Sensitive mutations without explicit route-local guards:\n" + "\n".join(violations)
 
@@ -135,6 +174,18 @@ def test_all_scoped_read_routes_have_route_local_token_guards() -> None:
     assert not violations, "Sensitive reads without explicit route-local token guards:\n" + "\n".join(violations)
 
 
+def test_all_scoped_routes_have_route_local_permission_guards() -> None:
+    violations: list[str] = []
+    for relative_path in SCOPED_ROUTE_FILES:
+        for function_name, methods, dependencies in _route_functions(relative_path):
+            if not methods.intersection({"GET", "POST", "PUT", "PATCH", "DELETE"}):
+                continue
+            if "require_permission" not in dependencies:
+                violations.append(f"{relative_path}:{function_name} missing require_permission")
+
+    assert not violations, "Protected routes without explicit route-local permission guards:\n" + "\n".join(violations)
+
+
 def test_anonymous_sensitive_reads_and_writes_fail(monkeypatch: pytest.MonkeyPatch) -> None:
     app = _guard_test_app(monkeypatch, allow_writes=True)
     cases = [
@@ -147,7 +198,7 @@ def test_anonymous_sensitive_reads_and_writes_fail(monkeypatch: pytest.MonkeyPat
         ("post", "/app/config", {"json": {"ui": {"theme": "system"}}}),
     ]
 
-    with TestClient(app, raise_server_exceptions=False) as anonymous_client:
+    with TestClient(app) as anonymous_client:
         for method, path, kwargs in cases:
             response = getattr(anonymous_client, method)(path, **kwargs)
             assert response.status_code == 401, f"{method.upper()} {path}: {response.text}"
@@ -156,7 +207,7 @@ def test_anonymous_sensitive_reads_and_writes_fail(monkeypatch: pytest.MonkeyPat
 def test_writes_disabled_blocks_ledger_finance_and_config_mutations(monkeypatch: pytest.MonkeyPatch) -> None:
     app = _guard_test_app(monkeypatch, allow_writes=False)
     headers = {"Cookie": f"bus_session={TEST_SESSION_TOKEN}"}
-    with TestClient(app, raise_server_exceptions=False) as client:
+    with TestClient(app) as client:
         cases = [
             ("/app/stock/in", {"item_id": 1, "quantity_decimal": "1", "uom": "ea", "unit_cost_cents": 0}),
             ("/app/finance/expense", {"amount_cents": 1}),
@@ -172,7 +223,7 @@ def test_authenticated_config_flow_still_passes(monkeypatch: pytest.MonkeyPatch)
     app = _guard_test_app(monkeypatch, allow_writes=True)
     headers = {"Cookie": f"bus_session={TEST_SESSION_TOKEN}"}
 
-    with TestClient(app, raise_server_exceptions=False) as client:
+    with TestClient(app) as client:
         get_response = client.get("/app/config", headers=headers)
         post_response = client.post("/app/config", json={"ui": {"theme": "system"}}, headers=headers)
 

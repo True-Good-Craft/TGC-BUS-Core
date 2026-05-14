@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
 from core.appdb.models import Item, ItemMovement
+from core.auth.dependencies import require_permission
+from core.auth.permissions import PERMISSION_LOGS_READ
 from tgc.security import require_token_ctx
 
 router = APIRouter(prefix="/app", tags=["logs"])
@@ -22,13 +24,14 @@ def _to_iso(dt: datetime | None) -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@router.get("/logs")
-@public_router.get("/logs")
+@router.get("/logs", operation_id="list_app_logs")
+@public_router.get("/logs", operation_id="list_public_app_logs")
 def list_logs(
     limit: int = Query(200, ge=10, le=1000),
     cursor_id: int | None = Query(None, description="Return rows with id < cursor_id"),
     item_id: int | None = None,
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_LOGS_READ)),
     _token: None = Depends(require_token_ctx),
 ):
     """Return stock-change events from the ledger (item_movements), newest first."""

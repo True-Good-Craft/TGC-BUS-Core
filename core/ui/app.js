@@ -19,6 +19,8 @@
 
 import { ensureToken } from "./js/token.js";
 import { apiGet, apiPost, rawFetch } from "./js/api.js";
+import { getAuthState, logout as authLogout } from "./js/auth.js";
+import { mountAuthGate } from "./js/auth-ui.js";
 import { mountBackupExport } from "./js/cards/backup.js";
 import mountVendors from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
@@ -29,6 +31,7 @@ import { mountRecipes, unmountRecipes } from "./js/cards/recipes.js";
 import { settingsCard } from "./js/cards/settings.js";
 import { mountLogsPage } from "./js/logs.js";
 import { mountFinance } from "./js/cards/finance.js";
+import { mountSecurity } from "./js/security.js";
 import { toMetricBase, DIM_DEFAULTS_IMPERIAL } from "./js/lib/units.js";
 import { bindSidebarUpdateControls, maybeRunStartupUpdateCheck } from "./js/update-check.js";
 
@@ -41,6 +44,7 @@ const ROUTES = {
   '#/runs': showRuns,
   '#/import': showImport,
   '#/settings': showSettings,
+  '#/security': showSecurity,
   '#/logs': showLogs,
   '#/finance': showFinance,
   '#/home': showHome,
@@ -74,6 +78,19 @@ window.BUS_ONBOARDING = {
 
 let runtimeBusMode = 'prod';
 let runtimeSystemState = null;
+let currentAuthState = null;
+let authRefreshPromise = null;
+
+const ROUTE_PERMISSIONS = {
+  contacts: ['contacts.read'],
+  finance: ['finance.read'],
+  inventory: ['inventory.read'],
+  logs: ['logs.read'],
+  manufacturing: ['manufacturing.read'],
+  recipes: ['recipes.read'],
+  security: ['settings.read', 'users.read', 'users.manage', 'sessions.manage', 'audit.read'],
+  settings: ['settings.read'],
+};
 
 function inDemoMode() {
   return runtimeBusMode === 'demo';
@@ -83,6 +100,189 @@ function setRuntimeSystemState(state) {
   runtimeSystemState = state && typeof state === 'object' ? state : null;
   runtimeBusMode = runtimeSystemState?.bus_mode === 'demo' ? 'demo' : 'prod';
   renderDemoBanner();
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function authPermissions() {
+  return new Set(currentAuthState?.current_user?.permissions || []);
+}
+
+function hasAuthPermission(permission) {
+  if (currentAuthState?.mode === 'unclaimed') return true;
+  return authPermissions().has(permission);
+}
+
+function canMountNormalApp() {
+  return currentAuthState?.mode === 'unclaimed' || !!currentAuthState?.current_user;
+}
+
+function publishAuthState() {
+  window.BUS_AUTH = {
+    state: currentAuthState,
+    permissions: Array.from(authPermissions()),
+    hasPermission: hasAuthPermission,
+    refresh: refreshAuthState,
+    openClaim: openClaimScreen,
+  };
+  document.dispatchEvent(new CustomEvent('bus:auth-state', { detail: currentAuthState }));
+}
+
+async function refreshAuthState(options = {}) {
+  if (authRefreshPromise) return authRefreshPromise;
+  authRefreshPromise = (async () => {
+    try {
+      currentAuthState = await getAuthState();
+      publishAuthState();
+      if (options.render !== false) renderAuthChrome();
+      return currentAuthState;
+    } finally {
+      authRefreshPromise = null;
+    }
+  })();
+  return authRefreshPromise;
+}
+
+function normalAppElement() {
+  return document.getElementById('app');
+}
+
+function authGateElement() {
+  return document.querySelector('[data-role="auth-gate-screen"]');
+}
+
+function setNormalAppVisible(visible) {
+  normalAppElement()?.classList.toggle('hidden', !visible);
+}
+
+function applyPermissionNav() {
+  document.querySelectorAll('[data-role="nav-link"]').forEach((link) => {
+    const route = link.getAttribute('data-route') || '';
+    const required = ROUTE_PERMISSIONS[route];
+    const allowed = !required || required.some((permission) => hasAuthPermission(permission));
+    link.classList.toggle('hidden', !allowed);
+  });
+}
+
+function renderAuthBanner() {
+  const banner = document.querySelector('[data-role="auth-banner"]');
+  if (!banner) return;
+  if (currentAuthState?.mode !== 'unclaimed') {
+    banner.classList.add('hidden');
+    banner.innerHTML = '';
+    return;
+  }
+  banner.classList.remove('hidden');
+  banner.innerHTML = `
+    <div>
+      <strong>BUS Core is running in unclaimed local mode.</strong>
+      <p>Create an owner account to enable login, users, permissions, recovery, and audit controls.</p>
+    </div>
+    <button type="button" data-action="secure-bus-core">Secure this BUS Core</button>
+  `;
+  banner.querySelector('[data-action="secure-bus-core"]')?.addEventListener('click', () => openClaimScreen());
+}
+
+function renderAuthChrome() {
+  const zone = document.querySelector('[data-role="sidebar-auth-zone"]');
+  applyPermissionNav();
+  renderAuthBanner();
+  if (!zone) return;
+  if (currentAuthState?.mode === 'claimed' && currentAuthState.current_user) {
+    const user = currentAuthState.current_user;
+    zone.classList.remove('hidden');
+    zone.innerHTML = `
+      <div class="sidebar-auth-user">
+        <span class="sidebar-auth-label">Signed in</span>
+        <strong>${escapeHtml(user.display_name || user.username || 'User')}</strong>
+        <span>${escapeHtml((user.roles || []).join(', ') || 'claimed')}</span>
+      </div>
+      <button type="button" class="btn sidebar-logout-btn" data-action="logout">Log out</button>
+    `;
+    zone.querySelector('[data-action="logout"]')?.addEventListener('click', async () => {
+      await authLogout().catch((error) => console.warn('logout failed', error));
+      currentAuthState = null;
+      settingsMounted = false;
+      await refreshAuthState();
+      if (currentAuthState?.mode === 'claimed' && currentAuthState.login_required) {
+        showLoginGate();
+      } else {
+        setNormalAppVisible(true);
+        onRouteChange().catch(err => console.error('route change failed', err));
+      }
+    });
+    return;
+  }
+  if (currentAuthState?.mode === 'unclaimed') {
+    zone.classList.remove('hidden');
+    zone.innerHTML = `
+      <div class="sidebar-auth-user">
+        <span class="sidebar-auth-label">Security</span>
+        <strong>Unclaimed local</strong>
+      </div>
+      <button type="button" class="btn sidebar-logout-btn" data-action="open-claim">Secure</button>
+    `;
+    zone.querySelector('[data-action="open-claim"]')?.addEventListener('click', () => openClaimScreen());
+    return;
+  }
+  zone.classList.add('hidden');
+  zone.innerHTML = '';
+}
+
+async function continueAfterAuth() {
+  currentAuthState = null;
+  settingsMounted = false;
+  initialBootPromise = null;
+  await refreshAuthState();
+  if (!canMountNormalApp()) {
+    showLoginGate();
+    return;
+  }
+  setNormalAppVisible(true);
+  authGateElement()?.classList.add('hidden');
+  await runInitialBootRedirect();
+  await onRouteChange();
+}
+
+function showLoginGate() {
+  setNormalAppVisible(false);
+  document.querySelector('[data-role="demo-banner"]')?.classList.add('hidden');
+  document.querySelector('[data-role="auth-banner"]')?.classList.add('hidden');
+  const gate = authGateElement();
+  if (!gate) return;
+  mountAuthGate(gate, {
+    state: currentAuthState,
+    mode: 'login',
+    onAuthenticated: continueAfterAuth,
+  });
+}
+
+function openClaimScreen() {
+  const gate = authGateElement();
+  if (!gate) return;
+  setNormalAppVisible(false);
+  document.querySelector('[data-role="demo-banner"]')?.classList.add('hidden');
+  document.querySelector('[data-role="auth-banner"]')?.classList.add('hidden');
+  mountAuthGate(gate, {
+    state: currentAuthState,
+    mode: 'claim',
+    allowCancel: currentAuthState?.mode === 'unclaimed',
+    onCancel: () => {
+      gate.classList.add('hidden');
+      if (currentAuthState?.mode === 'unclaimed') {
+        setNormalAppVisible(true);
+        renderAuthChrome();
+      }
+    },
+    onAuthenticated: continueAfterAuth,
+  });
 }
 
 async function handleStartFreshShop(button) {
@@ -197,12 +397,13 @@ function clearCardHost() {
   const inventoryHost = document.querySelector('[data-role="inventory-root"]');
   const contactsHost = document.querySelector('[data-view="contacts"]');
   const settingsHost = document.querySelector('[data-role="settings-root"]');
+  const securityHost = document.querySelector('[data-role="security-root"]');
   const manufacturingHost = document.querySelector('[data-tab-panel="manufacturing"]');
   const recipesHost = document.querySelector('[data-tab-panel="recipes"]');
   const logsHost = document.querySelector('[data-role="logs-root"]');
   const financeHost = document.querySelector('[data-role="finance-root"]');
   const welcomeHost = document.querySelector('[data-role="welcome-root"]');
-  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, logsHost, financeHost, welcomeHost]
+  [root, inventoryHost, contactsHost, settingsHost, securityHost, manufacturingHost, recipesHost, logsHost, financeHost, welcomeHost]
     .filter(Boolean)
     .forEach((n) => {
       n.innerHTML = '';
@@ -221,6 +422,14 @@ async function runInitialBootRedirect() {
     const initialHashRaw = window.location.hash || '#/home';
     const initialHash = normalizeHash(initialHashRaw);
 
+    await refreshAuthState();
+    if (!canMountNormalApp()) {
+      showLoginGate();
+      return true;
+    }
+
+    setNormalAppVisible(true);
+    authGateElement()?.classList.add('hidden');
     await ensureToken();
 
     let state = null;
@@ -252,6 +461,13 @@ async function runInitialBootRedirect() {
 }
 
 async function onRouteChange() {
+  await refreshAuthState();
+  if (!canMountNormalApp()) {
+    showLoginGate();
+    return;
+  }
+  setNormalAppVisible(true);
+  authGateElement()?.classList.add('hidden');
   await ensureToken();
   const raw = window.location.hash || '#/home';
   const canonical = normalizeHash(raw);
@@ -287,6 +503,7 @@ async function onRouteChange() {
   setActiveNav(route);
 
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="security-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   clearCardHost();
 
@@ -308,6 +525,7 @@ window.addEventListener('hashchange', () => {
 });
 window.addEventListener('load', async () => {
   await runInitialBootRedirect();
+  if (!canMountNormalApp()) return;
   onRouteChange().catch(err => console.error('route change failed', err));
 });
 
@@ -325,6 +543,11 @@ window.BUS_UNITS = {
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
+    await refreshAuthState();
+    if (!canMountNormalApp()) {
+      showLoginGate();
+      return;
+    }
     await ensureToken();
     bindSidebarUpdateControls();
     // UI version stamp (from FastAPI OpenAPI info.version)
@@ -410,6 +633,32 @@ async function showSettings() {
   if (host && (!settingsMounted || !host.hasChildNodes())) {
     settingsCard(host);
     settingsMounted = true;
+  }
+}
+
+async function showSecurity() {
+  unmountInventory();
+  unmountManufacturing();
+  unmountRecipes();
+  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
+  const securityScreen = document.querySelector('[data-role="security-screen"]');
+  securityScreen?.classList.remove('hidden');
+  const host = document.querySelector('[data-role="security-root"]');
+  if (host) {
+    await mountSecurity(host, {
+      authState: currentAuthState,
+      onAuthRefresh: refreshAuthState,
+      onLoginRequired: showLoginGate,
+      onOpenClaim: openClaimScreen,
+    });
   }
 }
 

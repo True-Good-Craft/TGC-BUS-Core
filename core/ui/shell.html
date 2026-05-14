@@ -48,10 +48,12 @@
 
       <li><div class="nav-section nav-section--system" role="heading" aria-level="2">System</div></li>
       <li><a class="nav-link" href="#/settings" id="nav-settings" data-role="nav-link" data-route="settings">Settings</a></li>
+      <li><a class="nav-link" href="#/security" id="nav-security" data-role="nav-link" data-route="security">Security</a></li>
       <li><a class="nav-link" href="#/logs" id="nav-logs" data-role="nav-link" data-route="logs">Logs</a></li>
     </ul>
 
     <div class="sidebar-update-zone" data-role="sidebar-update-zone" aria-live="polite">
+      <div class="sidebar-auth-zone hidden" data-role="sidebar-auth-zone" aria-live="polite"></div>
       <div class="sidebar-version-row">
         <span class="sidebar-version-label">Version</span>
         <span class="tgc-version" data-role="ui-version"></span>
@@ -65,7 +67,9 @@
   </nav>
   <main id="main">
     <div data-role="demo-banner" class="demo-banner hidden" aria-live="polite"></div>
-    <div id="app">
+    <div data-role="auth-banner" class="auth-banner hidden" aria-live="polite"></div>
+    <div data-role="auth-gate-screen" class="auth-gate-screen hidden"></div>
+    <div id="app" class="hidden">
 
       <!-- Home screen container -->
       <div data-role="home-screen" class="card">
@@ -142,6 +146,10 @@
 
       <div data-role="settings-screen" class="hidden">
         <div data-role="settings-root"></div>
+      </div>
+
+      <div data-role="security-screen" class="hidden">
+        <div data-role="security-root"></div>
       </div>
 
       <div data-role="logs-screen" class="hidden">

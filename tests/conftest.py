@@ -18,19 +18,33 @@ if str(ROOT) not in sys.path:
 
 BUS_MODULES_TO_RESET = [
     "core.api.http",
+    "core.api.routes.auth",
     "core.api.routes.finance_api",
     "core.api.routes.items",
     "core.api.routes.ledger_api",
     "core.api.routes.manufacturing",
+    "core.api.routes.users",
     "core.api.routes.vendors",
+    "core.appdata.paths",
     "core.appdb.engine",
     "core.appdb.ledger",
     "core.appdb.models",
+    "core.appdb.models_auth",
     "core.appdb.models_recipes",
     "core.appdb.session",
+    "core.auth.audit",
+    "core.auth.dependencies",
+    "core.auth.management",
+    "core.auth.passwords",
+    "core.auth.permissions",
+    "core.auth.sessions",
+    "core.auth.store",
+    "core.config.manager",
+    "core.config.writes",
     "core.journal.inventory",
     "core.journal.manufacturing",
     "core.manufacturing.service",
+    "core.policy.store",
     "core.services.models",
     "tgc.settings",
     "tgc.state",
@@ -63,6 +77,9 @@ def bus_app_state():
 
 @pytest.fixture()
 def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, bus_db_path, bus_app_state):
+    local_app_data = tmp_path / "LocalAppData"
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+
     bus_dev = None
     marker = request.node.get_closest_marker("bus_dev")
     if marker and marker.args:
@@ -82,6 +99,7 @@ def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.
     import core.appdb.engine as engine_module
     import core.appdb.ledger as ledger_module
     import core.appdb.models as models_module
+    import core.appdb.models_auth as auth_models_module
     import core.appdb.models_recipes as recipes_module
     import core.services.models as services_models
     import core.api.http as api_http
@@ -89,6 +107,9 @@ def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.
     engine_module = importlib.reload(engine_module)
     ledger_module = importlib.reload(ledger_module)
     models_module = importlib.reload(models_module)
+    auth_models_module = importlib.reload(auth_models_module)
+    for model_name in auth_models_module.__all__:
+        setattr(models_module, model_name, getattr(auth_models_module, model_name))
     recipes_module = importlib.reload(recipes_module)
     services_models = importlib.reload(services_models)
     api_http = importlib.reload(api_http)
@@ -116,6 +137,7 @@ def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.
         "api_http": api_http,
         "recipes": recipes_module,
         "ledger": ledger_module,
+        "local_app_data": local_app_data,
     }
     try:
         yield env

@@ -25,6 +25,33 @@ def _legacy_config(local_app_data: Path) -> Path:
     return local_app_data / "BUSCore" / "app" / "config.json"
 
 
+@pytest.fixture()
+def real_localappdata_sentinel(tmp_path_factory, monkeypatch: pytest.MonkeyPatch):
+    real_local_app_data = tmp_path_factory.mktemp("real-localappdata")
+    sentinel_path = _canonical_config(real_local_app_data)
+    sentinel_path.parent.mkdir(parents=True, exist_ok=True)
+    sentinel_payload = {
+        "dev": {"writes_enabled": False},
+        "sentinel": "real-appdata-must-not-change",
+    }
+    sentinel_text = json.dumps(sentinel_payload, indent=2, sort_keys=True)
+    sentinel_path.write_text(sentinel_text, encoding="utf-8")
+    monkeypatch.setenv("LOCALAPPDATA", str(real_local_app_data))
+
+    yield {
+        "local_app_data": real_local_app_data,
+        "path": sentinel_path,
+        "text": sentinel_text,
+    }
+
+    assert sentinel_path.read_text(encoding="utf-8") == sentinel_text
+
+
+@pytest.fixture()
+def bus_client_after_real_localappdata(real_localappdata_sentinel, bus_client):
+    return bus_client
+
+
 def test_canonical_config_path_is_root_buscore_config(tmp_path, monkeypatch):
     import core.appdata.paths as appdata_paths
 
@@ -48,6 +75,20 @@ def test_set_writes_enabled_persists_only_to_canonical_config(tmp_path, monkeypa
     payload = json.loads(_canonical_config(local_app_data).read_text(encoding="utf-8"))
     assert payload["dev"]["writes_enabled"] is True
     assert not _legacy_config(local_app_data).exists()
+
+
+def test_bus_client_isolates_write_gate_config_from_real_appdata(real_localappdata_sentinel, bus_client_after_real_localappdata):
+    sentinel_path = real_localappdata_sentinel["path"]
+    sentinel_text = real_localappdata_sentinel["text"]
+    isolated_local_app_data = bus_client_after_real_localappdata["local_app_data"]
+    isolated_config_path = _canonical_config(isolated_local_app_data)
+
+    assert sentinel_path.read_text(encoding="utf-8") == sentinel_text
+    assert isolated_local_app_data != real_localappdata_sentinel["local_app_data"]
+    assert isolated_config_path.exists()
+
+    payload = json.loads(isolated_config_path.read_text(encoding="utf-8"))
+    assert payload["dev"]["writes_enabled"] is True
 
 
 def test_policy_persists_in_canonical_config_without_expanding_public_config_shape(tmp_path, monkeypatch):

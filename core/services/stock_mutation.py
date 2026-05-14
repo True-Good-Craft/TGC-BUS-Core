@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from core.appdb.ledger import add_batch, fifo_consume
 from core.appdb.models import CashEvent, Item
 from core.journal.inventory import append_inventory
+from core.metrics.metric import default_unit_for, uom_multiplier
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,38 @@ def _append_inventory_journal(entry: dict[str, Any]) -> None:
         append_inventory(payload)
     except Exception as exc:
         logger.warning("inventory_journal_append_failed class=%s", type(exc).__name__)
+
+
+def _round_half_up_cents(value: Decimal) -> int:
+    return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _basis_uom_for_item(item: Item) -> str:
+    basis_uom = item.uom or default_unit_for(item.dimension)
+    if uom_multiplier(item.dimension, basis_uom) <= 0:
+        basis_uom = default_unit_for(item.dimension)
+    return basis_uom
+
+
+def _purchase_total_amount_cents(unit_cost_cents: int, qty_base: int, item: Item) -> int:
+    basis_uom = _basis_uom_for_item(item)
+    multiplier = uom_multiplier(item.dimension, basis_uom)
+    if multiplier <= 0:
+        raise ValueError("invalid_uom_multiplier")
+    human_qty_for_cost = Decimal(int(qty_base)) / Decimal(multiplier)
+    return _round_half_up_cents(Decimal(int(unit_cost_cents)) * human_qty_for_cost)
+
+
+def _provided_purchase_source_ids(lines: list[dict]) -> list[str]:
+    source_ids: list[str] = []
+    for line in lines:
+        source_id = line.get("source_id")
+        if source_id is None:
+            continue
+        source_text = str(source_id).strip()
+        if source_text and source_text not in source_ids:
+            source_ids.append(source_text)
+    return source_ids
 
 
 def perform_stock_in_base(
@@ -138,16 +171,51 @@ def perform_stock_out_base(
     return {"ok": True, "lines": lines}
 
 
-def perform_purchase_base(session: Session, vendor_id: str, lines: list[dict]) -> dict[str, Any]:
+def perform_purchase_base(
+    session: Session,
+    vendor_id: str,
+    lines: list[dict],
+    *,
+    category: str | None = None,
+    notes: str | None = None,
+    created_at: datetime | None = None,
+) -> dict[str, Any]:
     created: list[int] = []
+    cash_event_ids: list[int] = []
+    source_ids = _provided_purchase_source_ids(lines)
+    if len(source_ids) > 1:
+        raise ValueError("multiple_purchase_source_ids_not_supported")
+    source_id = source_ids[0] if source_ids else uuid.uuid4().hex
+    effective_created_at = created_at or datetime.utcnow()
+
     for line in lines:
         qty = _require_qty_base(int(line.get("qty_base", 0)))
         item_id = int(line["item_id"])
         unit_cost = int(line.get("unit_cost_cents") or 0)
         source_kind = str(line.get("source_kind") or "purchase")
-        source_id = line.get("source_id")
+        item = session.get(Item, item_id)
+        if item is None:
+            raise LookupError("item_not_found")
+        total_amount_cents = _purchase_total_amount_cents(unit_cost, qty, item)
         batch_id = add_batch(session, item_id, qty, unit_cost, source_kind, source_id)
         created.append(int(batch_id))
+        cash_event = CashEvent(
+            kind="expense",
+            source_kind="purchase",
+            source_id=source_id,
+            category=category or "materials",
+            amount_cents=-abs(total_amount_cents),
+            item_id=item_id,
+            qty_base=qty,
+            unit_price_cents=unit_cost,
+            related_source_id=None,
+            notes=notes,
+            created_at=effective_created_at,
+        )
+        session.add(cash_event)
+        session.flush()
+        if cash_event.id is not None:
+            cash_event_ids.append(int(cash_event.id))
         _append_inventory_journal(
             {
                 "type": "purchase",
@@ -160,4 +228,4 @@ def perform_purchase_base(session: Session, vendor_id: str, lines: list[dict]) -
                 "vendor_id": vendor_id,
             }
         )
-    return {"ok": True, "batch_ids": created}
+    return {"ok": True, "source_id": source_id, "batch_ids": created, "cash_event_ids": cash_event_ids}

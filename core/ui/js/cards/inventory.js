@@ -1007,6 +1007,7 @@ export function openItemModal(item = null) {
   let batchFields = null;
   let addBatchBtnRow = null;
   let addBatchBtn = null;
+  let recordPurchaseBtn = null;
 
   if (!isEdit) {
     addBatchToggle = document.createElement('input');
@@ -1031,12 +1032,16 @@ export function openItemModal(item = null) {
     const spacer = document.createElement('label');
     spacer.textContent = '';
     const wrap = document.createElement('div');
-    wrap.className = 'field-input';
+    wrap.className = 'field-input field-input-row';
     addBatchBtn = document.createElement('button');
     addBatchBtn.type = 'button';
     addBatchBtn.className = 'btn';
     addBatchBtn.textContent = 'Add Batch';
-    wrap.appendChild(addBatchBtn);
+    recordPurchaseBtn = document.createElement('button');
+    recordPurchaseBtn.type = 'button';
+    recordPurchaseBtn.className = 'btn';
+    recordPurchaseBtn.textContent = 'Record Purchase';
+    wrap.append(addBatchBtn, recordPurchaseBtn);
     addBatchBtnRow.append(spacer, wrap);
   }
 
@@ -1420,6 +1425,7 @@ export function openItemModal(item = null) {
   const closeModalSafely = () => {
     cleanup();
     closeStockInModal();
+    closePurchaseModal();
     overlay.remove();
   };
 
@@ -1451,6 +1457,7 @@ export function openItemModal(item = null) {
   if (addBatchToggle) addBatchToggle.addEventListener('change', () => { syncBatchVisibility(); updatePreview(); });
   isProductInput.addEventListener('change', () => { syncProductPriceVisibility(); updatePreview(); });
   if (addBatchBtn) addBatchBtn.addEventListener('click', () => openStockInModal());
+  if (recordPurchaseBtn) recordPurchaseBtn.addEventListener('click', () => openPurchaseModal());
 
   const onUnitsMode = () => {
     const modeDim = isEdit ? (item?.dimension || currentDimension()) : undefined;
@@ -1551,6 +1558,7 @@ export function openItemModal(item = null) {
   }
 
   let stockInOverlay = null;
+  let purchaseOverlay = null;
 
   function closeStockInModal() {
     if (stockInOverlay) {
@@ -1559,9 +1567,17 @@ export function openItemModal(item = null) {
     }
   }
 
+  function closePurchaseModal() {
+    if (purchaseOverlay) {
+      purchaseOverlay.remove();
+      purchaseOverlay = null;
+    }
+  }
+
   function openStockInModal() {
     if (!item?.id) return;
     closeStockInModal();
+    closePurchaseModal();
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -1676,6 +1692,138 @@ export function openItemModal(item = null) {
     });
 
     stockInOverlay = overlay;
+  }
+
+  function openPurchaseModal() {
+    if (!item?.id) return;
+    closePurchaseModal();
+    closeStockInModal();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const card = document.createElement('div');
+    card.className = 'modal-card inventory-modal-card inventory-modal-card--narrow';
+
+    const title = document.createElement('div');
+    title.className = 'modal-title';
+    title.textContent = 'Record Purchase';
+    card.appendChild(title);
+
+    const purchaseError = document.createElement('div');
+    purchaseError.className = 'error-banner';
+    purchaseError.hidden = true;
+    card.appendChild(purchaseError);
+
+    const body = document.createElement('div');
+    body.className = 'modal-body';
+
+    const purchaseUnitSelect = createSelect('purchase-unit');
+    const dim = item.dimension || 'count';
+    const unitOptions = [...(UNIT_OPTIONS[dim] || ['ea'])];
+    if (item.uom && !unitOptions.includes(item.uom)) unitOptions.push(item.uom);
+    purchaseUnitSelect.textContent = '';
+    unitOptions.forEach((u) => {
+      const opt = document.createElement('option');
+      opt.value = u;
+      opt.textContent = UNIT_LABEL[u] || u;
+      purchaseUnitSelect.appendChild(opt);
+    });
+    purchaseUnitSelect.value = item.uom && unitOptions.includes(item.uom) ? item.uom : unitOptions[0];
+    const purchaseUnitRow = fieldRowWithElement('Unit', purchaseUnitSelect);
+
+    const purchaseQtyInput = document.createElement('input');
+    purchaseQtyInput.type = 'number';
+    purchaseQtyInput.setAttribute('step', '0.001');
+    purchaseQtyInput.setAttribute('min', '0');
+    const purchaseQtyRow = fieldRowWithElement('Quantity', purchaseQtyInput);
+
+    const purchaseCostInput = document.createElement('input');
+    purchaseCostInput.type = 'number';
+    purchaseCostInput.setAttribute('step', '0.01');
+    purchaseCostInput.setAttribute('min', '0');
+    const purchaseCostRow = fieldRowWithElement('Unit cost (per item unit)', purchaseCostInput);
+
+    const purchaseCategoryInput = document.createElement('input');
+    purchaseCategoryInput.type = 'text';
+    purchaseCategoryInput.value = 'materials';
+    const purchaseCategoryRow = fieldRowWithElement('Category', purchaseCategoryInput);
+
+    const purchaseNotesInput = document.createElement('textarea');
+    purchaseNotesInput.rows = 2;
+    const purchaseNotesRow = fieldRowWithElement('Notes', purchaseNotesInput);
+
+    const purchaseActions = document.createElement('div');
+    purchaseActions.className = 'modal-actions';
+    const purchaseSave = document.createElement('button');
+    purchaseSave.type = 'button';
+    purchaseSave.className = 'btn primary';
+    purchaseSave.textContent = 'Record Purchase';
+    const purchaseCancel = document.createElement('button');
+    purchaseCancel.type = 'button';
+    purchaseCancel.className = 'btn';
+    purchaseCancel.textContent = 'Cancel';
+    purchaseActions.append(purchaseSave, purchaseCancel);
+
+    body.append(purchaseUnitRow, purchaseQtyRow, purchaseCostRow, purchaseCategoryRow, purchaseNotesRow, purchaseActions);
+    card.appendChild(body);
+    overlay.appendChild(card);
+    overlay._inventoryCleanup = closePurchaseModal;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) closePurchaseModal();
+    });
+    card.addEventListener('click', (ev) => ev.stopPropagation());
+
+    purchaseCancel.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      closePurchaseModal();
+    });
+
+    async function submitPurchase() {
+      purchaseError.hidden = true;
+      purchaseError.textContent = '';
+
+      if (purchaseQtyInput.value === '' || Number(decimalString(purchaseQtyInput.value)) <= 0) {
+        purchaseError.textContent = 'Enter a quantity to purchase.';
+        purchaseError.hidden = false;
+        return;
+      }
+      if (purchaseCostInput.value === '' || !Number.isFinite(Number(purchaseCostInput.value)) || Number(purchaseCostInput.value) < 0) {
+        purchaseError.textContent = 'Enter a unit cost.';
+        purchaseError.hidden = false;
+        return;
+      }
+
+      const unitCostCents = Math.round(Number(purchaseCostInput.value) * 100);
+      const payload = {
+        item_id: item.id,
+        uom: purchaseUnitSelect.value,
+        quantity_decimal: decimalString(purchaseQtyInput.value),
+        unit_cost_cents: Number.isFinite(unitCostCents) ? unitCostCents : 0,
+        category: purchaseCategoryInput.value.trim() || 'materials',
+        notes: purchaseNotesInput.value.trim() || undefined,
+      };
+
+      try {
+        await ensureToken();
+        await canonical.purchase(payload);
+        closePurchaseModal();
+        toast('Purchase recorded.');
+        await reloadInventory?.();
+        document.dispatchEvent(new CustomEvent('bus:finance-refresh'));
+      } catch (err) {
+        purchaseError.textContent = serverErrorMessage(err) || 'Purchase failed.';
+        purchaseError.hidden = false;
+      }
+    }
+
+    purchaseSave.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      await submitPurchase();
+    });
+
+    purchaseOverlay = overlay;
   }
 
   function markInvalid(el) {

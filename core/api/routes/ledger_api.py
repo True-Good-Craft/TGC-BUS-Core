@@ -3,6 +3,7 @@ import logging
 import os
 import sqlite3
 import sys
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal, Optional
@@ -18,6 +19,8 @@ from core.api.utils.quantity_guard import reject_legacy_qty_keys
 from core.appdb.engine import get_session
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.paths import resolve_db_path
+from core.auth.dependencies import require_permission
+from core.auth.permissions import PERMISSION_INVENTORY_READ, PERMISSION_INVENTORY_WRITE
 from core.config.writes import require_writes
 from core.metrics.metric import UNIT_MULTIPLIER, _norm_unit, default_unit_for, from_base, normalize_quantity_to_base_int
 from core.services.stock_mutation import perform_purchase_base, perform_stock_in_base, perform_stock_out_base
@@ -53,7 +56,10 @@ def _has_items_qty_stored() -> bool:
 
 
 @router.get("/health")
-def health(_token: None = Depends(require_token_ctx)):
+def health(
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_READ)),
+    _token: None = Depends(require_token_ctx),
+):
     if not _has_items_qty_stored():
         return {"desync": True, "problems": [{"reason": "items.qty_stored missing"}]}
     return {"desync": False, "note": "Using items.qty_stored for on-hand checks"}
@@ -73,6 +79,9 @@ class PurchaseCanonicalIn(BaseModel):
     uom: str
     unit_cost_cents: int = Field(ge=0)
     source_id: Optional[str] = None
+    category: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class ConsumeIn(BaseModel):
@@ -142,6 +151,7 @@ def _to_base_qty_for_item(db: Session, item_id: int, quantity_decimal: str, uom:
 def canonical_purchase(
     raw: dict = Body(...),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_WRITE)),
     _token: None = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ):
@@ -161,6 +171,9 @@ def canonical_purchase(
                     "source_id": body.source_id,
                 }
             ],
+            category=body.category,
+            notes=body.notes,
+            created_at=body.created_at,
         )
         db.commit()
         return result
@@ -173,6 +186,7 @@ def canonical_purchase(
 def purchase_wrapper(
     raw: dict = Body(...),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_WRITE)),
     _token: None = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ):
@@ -191,6 +205,7 @@ def purchase_wrapper(
 def consume(
     body: ConsumeIn,
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_WRITE)),
     _token: None = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ):
@@ -217,6 +232,7 @@ def consume(
 def adjust_stock(
     body: AdjustmentInput,
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_WRITE)),
     _token: None = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ):
@@ -252,6 +268,7 @@ def adjust_stock(
 def canonical_stock_out(
     raw: dict = Body(...),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_WRITE)),
     _token: None = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ):
@@ -290,6 +307,7 @@ def canonical_stock_out(
 def stock_out_wrapper(
     raw: dict = Body(...),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_WRITE)),
     _token: None = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ):
@@ -308,6 +326,7 @@ def stock_out_wrapper(
 def valuation(
     item_id: Optional[int] = None,
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_READ)),
     _token: None = Depends(require_token_ctx),
 ):
     if item_id is not None:
@@ -341,6 +360,7 @@ def canonical_history(
     limit: int = 100,
     include_base: bool = Query(False),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_READ)),
     _token: None = Depends(require_token_ctx),
 ):
     q = db.query(ItemMovement)
@@ -391,6 +411,7 @@ def movements_wrapper(
     item_id: Optional[int] = None,
     limit: int = 100,
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_READ)),
     _token: None = Depends(require_token_ctx),
 ):
     body = canonical_history(item_id=item_id, limit=limit, db=db)
@@ -398,7 +419,11 @@ def movements_wrapper(
 
 
 @router.get("/debug/db")
-def ledger_debug(item_id: int | None = None, _token: None = Depends(require_token_ctx)):
+def ledger_debug(
+    item_id: int | None = None,
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_READ)),
+    _token: None = Depends(require_token_ctx),
+):
     require_dev()
     path = resolve_db_path()
     with sqlite3.connect(path) as con:
@@ -420,6 +445,7 @@ def ledger_debug(item_id: int | None = None, _token: None = Depends(require_toke
 def canonical_stock_in(
     raw: dict = Body(...),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_WRITE)),
     _token: None = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ):
@@ -447,6 +473,7 @@ def canonical_stock_in(
 def stock_in_wrapper(
     raw: dict = Body(...),
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVENTORY_WRITE)),
     _token: None = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ):

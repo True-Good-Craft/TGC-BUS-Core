@@ -12,6 +12,8 @@ from core.appdb.models import Vendor as VendorModel
 from core.appdb.session import get_db
 from core.api.schemas.vendors import VendorCreate, VendorOut, VendorUpdate
 from core.api.security import require_write_access
+from core.auth.dependencies import require_permission
+from core.auth.permissions import PERMISSION_CONTACTS_READ, PERMISSION_CONTACTS_WRITE
 from core.policy.guard import require_owner_commit
 from tgc.security import require_token_ctx
 
@@ -100,6 +102,7 @@ def _crud_routes(prefix: str, facade: str):
         is_org: Optional[str] = Query(None, description="Filter by organization flag"),
         organization_id: Optional[int] = Query(None, description="Filter by parent org ID"),
         db: Session = Depends(get_db),
+        _permission=Depends(require_permission(PERMISSION_CONTACTS_READ)),
         _token: str = Depends(require_token_ctx),
     ):
         query = db.query(VendorModel)
@@ -108,7 +111,12 @@ def _crud_routes(prefix: str, facade: str):
         return query.order_by(VendorModel.name.asc()).all()
 
     @router.get(f"{prefix}" + "/{id}", response_model=VendorOut)
-    def get_vendor(id: int, db: Session = Depends(get_db), _token: str = Depends(require_token_ctx)):
+    def get_vendor(
+        id: int,
+        db: Session = Depends(get_db),
+        _permission=Depends(require_permission(PERMISSION_CONTACTS_READ)),
+        _token: str = Depends(require_token_ctx),
+    ):
         v = db.query(VendorModel).get(id)
         if not v:
             raise HTTPException(status_code=404, detail="Not found")
@@ -120,6 +128,7 @@ def _crud_routes(prefix: str, facade: str):
         request: Request,
         db: Session = Depends(get_db),
         _writes: None = Depends(require_write_access),
+        _permission=Depends(require_permission(PERMISSION_CONTACTS_WRITE)),
         _token: str = Depends(require_token_ctx),
     ):
         require_owner_commit(request)
@@ -137,6 +146,7 @@ def _crud_routes(prefix: str, facade: str):
         request: Request,
         db: Session = Depends(get_db),
         _writes: None = Depends(require_write_access),
+        _permission=Depends(require_permission(PERMISSION_CONTACTS_WRITE)),
         _token: str = Depends(require_token_ctx),
     ):
         require_owner_commit(request)
@@ -160,6 +170,7 @@ def _crud_routes(prefix: str, facade: str):
         cascade_children: bool = Query(False),
         db: Session = Depends(get_db),
         _writes: None = Depends(require_write_access),
+        _permission=Depends(require_permission(PERMISSION_CONTACTS_WRITE)),
         _token: str = Depends(require_token_ctx),
     ):
         require_owner_commit(request)

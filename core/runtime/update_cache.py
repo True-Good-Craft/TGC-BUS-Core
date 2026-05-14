@@ -5,7 +5,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from core.appdata.paths import update_cache_root
 from core.config.update_policy import validate_update_channel
@@ -63,6 +63,7 @@ def default_state(active_version: str = CURRENT_VERSION) -> dict[str, Any]:
         "extracted": None,
         "exe_verified": None,
         "verified_ready": None,
+        "verified_ready_versions": {},
         "handoff": {
             "last_attempted_version": None,
             "attempt_count": 0,
@@ -109,6 +110,13 @@ def validate_state(state: Any, root: Path | None = None, *, active_version: str 
     extracted = _validate_extracted(state.get("extracted"), root or cache_root(), effective_active)
     exe_verified = _validate_exe_verified(state.get("exe_verified"), root or cache_root(), effective_active)
     verified_ready = _validate_verified_ready(state.get("verified_ready"), root or cache_root(), effective_active)
+    verified_ready_versions = _validate_verified_ready_versions(
+        state.get("verified_ready_versions"),
+        root or cache_root(),
+        effective_active,
+    )
+    if verified_ready is not None:
+        verified_ready_versions = _with_verified_ready_record(verified_ready_versions, verified_ready)
     handoff = _validate_handoff(state.get("handoff"))
 
     return {
@@ -118,8 +126,52 @@ def validate_state(state: Any, root: Path | None = None, *, active_version: str 
         "extracted": extracted,
         "exe_verified": exe_verified,
         "verified_ready": verified_ready,
+        "verified_ready_versions": verified_ready_versions,
         "handoff": handoff,
     }
+
+
+def iter_verified_ready_records(state: Mapping[str, Any]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    by_version = state.get("verified_ready_versions") if isinstance(state, Mapping) else None
+    if isinstance(by_version, Mapping):
+        for sha_map in by_version.values():
+            if not isinstance(sha_map, Mapping):
+                continue
+            for record in sha_map.values():
+                if not isinstance(record, dict):
+                    continue
+                key = _verified_ready_key(record)
+                if key is None or key in seen:
+                    continue
+                records.append(record)
+                seen.add(key)
+
+    legacy = state.get("verified_ready") if isinstance(state, Mapping) else None
+    if isinstance(legacy, dict):
+        key = _verified_ready_key(legacy)
+        if key is not None and key not in seen:
+            records.append(legacy)
+
+    return records
+
+
+def find_verified_ready(state: Mapping[str, Any], *, version: str, sha256: str) -> dict[str, Any] | None:
+    normalized_sha = sha256.lower()
+    by_version = state.get("verified_ready_versions") if isinstance(state, Mapping) else None
+    if isinstance(by_version, Mapping):
+        sha_map = by_version.get(version)
+        if isinstance(sha_map, Mapping):
+            record = sha_map.get(normalized_sha)
+            if isinstance(record, dict):
+                return record
+
+    legacy = state.get("verified_ready") if isinstance(state, Mapping) else None
+    if isinstance(legacy, dict) and legacy.get("version") == version and str(legacy.get("sha256", "")).lower() == normalized_sha:
+        return legacy
+    return None
 
 
 def _validate_hash_verified(value: Any, root: Path, active_version: str) -> dict[str, Any] | None:
@@ -131,8 +183,6 @@ def _validate_hash_verified(value: Any, root: Path, active_version: str) -> dict
     version = value.get("version")
     if not isinstance(version, str) or not _is_semver(version):
         raise UpdateCacheStateError("hash_verified.version must be strict SemVer")
-    if _is_semver(active_version) and _parse_semver(version) <= _parse_semver(active_version):
-        raise UpdateCacheStateError("hash_verified.version must be newer than active_version")
 
     channel = validate_update_channel(value.get("channel"))
 
@@ -187,9 +237,6 @@ def _validate_verified_ready(value: Any, root: Path, active_version: str) -> dic
     version = value.get("version")
     if not isinstance(version, str) or not _is_semver(version):
         raise UpdateCacheStateError("verified_ready.version must be strict SemVer")
-    if _is_semver(active_version) and _parse_semver(version) <= _parse_semver(active_version):
-        raise UpdateCacheStateError("verified_ready.version must be newer than active_version")
-
     channel = validate_update_channel(value.get("channel"))
 
     artifact_path = value.get("artifact_path")
@@ -258,6 +305,53 @@ def _validate_verified_ready(value: Any, root: Path, active_version: str) -> dic
     }
 
 
+def _validate_verified_ready_versions(value: Any, root: Path, active_version: str) -> dict[str, dict[str, dict[str, Any]]]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise UpdateCacheStateError("verified_ready_versions must be an object")
+
+    records: dict[str, dict[str, dict[str, Any]]] = {}
+    for version, sha_map in value.items():
+        if not isinstance(version, str) or not _is_semver(version):
+            raise UpdateCacheStateError("verified_ready_versions keys must be strict SemVer")
+        if not isinstance(sha_map, dict):
+            raise UpdateCacheStateError("verified_ready_versions version entries must be objects")
+        for sha256, record in sha_map.items():
+            if not isinstance(sha256, str) or not re.fullmatch(r"[A-Fa-f0-9]{64}", sha256):
+                raise UpdateCacheStateError("verified_ready_versions sha256 keys must be 64 hex characters")
+            validated = _validate_verified_ready(record, root, active_version)
+            if validated is None:
+                raise UpdateCacheStateError("verified_ready_versions records must be objects")
+            if validated["version"] != version or validated["sha256"] != sha256.lower():
+                raise UpdateCacheStateError("verified_ready_versions keys must match record version and sha256")
+            records.setdefault(version, {})[sha256.lower()] = validated
+    return records
+
+
+def _with_verified_ready_record(
+    records: dict[str, dict[str, dict[str, Any]]],
+    record: dict[str, Any],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    key = _verified_ready_key(record)
+    if key is None:
+        return records
+    version, sha256 = key
+    merged = {record_version: dict(sha_map) for record_version, sha_map in records.items()}
+    merged.setdefault(version, {})[sha256] = record
+    return merged
+
+
+def _verified_ready_key(record: Mapping[str, Any]) -> tuple[str, str] | None:
+    version = record.get("version")
+    sha256 = record.get("sha256")
+    if not isinstance(version, str) or not isinstance(sha256, str):
+        return None
+    if not _is_semver(version) or not re.fullmatch(r"[A-Fa-f0-9]{64}", sha256):
+        return None
+    return version, sha256.lower()
+
+
 def _validate_exe_verified(value: Any, root: Path, active_version: str) -> dict[str, Any] | None:
     if value is None:
         return None
@@ -267,8 +361,6 @@ def _validate_exe_verified(value: Any, root: Path, active_version: str) -> dict[
     version = value.get("version")
     if not isinstance(version, str) or not _is_semver(version):
         raise UpdateCacheStateError("exe_verified.version must be strict SemVer")
-    if _is_semver(active_version) and _parse_semver(version) <= _parse_semver(active_version):
-        raise UpdateCacheStateError("exe_verified.version must be newer than active_version")
 
     channel = validate_update_channel(value.get("channel"))
 
@@ -335,8 +427,6 @@ def _validate_extracted(value: Any, root: Path, active_version: str) -> dict[str
     version = value.get("version")
     if not isinstance(version, str) or not _is_semver(version):
         raise UpdateCacheStateError("extracted.version must be strict SemVer")
-    if _is_semver(active_version) and _parse_semver(version) <= _parse_semver(active_version):
-        raise UpdateCacheStateError("extracted.version must be newer than active_version")
 
     channel = validate_update_channel(value.get("channel"))
 

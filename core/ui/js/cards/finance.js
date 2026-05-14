@@ -34,6 +34,7 @@ export function mountFinance() {
         <label class="finance-field">From<br/><input class="finance-input" data-role="finance-from" type="date" value="${isoDate(fromDefault)}"></label>
         <label class="finance-field">To<br/><input class="finance-input" data-role="finance-to" type="date" value="${isoDate(now)}"></label>
         <button class="finance-refresh-btn" data-role="finance-refresh" type="button">Refresh</button>
+        <button class="finance-refresh-btn" data-role="finance-export" type="button">Export CSV</button>
       </div>
       <div data-role="finance-summary" class="finance-summary-grid"></div>
       <div class="finance-table-wrap">
@@ -55,6 +56,7 @@ export function mountFinance() {
   const fromInput = host.querySelector('[data-role="finance-from"]');
   const toInput = host.querySelector('[data-role="finance-to"]');
   const refreshBtn = host.querySelector('[data-role="finance-refresh"]');
+  const exportBtn = host.querySelector('[data-role="finance-export"]');
   const summaryEl = host.querySelector('[data-role="finance-summary"]');
   const txEl = host.querySelector('[data-role="finance-tx"]');
 
@@ -137,6 +139,28 @@ export function mountFinance() {
     }
   }
 
+  function exportCsv() {
+    const params = new URLSearchParams();
+    params.set("profile", "generic");
+    if (fromInput?.value) params.set("from", fromInput.value);
+    if (toInput?.value) params.set("to", toInput.value);
+    window.open(`/app/finance/export.csv?${params.toString()}`, "_blank", "noopener");
+  }
+
+  if (host._financeRefreshHandler) {
+    document.removeEventListener("bus:finance-refresh", host._financeRefreshHandler);
+  }
+  host._financeRefreshHandler = () => {
+    if (!document.body.contains(host)) {
+      document.removeEventListener("bus:finance-refresh", host._financeRefreshHandler);
+      host._financeRefreshHandler = null;
+      return;
+    }
+    void refresh();
+  };
+  document.addEventListener("bus:finance-refresh", host._financeRefreshHandler);
+
   refreshBtn?.addEventListener("click", refresh);
+  exportBtn?.addEventListener("click", exportCsv);
   refresh();
 }

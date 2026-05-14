@@ -17,4 +17,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-# makes core.auth a package
+"""Auth helper package.
+
+Existing OAuth service-account helpers live here. DB-backed user-account helpers provide
+claimed/unclaimed auth state, sessions, and route-local permission dependencies.
+"""
+
+__all__ = [
+    "audit",
+    "dependencies",
+    "google_sa",
+    "management",
+    "passwords",
+    "permissions",
+    "sessions",
+    "store",
+]

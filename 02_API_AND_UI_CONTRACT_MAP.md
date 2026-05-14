@@ -13,9 +13,14 @@ This map exists to keep authority boundaries explicit. Canonical, supported, sec
 
 - Drifted: `core/ui/js/cards/backup.js` expects `/app/backup` or `/app.db`; no matching mounted backend route was found.
 - Drifted: `core/ui/js/cards/home_donuts.js` uses `/app/transactions/summary` and `/app/transactions`, but both endpoints are explicit stubs.
-- Canonical: `/session/token` authority is only `core/api/http.py`; legacy alternate runtime surfaces that previously conflicted here were removed.
+- Canonical: `/session/token` authority is only `core/api/http.py`; it remains unclaimed-mode compatibility and returns `login_required` in claimed mode rather than minting a legacy app-access bypass.
+- Canonical: `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`, `/auth/recover`, and `/auth/recovery-codes/regenerate` expose DB-backed auth account lifecycle over `bus_auth_session`. The SPA calls `/auth/state` during boot before protected app mounting, preserves legacy local behavior while unclaimed, requires login UI before normal screens once claimed without a current session, exposes account recovery from the claimed-mode login card, exposes recovery-code regeneration from Security management, and refreshes in-memory auth state after permission/session-sensitive Security UI actions.
+- Canonical: `/app/users`, `/app/roles`, `/app/sessions`, and `/app/audit` expose claimed-mode user, role, session, and audit management. The `#/security` UI consumes these routes when permitted; backend route-local permissions remain authoritative and no default users are created.
 - Drifted: `/app/logs` is the UI event-feed endpoint, while `/logs` is the text runtime log tail; similar names, different contracts.
-- Guard posture: Scoped ledger, finance, config, update-check, and app-log routes now declare route-local token dependencies, and their sensitive mutations declare route-local write gates; see `04_SECURITY_TRUST_AND_OPERATIONS.md`.
+- Guard posture: Covered protected route families now declare route-local token and permission dependencies. Sensitive mutations retain existing write gates and owner-commit gates where already present; see `04_SECURITY_TRUST_AND_OPERATIONS.md`.
+- Password posture: owner setup, user creation, and password reset enforce the central modest minimum password policy from `core/auth/passwords.py` and return controlled `400` errors for blank or too-short passwords.
+
+Phase 5 permission coverage also includes user, role, session, and auth-audit management routes. Phase 6 adds frontend claim/login/logout and Security management screens on top of those routes without changing backend auth authority. Reader, organizer, provider catalog/index/drive scan routes remain intentionally deferred because this phase does not introduce a separate provider/catalog permission vocabulary.
 
 Silent contract drift is a stability risk. The purpose of this document is not to enlarge the declared surface, but to keep the live supported surface explicit and reviewable.
 
@@ -30,7 +35,14 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | `GET` | `/health` | Canonical | Minimal health/version response. | `core/api/http.py` |
 | `GET` | `/health/detailed` | Secondary | Dev-only detailed health payload. | `core/api/http.py` |
 | `GET` | `/dev/paths` | Secondary | Path diagnostics. | `core/api/http.py` |
-| `GET` | `/session/token` | Canonical | Mint/read current session token and set cookie. | `core/api/http.py` |
+| `GET` | `/session/token` | Canonical | In unclaimed mode, mint/read current legacy session token and set cookie. In claimed mode, return `login_required` and do not grant app access. | `core/api/http.py` |
+| `GET` | `/auth/state` | Canonical auth surface | Return DB-backed claimed/unclaimed auth state; reachable as bootstrap without legacy `bus_session`. | `core/api/routes/auth.py` |
+| `POST` | `/auth/setup-owner` | Canonical auth surface | One-way first owner setup when zero auth users exist; creates owner, recovery-code hashes, auth session, and audit event. No default user is created automatically. | `core/api/routes/auth.py` |
+| `POST` | `/auth/recover` | Canonical auth surface | Claimed-mode generic recovery; validates password policy, rate-limits failed attempts, burns one recovery code, resets password, revokes sessions, requires login afterward, and audits without returning recovery code material. | `core/api/routes/auth.py` |
+| `POST` | `/auth/login` | Canonical auth surface | Validate DB-backed user credentials and create `bus_auth_session`; reachable as bootstrap without legacy `bus_session`. | `core/api/routes/auth.py` |
+| `POST` | `/auth/logout` | Canonical auth surface | Revoke the DB-backed auth session if present and clear `bus_auth_session`. | `core/api/routes/auth.py` |
+| `GET` | `/auth/me` | Canonical auth surface | Return unclaimed/null state with zero users, 401 without auth in claimed mode, or current DB-backed auth user when `bus_auth_session` is valid. | `core/api/routes/auth.py` |
+| `POST` | `/auth/recovery-codes/regenerate` | Canonical auth surface | Claimed `users.manage` action; invalidates unused old recovery codes and returns new plaintext codes once while storing only hashes. | `core/api/routes/auth.py` |
 | `GET` | `/ui/plugins/{plugin_id}` | Canonical | Serve plugin UI root asset. | `core/api/http.py` |
 | `GET` | `/ui/plugins/{plugin_id}/{resource_path:path}` | Canonical | Serve plugin UI asset path. | `core/api/http.py` |
 
@@ -40,11 +52,23 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 
 | Method | Path | Status | Guard note | Purpose | Primary handler |
 | --- | --- | --- | --- | --- | --- |
-| `GET` | `/app/config` | Canonical | Explicit token dep | Read runtime UI/update/launcher config. | `core/api/routes/config.py` |
-| `POST` | `/app/config` | Canonical | Explicit token + `require_writes` | Write runtime UI/update/launcher config. | `core/api/routes/config.py` |
-| `GET` | `/app/update/check` | Canonical | Explicit token dep | One-shot update check. | `core/api/routes/update.py` |
-| `GET` | `/app/system/state` | Canonical | Explicit token dep | Return bus mode, first-run, counts, build/schema status. | `core/api/routes/system_state.py` |
-| `POST` | `/app/system/start-fresh` | Canonical | Explicit token + `require_writes` | Switch demo -> prod and initialize fresh prod DB. | `core/api/routes/system_state.py` |
+| `GET` | `/app/config` | Canonical | Token + `settings.read` | Read runtime UI/update/launcher config. | `core/api/routes/config.py` |
+| `POST` | `/app/config` | Canonical | Token + `settings.manage` + `require_writes` | Write runtime UI/update/launcher config. | `core/api/routes/config.py` |
+| `GET` | `/app/update/check` | Canonical | Token + `updates.check` | One-shot update check. | `core/api/routes/update.py` |
+| `GET` | `/app/system/state` | Canonical | Token + `system.read` | Return bus mode, first-run, counts, build/schema status. | `core/api/routes/system_state.py` |
+| `POST` | `/app/system/start-fresh` | Canonical | Token + `system.admin` + `require_writes` | Switch demo -> prod and initialize fresh prod DB. | `core/api/routes/system_state.py` |
+| `GET` | `/app/users` | Canonical | Token + `users.read` | List DB-backed auth users without password hashes. | `core/api/routes/users.py` |
+| `POST` | `/app/users` | Canonical | Token + `users.manage` + `require_writes` | Create a claimed-mode child user and audit `user.created`. | `core/api/routes/users.py` |
+| `GET` | `/app/users/{user_id}` | Canonical | Token + `users.read` | Read one DB-backed auth user without password hash. | `core/api/routes/users.py` |
+| `PATCH` | `/app/users/{user_id}` | Canonical | Token + `users.manage` + `require_writes` | Update user profile/enabled/password-change state under owner invariant. | `core/api/routes/users.py` |
+| `POST` | `/app/users/{user_id}/disable` | Canonical | Token + `users.manage` + `require_writes` | Disable a user, revoke active sessions, and preserve last-owner invariant. | `core/api/routes/users.py` |
+| `POST` | `/app/users/{user_id}/enable` | Canonical | Token + `users.manage` + `require_writes` | Re-enable a user. | `core/api/routes/users.py` |
+| `POST` | `/app/users/{user_id}/reset-password` | Canonical | Token + `users.manage` + `require_writes` | Hash a new temporary password and optionally revoke sessions. | `core/api/routes/users.py` |
+| `GET` | `/app/roles` | Canonical | Token + `users.read` | List system roles and permissions. | `core/api/routes/users.py` |
+| `PATCH` | `/app/users/{user_id}/roles` | Canonical | Token + `users.manage` + `require_writes` | Replace user role assignments under owner invariant. | `core/api/routes/users.py` |
+| `GET` | `/app/sessions` | Canonical | Token + `sessions.manage` | List active/recent auth sessions without token/hash material. | `core/api/routes/users.py` |
+| `POST` | `/app/sessions/{session_id}/revoke` | Canonical | Token + `sessions.manage` + `require_writes` | Revoke an auth session and audit `session.revoked`. | `core/api/routes/users.py` |
+| `GET` | `/app/audit` | Canonical | Token + `audit.read` | List auth/user-management audit events with bounded filters. | `core/api/routes/users.py` |
 | `POST` | `/app/db/export` | Canonical | Protected router + `require_writes` | Create encrypted DB export. | `core/api/http.py` |
 | `GET` | `/app/db/exports` | Canonical | Protected router + `require_writes` | List export files. | `core/api/http.py` |
 | `POST` | `/app/db/import/upload` | Canonical | Protected router + `require_writes` | Upload backup file to staging area. | `core/api/http.py` |
@@ -55,9 +79,9 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 
 | Method | Path | Status | Guard note | Purpose | Primary handler |
 | --- | --- | --- | --- | --- | --- |
-| `GET` | `/app/items` | Canonical | Explicit token dep | List items with on-hand/FIFO display fields. | `core/api/routes/items.py` |
+| `GET` | `/app/items` | Canonical | Token + `inventory.read` | List items with on-hand/FIFO display fields. | `core/api/routes/items.py` |
 | `GET` | `/app/items/{item_id}` | Canonical | Explicit token dep | Get item detail plus batch summary. | `core/api/routes/items.py` |
-| `POST` | `/app/items` | Canonical | Explicit token + `require_writes` + owner commit | Create item. | `core/api/routes/items.py` |
+| `POST` | `/app/items` | Canonical | Token + `inventory.write` + `require_writes` + owner commit | Create item. | `core/api/routes/items.py` |
 | `PUT` | `/app/items/{item_id}` | Canonical | Explicit token + `require_writes` + owner commit | Update item. | `core/api/routes/items.py` |
 | `DELETE` | `/app/items/{item_id}` | Canonical | Explicit token + `require_writes` + owner commit | Delete or archive item. | `core/api/routes/items.py` |
 | `GET` | `/app/vendors` | Canonical | Explicit token dep | List vendor/org facade. | `core/api/routes/vendors.py` |
@@ -88,7 +112,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | `POST` | `/app/finance/expense` | Canonical | Explicit token + `require_writes` | Record expense cash event. | `core/api/routes/finance_api.py` |
 | `POST` | `/app/finance/refund` | Canonical | Explicit token + `require_writes` | Record refund and optional restock. | `core/api/routes/finance_api.py` |
 | `GET` | `/app/finance/profit` | Canonical | Explicit token dep | Profit snapshot. | `core/api/routes/finance_api.py` |
-| `GET` | `/app/finance/summary` | Canonical | Explicit token dep | Finance KPI summary. | `core/api/routes/finance_api.py` |
+| `GET` | `/app/finance/summary` | Canonical | Token + `finance.read` | Finance KPI summary. | `core/api/routes/finance_api.py` |
 | `GET` | `/app/finance/transactions` | Canonical | Explicit token dep | Mixed transaction feed. | `core/api/routes/finance_api.py` |
 | `GET` | `/app/logs` | Canonical | Explicit token dep | Inventory/ledger event feed used by UI logs page. | `core/api/routes/logs_api.py` |
 
@@ -187,6 +211,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | `#/recipes` | Canonical | Recipe screen; supports `#/recipes/{id}`. | `core/ui/js/cards/recipes.js` |
 | `#/contacts` | Canonical | Contacts/vendors/orgs screen; supports `#/contacts/{id}`. | `core/ui/js/cards/vendors.js` |
 | `#/settings` | Canonical | Settings + admin/backup/import/export. | `core/ui/js/cards/settings.js`, `core/ui/js/cards/admin.js` |
+| `#/security` | Canonical | Current user, owner claim entry, recovery-code regeneration, users/roles, sessions, and audit management when permitted. | `core/ui/app.js`, `core/ui/js/auth.js`, `core/ui/js/auth-ui.js`, `core/ui/js/security.js` |
 | `#/logs` | Canonical | UI event-log screen backed by `/app/logs`. | `core/ui/js/logs.js` |
 | `#/finance` | Canonical | Finance KPI + transactions screen. | `core/ui/js/cards/finance.js` |
 | `#/runs` | Drifted | Placeholder screen; detail route also normalizes. | `core/ui/app.js` |
@@ -207,6 +232,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | Screen | Direct API dependencies |
 | --- | --- |
 | Welcome/onboarding | `/session/token`, `/app/system/state`, `/app/system/start-fresh`, `/license/EULA.md` |
+| Auth boot/login/claim/recovery chrome | `/auth/state`, `/auth/setup-owner`, `/auth/recover`, `/auth/login`, `/auth/logout`, `/auth/me` |
 | Home | `/openapi.json`, `/app/transactions/summary?window=30d`, `/app/transactions?limit=10` |
 | Inventory | `/app/items`, `/app/items/{id}`, `/app/stock/in`, `/app/stock/out`, `/app/purchase`, `/app/finance/refund`, `/app/vendors?is_vendor=true`, `/app/contacts?is_vendor=true`, `/app/items/{id}` `DELETE` |
 | Manufacturing | `/app/recipes`, `/app/recipes/{id}`, `/app/manufacture`, `/app/ledger/history` |
@@ -214,6 +240,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | Contacts | `/app/vendors?is_org=true`, `/app/vendors?is_vendor=true`, `/app/contacts?...`, `/app/contacts` `POST`, `/app/vendors/{id}` `PUT|DELETE`, `/app/contacts/{id}` `PUT|DELETE` |
 | Settings | `/app/config`, `/app/update/check`, `/app/update/stage` |
 | Settings/Admin | `/app/db/export`, `/app/db/exports`, `/app/db/import/upload`, `/app/db/import/preview`, `/app/db/import/commit` |
+| Security | `/auth/state`, `/auth/recovery-codes/regenerate`, `/app/users`, `/app/roles`, `/app/sessions`, `/app/sessions/{id}/revoke`, `/app/audit` |
 | Logs | `/app/logs?limit=...&cursor_id=...` |
 | Finance | `/app/finance/summary?from=...&to=...`, `/app/finance/transactions?from=...&to=...&limit=100` |
 
@@ -245,3 +272,5 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 - Refresh on: mounted route changes, wrapper removals, screen rewrites, payload-key changes, or guard-model changes that affect contract assumptions.
 - Fastest invalidators: deleting legacy wrappers, implementing real home transactions, adding/removing `/app/*` routes, or replacing the SPA router.
 - Check alongside: `04_SECURITY_TRUST_AND_OPERATIONS.md` for guard/enforcement truth and `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` for update-check contract details.
+- UI contract audit guard scope: `scripts/ui_contract_audit.ps1` checks forbidden quoted legacy endpoint strings, forbidden legacy endpoint tokens, finance legacy fields, and canonical endpoint containment for stock/purchase/ledger/manufacture calls. It normalizes Windows path separators and narrowly allowlists the known imperial-unit compatibility wrapper in `core/ui/js/token.js` plus the recipe unit label in `core/ui/js/cards/recipes.js`; new matches outside those allowlists remain failures.
+- OpenAPI hygiene: duplicate route function names or dual-mounted handlers must use explicit unique `operation_id` values so `/openapi.json` stays warning-free and generated clients have stable operation IDs.

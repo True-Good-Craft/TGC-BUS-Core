@@ -29,7 +29,7 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 | Manifest checksum / hash | `core/services/update_artifact.py` plus `core/runtime/update_cache.py` | Internal update cache helper | Canonical for staging | Internal download helper requires manifest-declared `sha256`, enforces `size_bytes` when present, verifies the cached ZIP bytes, and records `hash_verified` only after the staging path has selected a trusted signed manifest. |
 | Safe extraction stage | `core/services/update_extract.py` plus `core/runtime/update_cache.py` | Internal update cache helper | Bridge groundwork | Internal extraction helper safely unpacks `hash_verified` ZIPs into `updates\versions\<version>\`, requires exactly one EXE candidate, and records `extracted` only. |
 | EXE Authenticode / publisher verification | `core/services/update_exe_trust.py` plus `core/runtime/update_cache.py` | Internal update cache helper | Bridge groundwork | Internal EXE-trust helper verifies Windows Authenticode validity, True Good Craft signer-subject identity, and the pinned signer thumbprint `55474AA9A2D562022A6590D487045E069457F985`, then records `exe_verified` only. |
-| Local update cache/state lifecycle | `core/runtime/update_cache.py` / update state model | Verified handoff prerequisite | Bridge groundwork | `%LOCALAPPDATA%\BUSCore\updates\` holds `manifests\`, `downloads\`, `versions\`, and `state.json`; live conservative stages are `hash_verified`, `extracted`, `exe_verified`, and consistency-gated `verified_ready`. |
+| Local update cache/state lifecycle | `core/runtime/update_cache.py` / update state model | Verified handoff prerequisite | Bridge groundwork | `%LOCALAPPDATA%\BUSCore\updates\` holds `manifests\`, `downloads\`, `versions\`, and `state.json`; live conservative stages are `hash_verified`, `extracted`, `exe_verified`, compatibility `verified_ready`, and version+sha keyed `verified_ready_versions`. |
 | DB/app ownership lock | Launcher preflight plus app-level lock | Future verified handoff prerequisite | Canonical | Same DB/app root cannot have two live BUS Core owners. |
 | Manifest channel selection | `core/config/update_policy.py` + `core/services/update.py` | Configured channel decides selected release entry | Canonical | Non-stable channels require explicit channel-specific entries and must not fall back to public latest. |
 
@@ -77,9 +77,9 @@ Manifest compatibility is a release boundary for this bridge release: deployed c
 5. Service validates the manifest URL and configured channel, fetches JSON with timeout and size caps, normalizes supported manifest shapes, supports signed manifest unwrapping when present, validates optional metadata shape, and compares the selected release version against runtime `VERSION`. Read-only update check still preserves unsigned-manifest compatibility.
 6. Route returns normalized response keys: `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message`.
 7. UI shows a manual Update button when `update_available` is true.
-8. Clicking Update calls `POST /app/update/stage` (auth + write-gated) which requires a trusted signed manifest, then performs hash-verified ZIP download, safe extraction, EXE trust verification, and conservative `verified_ready` promotion.
+8. Clicking Update calls `POST /app/update/stage` (auth + write-gated) which requires a trusted signed manifest, then performs hash-verified ZIP download, safe extraction, EXE trust verification, and conservative version+sha keyed `verified_ready_versions` promotion. Legacy `verified_ready` remains only a compatibility/latest pointer.
 9. Successful staging reports verified-ready state and instructs restart/reopen; no forced restart endpoint is invoked.
-10. On next start, launcher evaluates `verified_ready` after DB lock and applies verified launch policy without overwriting the running EXE.
+10. On next start, launcher evaluates all `verified_ready_versions` records after DB lock, filters to versions newer than the running `VERSION`, selects the newest eligible SemVer candidate, and applies verified launch policy without overwriting the running EXE.
 
 Update checks are part of the trust model because they are optional and non-blocking. Core remains usable without them, and an unavailable manifest host should not prevent normal local operation.
 
@@ -100,7 +100,7 @@ Update checks are part of the trust model because they are optional and non-bloc
 | `hash_verified` state from real artifacts | Yes | Yes | No | Conservative state only; downloaded ZIP matched signed manifest metadata |
 | `extracted` state from real artifacts | Yes | Yes | No | Conservative state only; safe ZIP extraction completed, but executable trust is not established until EXE verification succeeds |
 | `exe_verified` state from real artifacts | Yes | Yes | No | Conservative state only; extracted EXE passed Authenticode, True Good Craft subject, and pinned-thumbprint checks |
-| `verified_ready` state from real artifacts | Yes | Yes | No | Conservative state only; written only when prior cache stages agree and confined files still exist |
+| `verified_ready_versions` state from real artifacts | Yes | Yes | No | Conservative version+sha keyed state; written only when prior cache stages agree and confined files still exist. Legacy `verified_ready` remains a compatibility/latest pointer. |
 | Release notes link from manifest | Internal declared metadata only | Yes | No | Bridge groundwork |
 | Manifest checksum/hash use | Internal declared metadata only | Yes | No | Bridge groundwork |
 | Artifact signature/publisher/size verification | Partial internal helper coverage | Yes | No | ZIP hash/size plus EXE Authenticode/publisher/thumbprint verification exist internally; `/app/update/check` still does not execute or hand off artifacts |
@@ -126,9 +126,9 @@ Update checks are part of the trust model because they are optional and non-bloc
 | Release history in manifest | Narrowed drift | Current release publication is canonical, but history still reflects GitHub release metadata filtered by canonical `BUS-Core-*.zip` assets. |
 | Manifest signing key custody | Canonical but operational | Private key lives outside repo in GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`; public key is pinned in Core. |
 
-Release and update trust here depends more on clear authority and honest limits than on a large automation footprint. The current boundary is: canonical version authority exists, authority mirrors and change-trace requirements are machine-checked, tag alignment is checked, manifests are signed during release publication, update-check metadata is normalized, channel-specific manifests are selected explicitly, manual staging requires trusted signed manifest metadata before executing artifact verification into `verified_ready`, and launcher handoff is policy-controlled on next start.
+Release and update trust here depends more on clear authority and honest limits than on a large automation footprint. The current boundary is: canonical version authority exists, authority mirrors and change-trace requirements are machine-checked, tag alignment is checked, manifests are signed during release publication, update-check metadata is normalized, channel-specific manifests are selected explicitly, manual staging requires trusted signed manifest metadata before executing artifact verification into version+sha keyed `verified_ready_versions`, and launcher handoff is policy-controlled on next start.
 
-Known remaining release/update work is explicit: deciding whether read-only update check should also require signed manifests, adding optional restart orchestration beyond restart/reopen guidance, preserving the manual Windows signing ceremony until automation is practical, and Docker release hardening if the container lane needs governed releases.
+Known remaining release/update work is explicit: deciding whether read-only update check should also require signed manifests, adding optional restart orchestration beyond restart/reopen guidance, preserving the manual Windows signing ceremony until automation is practical, and Docker release hardening if the container lane needs governed releases. There is still no auto-install, startup auto-update, telemetry, or silent background update behavior.
 
 ## Freeze Notes
 
@@ -141,7 +141,7 @@ Known remaining release/update work is explicit: deciding whether read-only upda
 - `VERSION` remains the only value allowed into release tags, published manifest `latest.version`, and update comparison logic.
 - `INTERNAL_VERSION` is for repo working-revision tracking only.
 - `.github/workflows/release-mirror.yml` now machine-checks `tag == v{VERSION}` before publishing release metadata.
-- Remaining unresolved drift is narrow and explicit: manifests are signed during release publication, staging requires a trusted signed manifest, read-only update check still keeps unsigned compatibility; metadata may be published and retained as declared values; manual `/app/update/stage` executes trusted ZIP hash/extract/EXE verification into `verified_ready`; and release history still depends on GitHub release metadata plus matching BUS-Core assets.
+- Remaining unresolved drift is narrow and explicit: manifests are signed during release publication, staging requires a trusted signed manifest, read-only update check still keeps unsigned compatibility; metadata may be published and retained as declared values; manual `/app/update/stage` executes trusted ZIP hash/extract/EXE verification into `verified_ready_versions`; and release history still depends on GitHub release metadata plus matching BUS-Core assets.
 
 ## Manifest Key Rotation
 

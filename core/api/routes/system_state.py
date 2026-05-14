@@ -13,6 +13,8 @@ from core.appdb.engine import dispose_engine, get_engine, get_session
 from core.appdb.migrate import ensure_vendors_flags
 from core.appdb.models import Base, CashEvent, Item, ItemMovement, Vendor
 from core.appdb.models_recipes import ManufacturingRun, Recipe
+from core.auth.dependencies import require_permission
+from core.auth.permissions import PERMISSION_SYSTEM_ADMIN, PERMISSION_SYSTEM_READ
 from core.config.writes import require_writes
 from core.version import INTERNAL_VERSION
 from tgc.security import require_token_ctx
@@ -33,6 +35,7 @@ COUNT_KEYS = (
 def get_system_state(
     request: Request,
     db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_READ)),
     _token: str = Depends(require_token_ctx),
 ) -> Dict[str, object]:
     count_queries = {
@@ -97,6 +100,7 @@ def get_system_state(
 
 @router.post("/start-fresh")
 def start_fresh_shop(
+    _permission=Depends(require_permission(PERMISSION_SYSTEM_ADMIN)),
     _token: str = Depends(require_token_ctx),
     _writes: None = Depends(require_writes),
 ) -> Dict[str, object]:

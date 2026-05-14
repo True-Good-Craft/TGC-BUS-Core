@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.2] - 2026-05-13
+
+### Fixed
+- Fixed cached update handoff when BUS Core is already running from a previously staged verified update.
+- Multiple `verified_ready` update artifacts can now coexist safely in version+sha keyed cache state.
+- Manual staging now checks the exact manifest latest version and `sha256` before returning `already_ready`, instead of treating any ready artifact as sufficient.
+- Launcher handoff now scans verified-ready records, filters to versions newer than the running `VERSION`, and chooses the newest eligible SemVer version.
+- Running executables are not overwritten or deleted during update staging, and older verified-ready cached versions do not block newer updates.
+
+### Changed
+- Bumped `VERSION` from `1.1.1` to `1.1.2` and reset `INTERNAL_VERSION` from `1.1.1.15` to `1.1.2.0` for the verified update-cache handoff patch release.
+
 ## [1.0.4] - 2026-04-24
 
 ### Changed
@@ -12,6 +24,42 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.1.1.14` to `1.1.1.15` for the recovery UI entry-point patch without changing public `VERSION`.
+- Added minimal claimed-mode recovery UI: login now exposes a recovery form for the existing `/auth/recover` backend route, validates password confirmation client-side, shows generic recovery failures, and returns to login with a success message without storing recovery data.
+- Added Security UI recovery-code regeneration for users with management authority, using the existing `/auth/recovery-codes/regenerate` backend route, warning before invalidating old unused codes, showing new codes once, and clearing them after confirmation.
+- Bumped `INTERNAL_VERSION` from `1.1.1.13` to `1.1.1.14` for release-blocker hardening without changing public `VERSION`.
+- Added owner recovery and recovery-code regeneration API behavior: recovery codes remain long-lived until used/regenerated, are stored only as hashes, burn on successful use, revoke existing sessions, require login after reset, write audit events, and use generic recovery failure responses with DB-backed failed-attempt rate limiting.
+- Hardened auth sessions with explicit 12-hour idle timeout, 30-day max age, and throttled `last_seen_at` touch behavior.
+- Updated the Security UI to refresh in-memory auth state after permission/session-sensitive management actions and handle `401`/`403` responses without storing authority in browser storage.
+- Fixed duplicate OpenAPI operation IDs for the logs route and added an OpenAPI schema uniqueness regression test.
+- Bumped `INTERNAL_VERSION` from `1.1.1.12` to `1.1.1.13` for the Phase 7 auth/security hardening and release-readiness audit without changing public `VERSION`.
+- Hardened auth/user-account release readiness with an explicit minimum password length, route-level password-policy errors, expanded cookie/session/permission/owner-invariant/UI-storage tests, and an OS-stable UI contract audit that keeps legacy endpoint and canonical-containment guardrails active with documented allowlists for known compatibility code.
+- Bumped `INTERNAL_VERSION` from `1.1.1.11` to `1.1.1.12` for the Phase 6 claim/login/logout and Security UI pass without changing public `VERSION`.
+- Added frontend auth boot, owner-claim, recovery-code display, login/logout, current-user chrome, permission-aware navigation hiding, and `#/security` user/session/audit management UI on top of the existing backend auth APIs while preserving unclaimed local mode and avoiding localStorage auth authority.
+- Bumped `INTERNAL_VERSION` from `1.1.1.10` to `1.1.1.11` for the Phase 5 claimed-mode user, role, session, and audit management API without changing public `VERSION`.
+- Added the backend-only `/app/users`, `/app/roles`, `/app/sessions`, and `/app/audit` management surface with route-local `users.read`, `users.manage`, `sessions.manage`, and `audit.read` permissions, write gates on mutations, last-enabled-owner invariant enforcement, session revocation for disabled/reset users, and audit events for user/session management actions.
+- Bumped `INTERNAL_VERSION` from `1.1.1.9` to `1.1.1.10` for the Phase 4 route-local claimed-mode permission dependency pass without changing public `VERSION`.
+- Added claimed-mode route-local permission dependencies for covered protected route families, including inventory/items, ledger/stock, recipes, manufacturing, vendors/contacts, finance, logs, config/update/system, backup/import/export, and practical sensitive utility routes while preserving unclaimed-mode legacy local behavior and existing write/owner gates.
+- Bumped `INTERNAL_VERSION` from `1.1.1.8` to `1.1.1.9` for the Phase 3 claimed-mode global auth gate cutover without changing public `VERSION`.
+- Cut over the global HTTP auth gate so unclaimed mode preserves legacy local `bus_session` behavior, claimed mode requires valid DB-backed `bus_auth_session` for protected routes, `/session/token` returns `login_required` in claimed mode, and bootstrap auth routes stay reachable without adding UI, user-management routes, route-local permissions, default users, or business-logic changes.
+- Bumped `INTERNAL_VERSION` from `1.1.1.7` to `1.1.1.8` for the Phase 2 auth account-lifecycle route surface without changing public `VERSION`.
+- Added DB-backed `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, and `/auth/me` routes with owner setup, login/logout session creation/revocation, one-time recovery-code generation/storage-by-hash, and auth audit events while leaving `session_guard`, `/session/token`, existing `/app/*` permissions, UI, and default-user creation unchanged.
+- Bumped `INTERNAL_VERSION` from `1.1.1.6` to `1.1.1.7` for the Phase 1 DB-backed auth schema and low-level service skeleton without changing public `VERSION`.
+- Added auth/user-account ORM tables and pure helper modules for future claimed/unclaimed auth while leaving `/session/token`, session middleware, route permissions, UI, and default-user creation unchanged.
+- Bumped `INTERNAL_VERSION` from `1.1.1.5` to `1.1.1.6` for the Phase 0 auth/user accounts governance authorization pass without changing public `VERSION`.
+- Authorized the planned local-first user account model in governance docs: zero-user unclaimed mode, one-or-more-user claimed mode, no default usable admin, one-way owner setup, DB-backed auth state, route-local auditable permissions, last-enabled-owner invariants, recovery-code rules, and claimed-mode audit expectations.
+- Bumped `INTERNAL_VERSION` from `1.1.1.4` to `1.1.1.5` for Patch 1D test write-gate AppData isolation without changing public `VERSION`.
+- Isolated the shared API test client `LOCALAPPDATA` under pytest temp directories so write-gate setup/teardown cannot mutate the user's real `%LOCALAPPDATA%\BUSCore\config.json`.
+- Added regression coverage proving a sentinel real AppData config remains unchanged while the isolated test config receives `dev.writes_enabled` updates.
+- Bumped `INTERNAL_VERSION` from `1.1.1.3` to `1.1.1.4` for Patch 1C purchase truth and finance export UI wiring without changing public `VERSION`.
+- Added Inventory UI wiring to record purchases through `/app/purchase` using canonical `quantity_decimal` + `uom` fields, purchase category, and optional notes while keeping Add Batch as a separate stock-in action.
+- Added Finance UI CSV export through `/app/finance/export.csv?profile=generic` using the active date range, with no accounting OAuth, account mapping, item import, or schema changes.
+- Bumped `INTERNAL_VERSION` from `1.1.1.2` to `1.1.1.3` for Patch 1B finance CSV export backend support without changing public `VERSION`.
+- Added read-only `/app/finance/export.csv` for generic CAD finance CSV export using existing cash and legacy inferred purchase truth.
+- Kept the finance export backend-only with no accounting OAuth, account mapping, item import, or schema column/table changes.
+- Bumped `INTERNAL_VERSION` from `1.1.1.1` to `1.1.1.2` for Patch 1A purchase truth backend foundation without changing public `VERSION`.
+- Made `/app/purchase` emit cash-backed purchase expense events linked to inventory batches/movements by shared `source_id`, while keeping legacy movement-only purchase history visible as `purchase_inferred`.
+- Added idempotent source-id lookup indexes for purchase transaction deduplication without adding schema columns or tables.
 - Bumped `INTERNAL_VERSION` from `1.1.1.0` to `1.1.1.1` for the wiki publishing/docs pass without changing public `VERSION`.
 - Bumped `VERSION` from `1.1.0` to `1.1.1` and reset `INTERNAL_VERSION` from `1.1.0.14` to `1.1.1.0` for the next governed update cut.
 

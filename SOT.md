@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.1.1 **Updated:** 2026-05-02 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.1.2 **Updated:** 2026-05-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -32,7 +32,7 @@
 
 * **Database:** SQLite via SQLAlchemy ORM.
 
-* **UI:** Single-page application (SPA) shell (`core/ui/shell.html`) with modular JS cards.
+* **UI:** Single-page application (SPA) shell (`core/ui/shell.html`) with modular JS cards, auth bootstrap/login/claim flow, and a permission-aware `#/security` management route for users, sessions, and audit.
 
 * **Server:** Uvicorn at `127.0.0.1:8765` (native local) or `0.0.0.0:8765` inside the Docker container, with default Docker Compose host publishing restricted to `127.0.0.1:8765:8765`. Browser CORS defaults are loopback-only (`http://127.0.0.1:8765`, `http://localhost:8765`); wildcard CORS is not part of the supported default runtime.
 
@@ -82,11 +82,43 @@
 
 * Security hardening that changes boundary behavior must be mirrored into `CHANGELOG.md`, `SOT.md`, and affected governance/security docs to prevent policy drift.
 
+* The UI may hide or reveal navigation and Security controls based on the current user's permissions, but backend route-local permission checks remain the authority. UI state must not store passwords, recovery codes, session tokens, or permission authority in `localStorage`.
+
 * Current hardening posture also treats sandbox command construction, admin preview DOM rendering, and import/local path resolution as boundary-sensitive surfaces: sandbox subprocess argv must remain BUS Core-owned and fixed, untrusted preview metadata must render as text, and user-influenced filesystem paths must resolve under explicit allowed roots before use.
 
 * `scripts/validate_change_trace.py` is the hard traceability guard: if code/control surfaces change, both `CHANGELOG.md` and `core/version.py` MUST be in the same diff, and `INTERNAL_VERSION` MUST be bumped for meaningful repo changes.
 
 * `.github/workflows/security-audit.yml` is the canonical security-tooling workflow. It runs Bandit against `core`, `tgc`, `scripts`, and `launcher.py`; Medium/High findings fail CI while Low findings remain visible advisory output. It also runs `pip-audit` against `requirements.txt` in advisory mode until BUS Core has a fully pinned/locked audit input.
+
+### User Accounts / Claimed Owner Security Model — Authorization Delta
+
+* This delta authorizes and records the local auth/user account model. Phase 1 added the DB schema and low-level helper skeleton. Phase 2 added the first DB-backed auth route surface (`/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`) with owner setup, login/logout, recovery-code generation, session rows, and auth audit events. Phase 3 cut over the global HTTP auth gate: unclaimed mode preserves legacy local `bus_session` behavior, while claimed mode requires a valid DB-backed `bus_auth_session` for protected routes and rejects legacy `bus_session` as `/app/*` authority. Phase 4 added route-local claimed-mode permission dependencies for covered protected API route families. Phase 5 added claimed-mode user, role, session, and audit management routes. Phase 6 added claim/login/logout/current-user and Security management UI. Phase 7 hardening adds explicit modest password minimum enforcement and release-readiness guard coverage. Release-blocker hardening adds owner recovery, recovery-code regeneration, DB-backed recovery rate limiting, explicit session idle/max-age policy, frontend permission resync, and OpenAPI operation-ID hygiene. Recovery UI entry points now expose the existing recovery backend from the login and Security screens without changing backend authority.
+
+* BUS Core has two intended auth modes. **Unclaimed mode** exists when the canonical auth user table has zero users. In unclaimed mode, BUS Core remains usable in the current local-first/simple mode; first-run or account setup is not mandatory; the UI may show a non-blocking "Secure this BUS Core" option; and no default usable admin account exists.
+
+* **Claimed mode** begins when one or more real users exist in the canonical auth user table. In claimed mode, login is required for protected routes, API requests must resolve to a real current user through `bus_auth_session`, covered protected API routes enforce route-local permissions, sensitive auth and user-management events are audited, and the owner account has iron-grip authority.
+
+* No default usable admin or owner account may be created. Forbidden states include `admin` / `admin`, blank username, blank password, short passwords below the configured minimum, or any hidden pre-created owner account that can log in.
+
+* `POST /auth/setup-owner` is one-way and may succeed only while the auth user table has zero users. Once any user exists, owner setup must reject permanently unless the DB is deliberately reset or restored.
+
+* `GET /session/token` is runtime-token compatibility for unclaimed mode, not identity authority. In claimed mode it returns `login_required` and must not grant app access, mint identity, refresh usable `bus_session` authority, or bypass login.
+
+* Claimed-mode `bus_auth_session` rows are invalid when revoked, past `expires_at`, older than the 30-day maximum age, or idle for more than 12 hours. Valid sessions update `last_seen_at` on use only after the configured touch interval to avoid writing on every request. BUS Core does not use refresh tokens for this local-first release; re-login creates a new valid session.
+
+* User/account authority must be DB-backed canonical state. UI `localStorage` may store presentation hints only and must never become auth, role, permission, recovery, or session authority. After user, role, session, password, or recovery-code management actions, the SPA must refresh in-memory auth state so permission-gated navigation/actions reflect backend authority without reload.
+
+* Once claimed, BUS Core must always retain at least one enabled owner. The system must prevent disabling the last enabled owner, deleting the last enabled owner, or removing owner role/authority from the last enabled owner. Backend user-management code must enforce this through a central invariant helper rather than ad hoc route checks.
+
+* Backend permission enforcement is security. UI hiding/showing controls is convenience only. Covered protected routes declare auditable route-local permission dependencies such as `require_permission("inventory.read")`, `require_permission("users.manage")`, or `require_permission("audit.read")`; global middleware remains a broad safety net but is no longer the only visible authority for covered protected app routes. Unclaimed mode compatibility must continue to no-op these permission checks safely.
+
+* Owner setup generates one-time recovery codes. Recovery codes must be shown once, only hashes may be stored, used recovery codes must be single-use, and recovery-code use must be audited. `/auth/recover` accepts username, recovery code, and new password; username/code/used/lockout failures return the same generic error, successful recovery burns the code, resets the password, clears `must_change_password`, revokes that user's sessions, requires normal login afterward, and writes `auth.recovery_used` without secret detail. Printed recovery codes are long-lived until used or regenerated; the 15-minute window applies to failed-attempt rate limiting, not printed-code expiration.
+
+* `/auth/recovery-codes/regenerate` requires claimed-mode authenticated `users.manage` authority, invalidates unused old recovery codes for the selected user/current owner, returns new plaintext codes once, stores only hashes, and writes `auth.recovery_codes_regenerated` without plaintext code detail.
+
+* The claimed-mode login UI provides an account recovery form for the existing `/auth/recover` route. It validates password confirmation locally, shows only generic recovery failure text, does not auto-login, and returns the user to login after a successful reset. The Security UI provides recovery-code regeneration for users with management authority, warns that unused old codes are invalidated, shows new codes once, and clears them after the operator confirms they were saved. These UI flows must not persist recovery codes, passwords, session tokens, or auth authority in `localStorage` or `sessionStorage`.
+
+* Sensitive claimed-mode actions that write audit events include owner setup, login success/failure, logout, user created/updated/disabled/enabled, password reset, roles changed, and session revoked. Future broader runtime audit expansion should include backup export/restore, config changes, finance writes, inventory writes, manufacturing runs, and system restart/start-fresh.
 
 ### Release and Update Boundary
 
@@ -114,9 +146,9 @@
 
 * Client-side signed-manifest enforcement is required for manual update staging (`POST /app/update/stage`) and remains off for read-only update checks. Unsigned manifest compatibility is intentionally preserved only for discovery/check behavior, not for artifact staging.
 
-* This release is an update-chain hardening bridge release. Manual staging requires trusted signed manifest metadata, hash-verifies downloaded ZIP artifacts against manifest `sha256` metadata while enforcing declared size when present, safely extracts hash-verified ZIPs into the local update cache, verifies EXE Authenticode/publisher/thumbprint trust, and promotes only consistent `verified_ready` state. It still does not force restart or auto-apply an update while Core is running.
+* This release is an update-chain hardening bridge release. Manual staging requires trusted signed manifest metadata, hash-verifies downloaded ZIP artifacts against manifest `sha256` metadata while enforcing declared size when present, safely extracts hash-verified ZIPs into the local update cache, verifies EXE Authenticode/publisher/thumbprint trust, and promotes only consistent version+sha keyed `verified_ready_versions` state. Legacy `verified_ready` remains only a compatibility/latest pointer. It still does not force restart or auto-apply an update while Core is running.
 
-* BUS Core has a DB/app ownership lock that prevents multiple live owners of the same DB/app root. Launcher preflight blocks duplicate native launches before browser open / uvicorn bind, and the app-level lock remains defense-in-depth. This ownership lock is a prerequisite for future verified version handoff, but this bridge release does not add staged update application.
+* BUS Core has a DB/app ownership lock that prevents multiple live owners of the same DB/app root. Launcher preflight blocks duplicate native launches before browser open / uvicorn bind, and the app-level lock remains defense-in-depth. Verified version handoff is evaluated after DB ownership lock on next start, scans verified-ready records, filters to versions newer than the running `VERSION`, and chooses the newest eligible SemVer candidate according to the configured launch policy.
 
 * Windows code signing is currently a manual post-build ceremony. `scripts/build_core.ps1` builds the onefile EXE and prints optional `signtool sign` / `signtool verify` commands; it does not sign or verify artifacts automatically.
 
@@ -432,14 +464,14 @@
 
 
 *
-**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `exe_verified` means the extracted EXE passed Authenticode/publisher/thumbprint trust checks. `verified_ready` is written only when `hash_verified`, `extracted`, and `exe_verified` agree and confined cache files still exist.
+**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `exe_verified` means the extracted EXE passed Authenticode/publisher/thumbprint trust checks. `verified_ready_versions` is keyed by version and sha256 and is written only when `hash_verified`, `extracted`, and `exe_verified` agree and confined cache files still exist. Legacy `verified_ready` is only a compatibility/latest pointer.
 
 *
 **Backward-compatible manifest requirement:** Public manifests must keep top-level `latest.version` and `latest.download.url` so existing deployed BUS Core clients can still detect a newer version and open the Lighthouse-provided download link. Channel-aware and metadata-rich fields must remain additive.
 
 
 *
-**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `exe_verified` means the extracted EXE passed Authenticode/publisher/thumbprint trust checks. `verified_ready` is written only when `hash_verified`, `extracted`, and `exe_verified` agree and confined cache files still exist.
+**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `exe_verified` means the extracted EXE passed Authenticode/publisher/thumbprint trust checks. `verified_ready_versions` is keyed by version and sha256 and is written only when `hash_verified`, `extracted`, and `exe_verified` agree and confined cache files still exist. Legacy `verified_ready` is only a compatibility/latest pointer.
 
 
 *
@@ -479,7 +511,7 @@
 
 * DB/app ownership locking prevents two live BUS Core owners from using the same DB/app root. Launcher preflight blocks a duplicate native instance before browser open / uvicorn bind, and the app-level lock remains defense-in-depth.
 
-* The update cache/state model now supports conservative `hash_verified`, `extracted`, `exe_verified`, and `verified_ready` stages under `%LOCALAPPDATA%\BUSCore\updates\state.json`. `verified_ready` is written only after ZIP hash, safe extraction, EXE trust, version/channel/hash/path consistency, and confined-file existence checks succeed.
+* The update cache/state model now supports conservative `hash_verified`, `extracted`, `exe_verified`, and version+sha keyed `verified_ready_versions` stages under `%LOCALAPPDATA%\BUSCore\updates\state.json`. `verified_ready_versions` records are written only after ZIP hash, safe extraction, EXE trust, version/channel/hash/path consistency, and confined-file existence checks succeed; legacy `verified_ready` remains a compatibility/latest pointer.
 
 * Manifest authenticity primitives support Ed25519 signatures, deterministic canonical JSON, signature envelopes, and embedded top-level signatures. Embedded signatures preserve public compatibility by keeping top-level `latest.version` and `latest.download.url`; the signature covers canonical JSON after removing top-level `signature`.
 
@@ -1920,4 +1952,74 @@ EULA viewer and settings layout styles updated to use BUS Core theme tokens:
 
 --border-color  
 --card-bg
+
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.11.0  
+SESSION_LABEL: Patch 1A Purchase Truth Backend Foundation  
+DATE: 2026-05-12  
+BRANCH: Let-their-be-xfill
+
+### Authority Delta
+
+- `/app/purchase` now records inventory truth (`ItemBatch`, `ItemMovement`, inventory journal) and cash truth (`CashEvent` with `kind="expense"`, `source_kind="purchase"`) under one shared `source_id`.
+- `/app/finance/transactions` surfaces cash-backed purchase expenses as `kind="purchase"` and suppresses matching movement-inferred duplicate rows by `source_id`.
+- Legacy movement-only purchase history remains supported as `kind="purchase_inferred"` when no matching purchase `CashEvent` exists.
+
+### Non-Goals / Safety
+
+- No item import, UI, accounting profile, account mapping, OAuth/API integration, double-entry ledger, table, or column change is introduced by this patch.
+- Schema impact is limited to idempotent source-id lookup indexes used for purchase transaction deduplication.
+
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.11.0  
+SESSION_LABEL: Patch 1B Finance CSV Export Backend  
+DATE: 2026-05-12  
+BRANCH: Let-their-be-xfill
+
+### Authority Delta
+
+- Backend finance CSV export is available at `GET /app/finance/export.csv` for read-only generic bookkeeping export.
+- The only supported export profile is `generic`; exported currency defaults to `CAD`.
+- Export rows are sourced from existing finance truth: `CashEvent` rows plus legacy purchase-inferred `ItemMovement` rows that are not backed by purchase cash events.
+
+### Non-Goals / Safety
+
+- No accounting OAuth, account mapping UI, item import, QuickBooks/Wave integration, double-entry ledger, currency configuration, table, or column change is introduced by this patch.
+
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Patch 1C UI Wiring for Purchase Truth + Finance CSV Export
+DATE: 2026-05-12
+BRANCH: Let-their-be-xfill
+
+### Authority Delta
+
+- Inventory UI now exposes `Record Purchase` as a distinct action beside `Add Batch`; purchases post to `/app/purchase` with canonical `quantity_decimal` and `uom` fields, category, optional notes, and unit cost in cents.
+- Add Batch remains a stock-in-only path and does not create purchase cash truth.
+- Finance UI now exposes generic CSV export through `/app/finance/export.csv?profile=generic` using the currently selected date range.
+
+### Non-Goals / Safety
+
+- No UI-side `qty_base`, unit multiplier, backend business logic, table, or column change is introduced by this patch.
+- No accounting OAuth, QuickBooks/Wave integration, account mapping, or item import is introduced by this patch.
+
+## SoT Delta
+
+SOT_VERSION_AT_START: v0.11.0
+SESSION_LABEL: Patch 1D Test Write-Gate AppData Isolation
+DATE: 2026-05-12
+BRANCH: Let-their-be-xfill
+
+### Authority Delta
+
+- Pytest `bus_client` write-gate setup and teardown now resolve `%LOCALAPPDATA%` to a per-test temporary AppData root before BUS config modules or write-state helpers are loaded.
+- Regression coverage verifies a sentinel real AppData `BUSCore\config.json` remains unchanged while the isolated test config receives `dev.writes_enabled` updates.
+
+### Non-Goals / Safety
+
+- No launcher, Run Core.bat, app startup, runtime write-gate, or persisted config semantics are changed by this patch.
+- Public `VERSION` remains unchanged; only test isolation and governance metadata are updated.
 

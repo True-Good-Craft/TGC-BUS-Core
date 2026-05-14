@@ -61,14 +61,27 @@ import { toMetricBase, DIM_DEFAULTS_IMPERIAL } from "./lib/units.js";
 
 let _tokenCache = null;        // string | null
 let _tokenPromise = null;      // Promise<string> | null
+let _claimedModeNoLegacyToken = false;
 
 export async function ensureToken() {
+  if (_claimedModeNoLegacyToken) return null;
   if (_tokenCache) return _tokenCache;
   if (_tokenPromise) return _tokenPromise; // in-flight, await it
 
   _tokenPromise = (async () => {
     // FIX: 'omit' -> 'same-origin' to allow Set-Cookie to work
     const r = await fetch('/session/token', { credentials: 'same-origin' });
+    if (r.status === 401) {
+      try {
+        const body = await r.clone().json();
+        if (body?.error === 'login_required') {
+          _tokenCache = null;
+          _tokenPromise = null;
+          _claimedModeNoLegacyToken = true;
+          return null;
+        }
+      } catch {}
+    }
     if (!r.ok) throw new Error(`token fetch failed: ${r.status}`);
     const j = await r.json();
     _tokenCache = j.token;
@@ -82,6 +95,7 @@ export async function ensureToken() {
 function clearToken() {
   _tokenCache = null;
   _tokenPromise = null;
+  _claimedModeNoLegacyToken = false;
 }
 
 async function withAuth(init = {}) {
