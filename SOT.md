@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.2.0 **Updated:** 2026-05-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.2.1 **Updated:** 2026-05-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -133,6 +133,8 @@
 * `scripts/validate_version_governance.py` machine-checks the version mirrors, and `.github/workflows/governance-guard.yml` runs both governance validators on `push`, `pull_request`, and `workflow_dispatch`.
 
 * Canonical public release artifact naming MUST be `BUS-Core-<VERSION>.zip`; manifest download URLs MUST be absolute Lighthouse URLs in the form `https://lighthouse.buscore.ca/releases/BUS-Core-<VERSION>.zip`.
+
+* Release `v1.2.0` is superseded by `v1.2.1` because the published Windows artifact was unsigned. The `v1.2.1` Windows EXE MUST be Authenticode-signed before upload/publication, and the update path MUST continue rejecting unsigned artifacts.
 
 * Current release automation publishes the stable manifest lane only. `updates.channel` exists structurally in Core configuration, but no current workflow publishes multiple channel manifests.
 

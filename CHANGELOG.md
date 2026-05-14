@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.1] - 2026-05-13
+
+### Changed
+
+- Supersedes `v1.2.0`; the `v1.2.0` release/tag/artifact must not be reused for the corrected Windows release artifact.
+- No major product feature delta from `v1.2.0` is intended; this release exists to replace the unsigned `v1.2.0` Windows artifact with a properly signed release artifact.
+- Bumped `VERSION` from `1.2.0` to `1.2.1` and reset `INTERNAL_VERSION` from `1.2.0.0` to `1.2.1.0` for the corrected release boundary.
+
+### Security / Update Safety
+
+- The updater correctly rejected the unsigned `v1.2.0` Windows artifact with Authenticode status `NotSigned`.
+- The signature validation guard remains active and must not be bypassed; unsigned update artifacts must continue to fail closed.
+
 ## [1.2.0] - 2026-05-13
 
 ### Fixed
