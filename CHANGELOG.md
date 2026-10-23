@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### October maintenance pass
+- Raised the `urllib3` floor to `>=2.8.0` and refreshed only `urllib3` (2.7.0 → 2.8.0) in the Linux and Windows runtime locks with `uv pip compile --upgrade-package urllib3`, clearing PYSEC-2026-4175, PYSEC-2026-4176, and PYSEC-2026-4177 that made the blocking dependency audit fail. No other runtime package changed.
+- Applied the SHA-pinned GitHub Actions patch/minor bumps from Dependabot #550 (`docker/setup-buildx-action` v4.4.1, `docker/build-push-action` v7.4.0, `actions/setup-node` v7.1.0, `ossf/scorecard-action` v2.5.0, `actions/upload-artifact` v7.0.2, `github/codeql-action/upload-sarif` v4.39.0) with the traceability that Dependabot cannot supply.
+- Deliberately deferred the broad Dependabot #549 runtime refresh (its FastAPI 0.143 lock fails `--require-hashes` installs on an unpinned `opentelemetry-api` dependency and it moves SQLAlchemy to 2.1) and the #548 container move to Python 3.14 (outside the reviewed 3.12/3.11 lock graphs).
+- Bumped the internal working revision from `1.4.2.1` to `1.4.2.2`; public `VERSION` remains `1.4.2`.
+
 ### Telemetry transport identity
 - Added the explicit `User-Agent: BUS-Core/<VERSION>` header to the immutable Lighthouse telemetry request so Cloudflare receives an honest product identity instead of urllib's generic Python identity.
 - Added a transport-level regression test for both required telemetry headers without changing authentication, payload contents, user tracking, opt-out behavior, or the audited endpoint.
