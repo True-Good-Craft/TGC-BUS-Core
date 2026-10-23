@@ -3,7 +3,8 @@
 ## [Unreleased]
 
 ### October maintenance pass
-- Raised the `urllib3` floor to `>=2.8.0` and refreshed only `urllib3` (2.7.0 → 2.8.0) in the Linux and Windows runtime locks with `uv pip compile --upgrade-package urllib3`, clearing PYSEC-2026-4175, PYSEC-2026-4176, and PYSEC-2026-4177 that made the blocking dependency audit fail. No other runtime package changed.
+- Cleared every advisory reported by the blocking locked dependency audit by refreshing only the affected packages in the Linux and Windows runtime locks with `uv pip compile --upgrade-package`: `urllib3` 2.7.0 → 2.8.0 (PYSEC-2026-4175/4176/4177), `certifi` 2026.7.22 → 2026.10.19 (PYSEC-2026-4320), and `Pillow` 12.3.0 → 13.0.0 (35 advisories fixed only in 13.0.0). Direct floors are now `urllib3>=2.8.0,<3` and `Pillow>=13.0.0,<14`; no other runtime package changed.
+- Pillow 13 is a major-version bump. Core uses it only for the launcher tray icon (`Image.open` on the bundled logo and the `Image.new` fallback), both verified under 13.0.0; a Windows tray launch should still be checked on the next release build.
 - Applied the SHA-pinned GitHub Actions patch/minor bumps from Dependabot #550 (`docker/setup-buildx-action` v4.4.1, `docker/build-push-action` v7.4.0, `actions/setup-node` v7.1.0, `ossf/scorecard-action` v2.5.0, `actions/upload-artifact` v7.0.2, `github/codeql-action/upload-sarif` v4.39.0) with the traceability that Dependabot cannot supply.
 - Deliberately deferred the broad Dependabot #549 runtime refresh (its FastAPI 0.143 lock fails `--require-hashes` installs on an unpinned `opentelemetry-api` dependency and it moves SQLAlchemy to 2.1) and the #548 container move to Python 3.14 (outside the reviewed 3.12/3.11 lock graphs).
 - Bumped the internal working revision from `1.4.2.1` to `1.4.2.2`; public `VERSION` remains `1.4.2`.
