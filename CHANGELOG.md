@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### setuptools advisory
+- Cleared GHSA-xmj3-9gf7-h52w reported by the blocking Windows locked dependency audit by moving the pinned build toolchain `setuptools` 84.0.0 → 84.1.0 in `requirements-build.txt` and `pyproject.toml`, and refreshing only that package in `requirements-windows.lock.txt` with `uv pip compile --upgrade-package setuptools`. No runtime package changed.
+- Bumped the internal working revision from `1.4.2.2` to `1.4.2.3`; public `VERSION` remains `1.4.2`.
+
 ### October maintenance pass
 - Cleared every advisory reported by the blocking locked dependency audit by refreshing only the affected packages in the Linux and Windows runtime locks with `uv pip compile --upgrade-package`: `urllib3` 2.7.0 → 2.8.0 (PYSEC-2026-4175/4176/4177), `certifi` 2026.7.22 → 2026.10.19 (PYSEC-2026-4320), and `Pillow` 12.3.0 → 13.0.0 (35 advisories fixed only in 13.0.0). Direct floors are now `urllib3>=2.8.0,<3` and `Pillow>=13.0.0,<14`; no other runtime package changed.
 - Pillow 13 is a major-version bump. Core uses it only for the launcher tray icon (`Image.open` on the bundled logo and the `Image.new` fallback), both verified under 13.0.0; a Windows tray launch should still be checked on the next release build.
