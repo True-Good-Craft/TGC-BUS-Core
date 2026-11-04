@@ -17,6 +17,8 @@ Run BUS Core yourself for free, or have True Good Craft host and manage it for y
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da.svg)](https://discord.gg/qp3rc5CxdM)
 [![Sponsor](https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-24292f.svg?logo=githubsponsors)](https://github.com/sponsors/truegoodcraft)
 
+<a href="https://sourceforge.net/projects/tgc-bus-core/" target="_blank" rel="noopener noreferrer"><img src="https://a.fsdn.com/con/app/syndication/badge_img_direct/oss-rising-star/oss-rising-star/?variant_id=sf" alt="BUS Core is a SourceForge Rising Star (November 2026)" width="72" height="72"/></a>
+
 
 ---
 
@@ -280,6 +282,10 @@ BUS Core is supported through GitHub Sponsors and the BUS Core support page:
 
 - GitHub Sponsors: https://github.com/sponsors/truegoodcraft
 - BUS Core support: https://buscore.ca/support
+
+## Acknowledgements
+
+In November 2026, BUS Core received a [SourceForge](https://sourceforge.net/projects/tgc-bus-core/) Rising Star award. Thank you to everyone who has downloaded, tested, reported bugs, and shared BUS Core with other shops.
 
 ## Security & Release Verification
 
