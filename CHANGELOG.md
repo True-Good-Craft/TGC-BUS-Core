@@ -2,8 +2,10 @@
 
 ## [Unreleased]
 
-### setuptools advisory
+### November maintenance pass
 - Cleared GHSA-xmj3-9gf7-h52w reported by the blocking Windows locked dependency audit by moving the pinned build toolchain `setuptools` 84.0.0 → 84.1.0 in `requirements-build.txt` and `pyproject.toml`, and refreshing only that package in `requirements-windows.lock.txt` with `uv pip compile --upgrade-package setuptools`. No runtime package changed.
+- Applied the SHA-pinned GitHub Actions patch/minor bumps from Dependabot #554 (`actions/setup-python` v7.1.0, `docker/login-action` v4.7.0, `github/codeql-action/upload-sarif` v4.39.1) with the traceability that Dependabot cannot supply.
+- Deliberately deferred the broad Dependabot #555 runtime refresh: its FastAPI 0.162 lock again fails `--require-hashes` installs on an unpinned `opentelemetry-api` dependency, it moves SQLAlchemy to 2.1 and PyInstaller to 6.22, and it raises the documented security floors in `requirements.txt` without an advisory.
 - Bumped the internal working revision from `1.4.2.2` to `1.4.2.3`; public `VERSION` remains `1.4.2`.
 
 ### October maintenance pass
