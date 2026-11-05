@@ -4,6 +4,8 @@
 
 BUS Core is open-source manufacturing operations software for small makers, workshops, and owner-operators. It tracks inventory, recipes/BOMs, manufacturing, jobs, invoices, stock movement, and cost visibility. Run it yourself for free, or use the upcoming TGC Managed BUS service when you want True Good Craft to host and manage the same BUS Core foundation. Managed BUS is not generally available yet.
 
+BUS Core was named a SourceForge Rising Star in November 2026. Thank you to every tester, bug reporter, and shop that has given it a try.
+
 BUS Core v1.3.2 is the community polish release. Core remains maintained, with continued emphasis on bug fixes, data safety, backup and restore, security and trust, release hygiene, tester blockers, documentation, operator clarity, and evidence-backed manufacturing improvements.
 
 ## Start Here
