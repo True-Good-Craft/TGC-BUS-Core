@@ -1,5 +1,5 @@
 # Human-maintained test dependency policy.
 # CI installs the matching generated requirements-test-linux.lock.txt or
 # requirements-test-windows.lock.txt with --require-hashes.
-pytest==9.1.1
-hypothesis==6.165.10
+pytest==9.2.0
+hypothesis==6.170.15
